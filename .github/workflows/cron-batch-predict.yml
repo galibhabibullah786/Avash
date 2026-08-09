@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Guard — job script not yet implemented
         id: guard
@@ -43,7 +43,7 @@ jobs:
       # ML_PYTHON_IMAGE (docs/PROJECT_PLAN.md §14) pins the same 3.11 the
       # local container uses, so a scheduled run and a local run resolve
       # the same dependency tree.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: steps.guard.outputs.ready == 'true'
         with:
           python-version: "3.11"
