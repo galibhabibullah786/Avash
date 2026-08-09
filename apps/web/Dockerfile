@@ -55,7 +55,7 @@ RUN sed "s|__API_ORIGIN__|${VITE_PUBLIC_API_BASE_URL}|g" \
     && sed "s|__API_ORIGIN__|${VITE_PUBLIC_API_BASE_URL}|g" \
       apps/web/docker/security-headers.conf.template > /tmp/security-headers.conf
 
-FROM nginxinc/nginx-unprivileged:1.31.2-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.31.3-alpine AS runtime
 
 # This base already runs as UID 101 and listens on 8080 — no root master
 # process, no privileged port, nothing to drop.
