@@ -26,14 +26,14 @@
   },
   "devDependencies": {
     "@avash/eslint-config": "workspace:*",
-    "@cloudflare/vitest-pool-workers": "^0.10.15",
+    "@cloudflare/vitest-pool-workers": "^0.21.3",
     "@cloudflare/workers-types": "^5.20260804.1",
     "@playwright/test": "^1.46.1",
     "@types/node": "^26.1.2",
     "esbuild": "^0.28.1",
     "eslint": "^10.8.0",
-    "typescript": "^6.0.3",
-    "vitest": "^3.2.4",
-    "wrangler": "^4.118.0"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.123.0"
   }
 }
