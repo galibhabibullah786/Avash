@@ -74,7 +74,7 @@ RUN SUPABASE_WS_ORIGIN="$(printf '%s' "${VITE_PUBLIC_SUPABASE_URL}" \
              "apps/web/docker/${template}.conf.template" > "/tmp/${template}.conf"; \
        done
 
-FROM nginxinc/nginx-unprivileged:1.31.2-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.31.3-alpine AS runtime
 
 # This base already runs as UID 101 and listens on 8080 — no root master
 # process, no privileged port, nothing to drop.
