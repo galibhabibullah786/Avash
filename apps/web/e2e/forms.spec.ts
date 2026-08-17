@@ -39,7 +39,11 @@ test.describe('/login — SubmitButton + disabled fieldset', () => {
     await page.getByLabel(/email/i).fill('e2e-forms@example.test');
     await page.getByLabel(/^password$/i).fill('correct horse battery staple');
 
-    const submit = page.getByRole('button', { name: /sign in/i });
+    // Matches both the idle "Sign in" label and the pending "Signing in…"
+    // pendingLabel — SubmitButton's accessible name changes to pendingLabel
+    // while pending, so a locator anchored only to the idle text stops
+    // matching once the click below makes it pending.
+    const submit = page.getByRole('button', { name: /sign(ing)? in/i });
     await submit.click();
 
     // SubmitButton renders aria-busy="true" and a pendingLabel while

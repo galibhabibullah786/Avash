@@ -112,7 +112,11 @@ test.describe('SubmitButton — aria-busy', () => {
     });
 
     await page.goto('/login');
-    const submit = page.getByRole('button', { name: /sign in/i });
+    // Matches both the idle "Sign in" label and the pending "Signing in…"
+    // pendingLabel — SubmitButton's accessible name changes to pendingLabel
+    // while pending, so a locator anchored only to the idle text stops
+    // matching the moment the click below makes it pending.
+    const submit = page.getByRole('button', { name: /sign(ing)? in/i });
     await expect(submit).toHaveAttribute('aria-busy', 'false');
 
     await page.getByLabel(/email/i).fill('e2e-a11y@example.test');

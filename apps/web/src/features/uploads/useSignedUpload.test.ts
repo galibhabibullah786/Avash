@@ -97,4 +97,33 @@ describe('useSignedUpload / signedUpload (B-T08)', () => {
 
     expect(result).toEqual({ secureUrl: 'https://res.cloudinary.com/demo/x.png', publicId: 'report-abc' });
   });
+
+  test('the Cloudinary FormData carries every parameter the server signed, including allowed_formats', async () => {
+    let capturedBody: FormData | undefined;
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => validSignature })
+      .mockImplementationOnce(async (_url: string, init?: RequestInit) => {
+        capturedBody = init?.body as FormData;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ secure_url: 'https://res.cloudinary.com/demo/x.png', public_id: 'report-abc' }),
+        };
+      });
+
+    const { signedUpload } = await import('./useSignedUpload');
+    const file = makeFile('photo.png', 1024);
+    await signedUpload({ file, purpose: 'report-photo', accessToken: 'tok' });
+
+    expect(capturedBody).toBeInstanceOf(FormData);
+    // A signature computed over a param the request never sends is a
+    // signature Cloudinary can never verify — every field cloudinarySignature.ts
+    // signs must be present here, byte for byte.
+    expect(capturedBody?.get('timestamp')).toBe(String(validSignature.timestamp));
+    expect(capturedBody?.get('signature')).toBe(validSignature.signature);
+    expect(capturedBody?.get('folder')).toBe(validSignature.folder);
+    expect(capturedBody?.get('public_id')).toBe(validSignature.publicId);
+    expect(capturedBody?.get('allowed_formats')).toBe(validSignature.allowedFormats.join(','));
+  });
 });

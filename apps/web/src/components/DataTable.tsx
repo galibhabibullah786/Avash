@@ -85,7 +85,7 @@ export function DataTable<T>({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={rowKey(row)}>
+              <tr key={rowKey(row)} data-testid={dataTestId ? `${dataTestId}-row` : undefined}>
                 {columns.map((column) => (
                   <td key={column.key}>{column.render(row)}</td>
                 ))}

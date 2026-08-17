@@ -131,4 +131,22 @@ describe('DataTable', () => {
     expect(prev.disabled).toBe(true);
     expect(next.disabled).toBe(true);
   });
+
+  test('each row carries a data-testid derived from the table testid', () => {
+    renderTable({
+      columns,
+      rows: [
+        { id: '1', name: 'Alice' },
+        { id: '2', name: 'Bob' },
+      ],
+      rowKey: (row: Row) => row.id,
+      page: basePage,
+      onPageChange: vi.fn(),
+      onPageSizeChange: vi.fn(),
+      'data-testid': 'test-table',
+    });
+
+    const dataRows = container?.querySelectorAll('[data-testid="test-table-row"]');
+    expect(dataRows?.length).toBe(2);
+  });
 });

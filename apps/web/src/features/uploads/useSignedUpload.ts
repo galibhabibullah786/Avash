@@ -70,6 +70,7 @@ async function uploadToCloudinary(file: File, signature: UploadSignatureResponse
   formData.append('signature', signature.signature);
   formData.append('folder', signature.folder);
   formData.append('public_id', signature.publicId);
+  formData.append('allowed_formats', signature.allowedFormats.join(','));
 
   let response: Response | undefined;
   try {
