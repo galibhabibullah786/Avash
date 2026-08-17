@@ -92,6 +92,61 @@ external API call. This is the same schema the `apps/web` `apiClient.ts`
 uses to validate responses — one schema, two directions, imported from one
 place (R3).
 
+## Paginated list routes
+
+Any route returning a list adopts the shared contract in
+`packages/types/pagination.ts` (`docs/features/platform-primitives.md`
+has the full rationale) — never a hand-rolled `{ items, nextPage }`
+shape or a bespoke total. In the route handler:
+
+1. Call `listQueryFor([...sortableColumns] as const)` — or
+   `listQueryFor([])` when the underlying source cannot sort — and pass
+   the result to `apps/api/src/lib/listQuery.ts`'s `parseListQuery(c,
+   schema)`. A malformed or out-of-range query string (`pageSize` over
+   `LIST_PAGE_SIZE_MAX`, an unknown `sort` value) fails the zod parse and
+   `parseListQuery` returns the generic `400` for you — never write a
+   second validation branch for this.
+2. Query the source using the parsed `page`/`pageSize`/`sort`/`dir`/`q`.
+3. Build the response envelope with `buildPageMeta({ page, pageSize,
+   total, returned })`, where `total` is `null` whenever the source
+   genuinely cannot count (decision A, `docs/features/platform-primitives.md`)
+   — never a fabricated number.
+4. Parse the final response against `paginatedResponseSchema(itemSchema)`
+   before returning it, same as any other route (zod-parse-on-entry
+   discipline applies symmetrically to the exit).
+
+A route with a fixed, small sortable set declares it inline
+(`listQueryFor(['createdAt', 'status'] as const)`); a route that cannot
+sort at all — because its data source has no `ORDER BY` equivalent, like
+the Supabase Admin API backing `GET /api/admin/users` — calls
+`listQueryFor([])` explicitly rather than omitting the call, so a
+`?sort=` on that route is a documented `400`, not a silently ignored
+parameter.
+
+## Auditing a write
+
+Every route that mutates data outside its own request/response cycle
+(`docs/PROJECT_PLAN.md` §4 amendment, `docs/features/platform-primitives.md`)
+calls `writeAuditEntry(sink, entry)` (`packages/security/auditLog.ts`)
+after the write has actually taken effect — not before, and not
+speculatively on a path that might roll back. `entry` comes from
+`buildAuditEntry()`, whose `action` is one of the closed set in
+`packages/types/audit.ts` (`auditActionSchema`); a new write path adds
+its action to that enum first, in the same change, never as a string
+literal at the call site. `apps/api/src/lib/auditSink.ts` is the only
+adapter from the structural `AuditSink` interface to the real
+service-role Supabase client — `packages/security` itself never imports
+`supabase-js`.
+
+Match the existing `role_assignments` write's failure semantics: an
+audit-write failure is logged loudly (`logger.error`, keyed by the
+request's `requestId`) and does **not** fail the request. By the time
+the audit call runs, the mutation it's describing has already committed;
+returning a `5xx` at that point reports a false negative for a change
+that did happen. A thrown or rejecting sink is caught around the audit
+call specifically, never left to propagate into the route's own error
+boundary.
+
 ## Database access — Supavisor transaction-mode pooling
 
 `apps/api/src/lib/supabaseAdmin.ts` connects via Supabase's **Supavisor**

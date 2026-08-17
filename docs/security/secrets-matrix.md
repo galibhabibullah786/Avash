@@ -58,6 +58,9 @@ now refuses to start without them rather than warning.
 | `UPSTASH_REDIS_REST_URL` | server-only | `apps/api` rate limiter + Gemini quota guard | `apps/api/.dev.vars`, `.env` |
 | `UPSTASH_REDIS_REST_TOKEN` | server-only | `apps/api` rate limiter + Gemini quota guard | `apps/api/.dev.vars`, `.env` |
 | `TURNSTILE_SECRET_KEY` | server-only | `apps/api` (server-side verification call) | `apps/api/.dev.vars`, `.env` |
+| `CLOUDINARY_CLOUD_NAME` | server-only | `apps/api` (`POST /api/uploads/signature`, ADR-015) — `apps/web` learns this value from the signature response, never from a `VITE_PUBLIC_*` var (R2) | `apps/api/.dev.vars`, `.env` |
+| `CLOUDINARY_API_KEY` | server-only | `apps/api` (`POST /api/uploads/signature`, ADR-015) | `apps/api/.dev.vars`, `.env` |
+| `CLOUDINARY_API_SECRET` | server-only | `apps/api` (`POST /api/uploads/signature`) — the value `signUpload()` hashes into the signature; never logged, never returned in any response | `apps/api/.dev.vars`, `.env` |
 | `VITE_PUBLIC_TURNSTILE_SITE_KEY` | client | widget render only | `apps/web/.env` |
 | `VITE_PUBLIC_VAPID_PUBLIC_KEY` | client (`apps/web`) | Push subscription registration | `apps/web/.env` |
 | `VAPID_PUBLIC_KEY` | server-only | `ml/serving/predict.py` — Web Push signing needs both halves of the keypair; same value as `VITE_PUBLIC_VAPID_PUBLIC_KEY` | `.env` |
@@ -165,6 +168,29 @@ can revoke without affecting anything else.
 4. Copy the **Secret Key** → `TURNSTILE_SECRET_KEY` (server-only —
    `apps/api` uses it to verify the token the widget produces; §7.2,
    ADR-005).
+
+### 5a. Cloudinary — `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
+
+1. Create a free account at [cloudinary.com](https://cloudinary.com) (the
+   free tier's storage/bandwidth is sufficient for development).
+2. On the **Dashboard** landing page, copy the three values shown under
+   **Product Environment Credentials**:
+   - **Cloud name** → `CLOUDINARY_CLOUD_NAME`. Not secret on its own —
+     it's part of every upload/delivery URL — but kept server-only here
+     because `apps/web` learns it from the `POST /api/uploads/signature`
+     response, never from a `VITE_PUBLIC_*` variable (decision G,
+     ADR-015; R2).
+   - **API Key** → `CLOUDINARY_API_KEY`.
+   - **API Secret** → `CLOUDINARY_API_SECRET`. **This is what
+     `apps/api/src/lib/cloudinarySignature.ts` hashes into every signed
+     upload.** Never log it, never return it in any response, never
+     paste it anywhere outside `apps/api/.dev.vars` and GitHub Actions
+     secrets.
+3. These back every call to `POST /api/uploads/signature`
+   (`docs/features/platform-primitives.md`) — without them set, that
+   route cannot mint a valid signature and every upload attempt fails
+   closed (a Cloudinary-rejected upload, not a leaked or malformed one;
+   ADR-015).
 
 ### 6. Map tiles — no credential required
 
@@ -335,7 +361,8 @@ repository under any circumstance (R2).
 
 1. Generate the new credential at the source (Supabase project settings,
    Gemini/Google Cloud console, OpenWeatherMap dashboard, Upstash console,
-   Cloudflare Turnstile dashboard, or a freshly generated VAPID keypair).
+   Cloudflare Turnstile dashboard, Cloudinary dashboard, or a freshly
+   generated VAPID keypair).
 2. Update the secret in every environment that consumes it, in this order,
    to avoid a window where the old credential is already revoked but the
    new one isn't live yet:
