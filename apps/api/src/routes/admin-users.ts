@@ -1,21 +1,43 @@
 import { Hono } from 'hono';
+import { z } from 'zod';
 import {
-  managedUserListResponseSchema,
   roleAssignmentRequestSchema,
   roleAssignmentResponseSchema,
+  listQueryFor,
+  paginatedResponseSchema,
+  managedUserSchema,
+  LIST_PAGE_SIZE_MAX,
   type ManagedUser,
 } from '@avash/types';
 import { buildGenericErrorBody, logger } from '@avash/logger';
-import { ROLE_ASSIGNMENT_RATE_LIMIT, resolveAppRole, type RateLimitRedisLike } from '@avash/security';
+import {
+  ROLE_ASSIGNMENT_RATE_LIMIT,
+  resolveAppRole,
+  buildAuditEntry,
+  writeAuditEntry,
+  type RateLimitRedisLike,
+} from '@avash/security';
 import { auth } from '../middleware/auth';
 import { rateLimit } from '../middleware/rate-limit';
 import { createSupabaseAdmin } from '../lib/supabaseAdmin';
+import { createAuditSink } from '../lib/auditSink';
+import { parseListQuery, buildPageMeta } from '../lib/listQuery';
 import type { AppEnv, Bindings } from '../types';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** `ADMIN_USER_PAGE_SIZE` (§14) — bounds one page of the admin user list. */
+/** `ADMIN_USER_PAGE_SIZE` (§14) — default page size for the admin user list (decision F). */
 const ADMIN_USER_PAGE_SIZE = 50;
+
+/**
+ * The Admin API cannot sort, so the sortable set is empty (baseline fact
+ * 3) — but its page size default is this route's own constant rather than
+ * the shared `LIST_PAGE_SIZE_DEFAULT` (decision F); `LIST_PAGE_SIZE_MAX`
+ * still bounds it.
+ */
+const adminUsersListQuerySchema = listQueryFor([]).extend({
+  pageSize: z.coerce.number().int().min(1).max(LIST_PAGE_SIZE_MAX).default(ADMIN_USER_PAGE_SIZE),
+});
 
 /**
  * The Supabase Admin API's user shape, narrowed to what this route reads.
@@ -82,14 +104,17 @@ export function createAdminUsers(options?: CreateAdminUsersOptions) {
         }),
         async (c) => {
           const requestId = c.get('requestId');
-          const pageParam = Number(c.req.query('page') ?? '1');
-          const page = Number.isInteger(pageParam) && pageParam > 0 ? pageParam : 1;
+          const parsedQuery = parseListQuery(c, adminUsersListQuerySchema);
+          if (!parsedQuery.ok) {
+            return parsedQuery.response;
+          }
+          const { page, pageSize, sort, dir } = parsedQuery.query;
 
           try {
             const supabase = createSupabaseAdmin(c.env);
             const { data, error } = await supabase.auth.admin.listUsers({
               page,
-              perPage: ADMIN_USER_PAGE_SIZE,
+              perPage: pageSize,
             });
 
             if (error || !data) {
@@ -104,9 +129,19 @@ export function createAdminUsers(options?: CreateAdminUsersOptions) {
               .map((user) => toManagedUser(user as AdminApiUser))
               .filter((user): user is ManagedUser => user !== null);
 
-            const body = managedUserListResponseSchema.parse({
-              users,
-              nextPage: rawUsers.length === ADMIN_USER_PAGE_SIZE ? page + 1 : null,
+            // total stays null (decision A) — the Admin API's listUsers
+            // cannot count (baseline fact 3), so hasNext is derived from
+            // whether a full page came back.
+            const body = paginatedResponseSchema(managedUserSchema).parse({
+              items: users,
+              page: buildPageMeta({
+                page,
+                pageSize,
+                total: null,
+                returned: rawUsers.length,
+                sort: sort ?? null,
+                dir,
+              }),
               requestId,
             });
             return c.json(body, 200);
@@ -202,6 +237,39 @@ export function createAdminUsers(options?: CreateAdminUsersOptions) {
               logger.error('admin/users: role changed but audit row failed to persist', {
                 requestId,
                 userId: id,
+              });
+            }
+
+            // Same best-effort semantics for the generic audit trail,
+            // deliberately isolated in its own try/catch: unlike the
+            // `role_assignments` insert above, `writeAuditEntry` can throw
+            // (a rejected sink promise, or a malformed entry failing
+            // `auditEntrySchema.parse`), and a throw here must not turn an
+            // already-effective role change into a 503.
+            try {
+              const sink = createAuditSink(supabase);
+              const entry = buildAuditEntry({
+                action: 'role.assign',
+                entityType: 'user',
+                entityId: id,
+                actorId: actor.id,
+                actorRole: actor.role,
+                outcome: 'success',
+                requestId,
+                detail: { previousRole, newRole: parsed.data.role },
+              });
+              const { error: auditLogError } = await writeAuditEntry(sink, entry);
+              if (auditLogError) {
+                logger.error('admin/users: role changed but audit_log write failed', {
+                  requestId,
+                  userId: id,
+                });
+              }
+            } catch (auditThrown) {
+              logger.error('admin/users: role changed but audit_log write threw', {
+                requestId,
+                userId: id,
+                message: auditThrown instanceof Error ? auditThrown.message : String(auditThrown),
               });
             }
 

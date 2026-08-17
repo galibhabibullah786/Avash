@@ -78,6 +78,25 @@ general principle.
 | Denial of Service | Bulk/rapid tile requests against the free, unauthenticated OSM tile service (tile-usage-policy violation) | Partially mitigated: `MAP_TILE_MAX_ZOOM` bounds request volume per viewport, attribution is shown per OSM policy. **Not yet mitigated:** no `CacheFirst` service-worker/Workbox tile-caching policy exists in the repository as of this writing — checked, not found — this is an open gap | `apps/web/src/features/map/tileLayer.ts`; no service-worker config present under `apps/web` |
 | Spoofing | None new — both risk-map routes are unauthenticated public reads with no identity to spoof | Not applicable; stated explicitly rather than left unconsidered | n/a |
 
+## Signed Uploads (`POST /api/uploads/signature`, ADR-015)
+
+| Threat | Vector | Mitigation | Enforcement point |
+|---|---|---|---|
+| Denial of Service / Cost Abuse | An authenticated user mints signatures in a loop to fill the project's Cloudinary storage/bandwidth quota, without ever completing an upload | Per-user rate limit (`UPLOAD_SIGNATURE_RATE_LIMIT`, 10/min, §14), fail-closed the same way every other Upstash-backed limiter in this project does; the signature itself expires after `UPLOAD_SIGNATURE_TTL_S` (600s) even if minted | `apps/api/src/middleware/rate-limit.ts`, `apps/api/src/routes/uploads.ts` |
+| Tampering | A client supplying its own `folder`, hoping to write into another user's asset path or an arbitrary location in the Cloudinary account | `folder` is derived server-side from the authenticated caller's id and the closed `purpose` enum (decision H) — never read from the request body; a client-supplied folder field is silently ignored, not merged | `apps/api/src/routes/uploads.ts`, `packages/types/uploads.ts` |
+| Tampering | An upload outside the allowed formats or over the size limit | `allowed_formats` is one of the signed parameters, so a request altering it invalidates the signature and Cloudinary rejects the upload; `UPLOAD_MAX_BYTES` is enforced both as a client-side pre-check and (implicitly, via Cloudinary account limits) at the upload destination | `apps/api/src/lib/cloudinarySignature.ts`, `apps/web/src/features/uploads/useSignedUpload.ts` |
+| Information Disclosure | `CLOUDINARY_API_SECRET` leaking via a log line or an error response | Never logged, never included in any response body — only used in-process to compute the signature hash; `buildGenericErrorBody()` on every error branch (R10) | `apps/api/src/lib/cloudinarySignature.ts` |
+| Elevation of Privilege | None new — every signed-in role may mint a signature by design (ADR-015); the abuse control is the rate limit, not a capability gate | Stated explicitly rather than left unconsidered | n/a |
+
+## Audit Log (`audit_log`, generic write-path trail)
+
+| Threat | Vector | Mitigation | Enforcement point |
+|---|---|---|---|
+| Information Disclosure | PII or a secret ending up in `detail` because a caller dumped a whole request body "for debugging" into an append-only, admin-readable table | `detail` is scalars only, one level deep, capped at `AUDIT_DETAIL_MAX_KEYS` (12) keys (decision C) — not arbitrary `jsonb`; a caller with nested context must deliberately flatten it, which is friction by design | `packages/types/audit.ts` (`auditDetailSchema`) |
+| Tampering / Repudiation | An actor editing or deleting their own audit trail after the fact | No insert, update, or delete RLS policy exists on `audit_log`, and none is intended — only the service-role key (which bypasses RLS) can write it, and it only ever appends | `packages/db/supabase/migrations/20260817000015_audit_log.sql`; verified against a real Postgres instance in `packages/db/test/audit-log-rls.test.ts` |
+| Information Disclosure | A non-admin reading the audit trail | Single `select` policy gated on `public.has_capability('roles:manage')` — every other role, including the actor a row is about, is denied by default | `packages/db/supabase/migrations/20260817000015_audit_log.sql` |
+| Denial of Service | An audit-write failure cascading into a failed request, or a flood of writes | Audit writes are best-effort and never fail the request (matches the existing `role_assignments` semantics); write volume is bounded by the same per-route rate limits already gating each write path | `packages/security/auditLog.ts`, `apps/api/src/lib/auditSink.ts` |
+
 ---
 
 This threat model is re-run against the *actual shipped code* (not just

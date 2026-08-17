@@ -5,6 +5,8 @@ import { useSession } from '../features/auth/SessionProvider';
 import { useReportLocation } from '../features/reports/useReportLocation';
 import { TurnstileWidget } from '../features/reports/TurnstileWidget';
 import { useSubmitBreedingReport } from '../features/reports/useSubmitBreedingReport';
+import { Spinner } from '../components/Spinner';
+import { SubmitButton } from '../components/SubmitButton';
 
 export default function Report() {
   const { accessToken } = useSession();
@@ -52,79 +54,97 @@ export default function Report() {
       </p>
 
       <form className="form" onSubmit={handleSubmit} data-testid="report-form">
-        <div className="field">
-          <span className="field__label">Location</span>
-          <button
-            type="button"
-            className="button button--secondary"
-            onClick={() => location?.requestDeviceLocation?.()}
-            disabled={location?.requesting}
-            data-testid="use-my-location"
-          >
-            {location?.requesting ? 'Locating…' : 'Use my location'}
-          </button>
+        <fieldset className="report-form__fieldset" disabled={submit?.isPending}>
+          <div className="field">
+            <span className="field__label">Location</span>
+            <button
+              type="button"
+              className="button button--secondary"
+              onClick={() => location?.requestDeviceLocation?.()}
+              disabled={location?.requesting}
+              data-testid="use-my-location"
+            >
+              {location?.requesting ? (
+                <>
+                  <Spinner label="Locating…" className="button__spinner" />
+                  <span>Locating…</span>
+                </>
+              ) : (
+                'Use my location'
+              )}
+            </button>
 
-          {location?.permissionDenied ? (
-            <p className="field__error" data-testid="location-permission-denied">
-              Location permission was denied. Enter coordinates manually below.
+            {/* Announces both the in-progress request and its outcome —
+                a denied permission must never leave the form silently
+                stuck (feature 9). */}
+            <p className="visually-hidden" role="status" aria-live="polite" data-testid="location-status">
+              {location?.requesting ? 'Requesting your location…' : location?.permissionDenied ? 'Location unavailable.' : ''}
             </p>
-          ) : null}
 
-          <label htmlFor="report-lat" className="field__label">
-            Latitude
-          </label>
-          <input
-            id="report-lat"
-            data-testid="report-lat"
-            type="number"
-            step="any"
-            min={-90}
-            max={90}
-            value={location?.lat ?? ''}
-            onChange={(event) => {
-              const value = event?.target?.value;
-              location?.setManualLat?.(value === '' ? null : Number(value));
-            }}
-          />
+            {location?.permissionDenied ? (
+              <p className="field__error" data-testid="location-permission-denied">
+                Location permission was denied. Enter coordinates manually below.
+              </p>
+            ) : null}
 
-          <label htmlFor="report-lng" className="field__label">
-            Longitude
-          </label>
-          <input
-            id="report-lng"
-            data-testid="report-lng"
-            type="number"
-            step="any"
-            min={-180}
-            max={180}
-            value={location?.lng ?? ''}
-            onChange={(event) => {
-              const value = event?.target?.value;
-              location?.setManualLng?.(value === '' ? null : Number(value));
-            }}
-          />
-        </div>
+            <label htmlFor="report-lat" className="field__label">
+              Latitude
+            </label>
+            <input
+              id="report-lat"
+              data-testid="report-lat"
+              type="number"
+              step="any"
+              min={-90}
+              max={90}
+              value={location?.lat ?? ''}
+              disabled={location?.requesting}
+              onChange={(event) => {
+                const value = event?.target?.value;
+                location?.setManualLat?.(value === '' ? null : Number(value));
+              }}
+            />
 
-        <div className="field">
-          <label htmlFor="report-description" className="field__label">
-            Description (optional)
-          </label>
-          <textarea
-            id="report-description"
-            data-testid="report-description"
-            rows={4}
-            maxLength={REPORT_DESCRIPTION_MAX_CHARS}
-            value={description}
-            onChange={(event) => setDescription(event?.target?.value ?? '')}
-          />
-          <span className="field__label" data-testid="description-counter">
-            {description.length}/{REPORT_DESCRIPTION_MAX_CHARS}
-          </span>
-        </div>
+            <label htmlFor="report-lng" className="field__label">
+              Longitude
+            </label>
+            <input
+              id="report-lng"
+              data-testid="report-lng"
+              type="number"
+              step="any"
+              min={-180}
+              max={180}
+              value={location?.lng ?? ''}
+              disabled={location?.requesting}
+              onChange={(event) => {
+                const value = event?.target?.value;
+                location?.setManualLng?.(value === '' ? null : Number(value));
+              }}
+            />
+          </div>
 
-        <div className="field">
-          <TurnstileWidget siteKey={env.turnstileSiteKey} onVerify={setTurnstileToken} onExpire={() => setTurnstileToken(null)} />
-        </div>
+          <div className="field">
+            <label htmlFor="report-description" className="field__label">
+              Description (optional)
+            </label>
+            <textarea
+              id="report-description"
+              data-testid="report-description"
+              rows={4}
+              maxLength={REPORT_DESCRIPTION_MAX_CHARS}
+              value={description}
+              onChange={(event) => setDescription(event?.target?.value ?? '')}
+            />
+            <span className="field__label" data-testid="description-counter">
+              {description.length}/{REPORT_DESCRIPTION_MAX_CHARS}
+            </span>
+          </div>
+
+          <div className="field">
+            <TurnstileWidget siteKey={env.turnstileSiteKey} onVerify={setTurnstileToken} onExpire={() => setTurnstileToken(null)} />
+          </div>
+        </fieldset>
 
         {submit?.isError ? (
           <p className="field__error" data-testid="submit-error">
@@ -132,9 +152,9 @@ export default function Report() {
           </p>
         ) : null}
 
-        <button type="submit" className="button" disabled={!canSubmit} data-testid="submit-report">
-          {submit?.isPending ? 'Submitting…' : 'Submit report'}
-        </button>
+        <SubmitButton pending={Boolean(submit?.isPending)} disabled={!canSubmit} pendingLabel="Submitting…" data-testid="submit-report">
+          Submit report
+        </SubmitButton>
       </form>
     </main>
   );

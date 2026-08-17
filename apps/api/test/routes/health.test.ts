@@ -19,6 +19,9 @@ function fakeBindings(overrides: Partial<Bindings> = {}): Bindings {
     ENVIRONMENT: 'test',
     CORS_ALLOWED_ORIGINS: 'https://avash.pages.dev',
     CORS_PREVIEW_ORIGIN_SUFFIX: 'avash.pages.dev',
+    CLOUDINARY_CLOUD_NAME: '',
+    CLOUDINARY_API_KEY: '',
+    CLOUDINARY_API_SECRET: '',
     ...overrides,
   };
 }

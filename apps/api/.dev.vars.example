@@ -55,3 +55,10 @@ ENVIRONMENT=development
 # wrangler.toml's [env.preview]/[env.production] blocks, which stay
 # production-domain-only. Never add a localhost origin to wrangler.toml.
 CORS_ALLOWED_ORIGINS=https://avash.pages.dev,http://localhost:5173
+
+# Cloudinary — signs direct-to-Cloudinary uploads server-side (ADR-015).
+# The browser learns the cloud name from the signature response, never
+# from a VITE_PUBLIC_* var (R2). Dashboard → Settings → API Keys.
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=

@@ -124,6 +124,29 @@ It never gates a request. `app_metadata.role` remains the sole
 authorization source; this table answers "who did this, when, and why",
 which a claim overwritten in place cannot.
 
+### `audit_log`, and why it doesn't absorb `role_assignments`
+
+A second, more general append-only trail — `packages/db/supabase/migrations/20260817000015_audit_log.sql`
+— now exists alongside `role_assignments`, covering every write path that
+exists today (`role.assign`, `report.submit`, `report.verify`,
+`blood.update`, `upload.sign`; full contract in
+`docs/features/platform-primitives.md`). The role grant now writes
+**both**: `role_assignments` as before, and an `audit_log` row with
+`action: 'role.assign'`, `entityType: 'user'`, and `detail: {
+previousRole, newRole }`.
+
+The two tables deliberately stay separate rather than folding
+`role_assignments` into `audit_log`'s `detail jsonb`. `role_assignments`
+has two real check constraints (`new_role`/`previous_role` must be a
+known role) and typed `user_id`/`assigned_by` foreign keys — generalizing
+it into a scalar-only `jsonb` map would trade those constraints for
+uniformity with every other write path, for no consumer that needs it. A
+query wanting "everything that happened, across both" is a union of two
+tables; nothing in this slice needs that query, so it's an accepted
+cost, not a closed one. Same RLS shape on both: one `select` policy
+gated on `roles:manage`, no insert/update/delete policy, service role
+bypasses to write.
+
 ### Bootstrapping the first admin
 
 Granting `admin` requires `roles:manage`, which only an admin holds — so a

@@ -433,6 +433,21 @@ practice — it costs nothing at runtime and removes a class of
 "why did this update fail" surprises if a key value is ever legitimately
 reassigned (e.g. a manual data-repair `update`).
 
+**§4 amendment — `audit_log`, a generic append-only trail.** Migration
+`20260817000015_audit_log.sql` adds `audit_log`: `action`, `entityType`,
+`entityId`, `actorId`/`actorRole`, `outcome`, `requestId`, and a
+scalar-only `detail jsonb` capped at `AUDIT_DETAIL_MAX_KEYS` keys
+(`packages/types/audit.ts`). It does **not** absorb `role_assignments`
+(§7 RBAC): `role_assignments` has typed columns and two check constraints
+that a generalized `detail jsonb` row would trade away for uniformity, so
+the two tables coexist — `role_assignments` for role grants specifically,
+`audit_log` for every other write path (`report.submit`, `report.verify`,
+`blood.update`, `upload.sign`, plus `role.assign` mirrored into both).
+Same RLS shape as `role_assignments`: enabled, one `roles:manage` select
+policy, no insert/update/delete policy — an audit row that can be edited
+is not an audit row, and `apps/api` writes with the service-role key,
+which bypasses RLS.
+
 ---
 
 ## 5. AI / ML Architecture
@@ -522,8 +537,9 @@ All routes mounted in `apps/api/src/index.ts`. Every request passes through `mid
 | `POST /api/symptom-check` | public | cors, headers, rate-limit, quota-guard | 10/min/IP, 50/day/IP | Gemini structuring → deterministic rule engine, no PII persisted |
 | `POST /api/alerts/subscribe` | authenticated | cors, headers, auth (JWT), rate-limit | 5/min/user | Upsert `alert_subscriptions` |
 | `POST /api/alerts/push-subscription` | authenticated | cors, headers, auth (JWT) | 5/min/user | Registers browser Push subscription (`push_subscriptions`) |
-| `GET /api/admin/users?page=` | admin (`roles:manage`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user | Paged user list via the Supabase Admin API, 50/page; malformed rows dropped |
+| `GET /api/admin/users?page=&pageSize=` | admin (`roles:manage`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user | Paged user list via the Supabase Admin API, `ADMIN_USER_PAGE_SIZE` default; malformed rows dropped |
 | `PATCH /api/admin/users/:id/role` | admin (`roles:manage`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user | Writes `app_metadata.role` + an append-only `role_assignments` audit row; 409 on self-demotion |
+| `POST /api/uploads/signature` | authenticated (any role) | cors, headers, auth (JWT), rate-limit | 10/min/user | Signs a direct-to-Cloudinary upload (ADR-015); the Worker never receives the file bytes |
 
 **§6 amendment — role administration.** The two `/api/admin/users` rows
 above were added by the RBAC slice; this section predates the existence of
@@ -542,6 +558,16 @@ route was added alongside them: the region selector derives its options
 from the `latest` payload, which already carries `regionCode` and
 `regionName`, so a separate regions endpoint would be a second source of
 truth for the same list.
+
+**§6 amendment — signed uploads and the shared list-query contract.**
+`POST /api/uploads/signature` is the one genuinely new endpoint of the
+platform-foundation slice; see ADR-015 for why the client never uploads
+through the Worker. `GET /api/admin/users` now accepts the shared
+`page`/`pageSize`/`dir`/`q` query parameters (`packages/types/pagination.ts`,
+`listQueryFor([])`) but still cannot filter, sort, or count — the Supabase
+Admin API's `listUsers` takes only `page`/`perPage` and returns no total,
+which is why the shared page-meta shape carries `total: number | null`
+rather than requiring one.
 
 **Open item — rate-limit column disagreement (flagged, not resolved).**
 Every public `GET` row above lists `60/min/IP` in the Rate Limit column
@@ -588,6 +614,7 @@ slice 9) to revisit with real numbers rather than rediscovering it.
 | `OPENWEATHERMAP_API_KEY` | server-only | `scripts/jobs/weather-ingest.ts` |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | server-only | `apps/api` rate limiter |
 | `TURNSTILE_SECRET_KEY` | server-only | `apps/api` (server-side verification call) |
+| `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | server-only | `apps/api/src/lib/cloudinarySignature.ts` — signs direct-to-Cloudinary uploads (ADR-015); `apps/web` learns the cloud name from the signature response, never from a `VITE_PUBLIC_*` var |
 | `VITE_PUBLIC_TURNSTILE_SITE_KEY` | client | widget render only |
 | `VITE_PUBLIC_VAPID_PUBLIC_KEY` | client (`apps/web`) | Push subscription registration |
 | `VAPID_PUBLIC_KEY` | server-only | `ml/serving/predict.py` (Web Push signing needs both halves of the keypair); same value as `VITE_PUBLIC_VAPID_PUBLIC_KEY` |
@@ -600,6 +627,12 @@ Rule: any variable without the `VITE_PUBLIC_` prefix must never be imported into
 **Corollary — a client-consumed variable must carry the prefix in its own name.** A value that legitimately needs to reach the browser cannot be named without `VITE_PUBLIC_` and still be readable: the ESLint rule rejects the source-level access *and* Vite declines to inline it. This is why the VAPID public key appears twice above under two names — `VITE_PUBLIC_VAPID_PUBLIC_KEY` for the browser's subscription call, `VAPID_PUBLIC_KEY` for the Python signing path — rather than once under a bare name that neither lock would let the client read.
 
 **No map credential appears above, deliberately.** The risk map renders with Leaflet over OpenStreetMap raster tiles, which require no account or token (ADR-013). The tile URL, attribution, and max zoom are §14 registry constants, not environment variables — they are neither secret nor environment-specific. `VITE_PUBLIC_MAPBOX_TOKEN` was removed from this table, and from every consumer of it, by ADR-013.
+
+**§7.1 amendment — the three `CLOUDINARY_*` rows.** Added by the
+platform-foundation slice, all server-only, all consumed exclusively by
+`apps/api/src/lib/cloudinarySignature.ts`. See ADR-015 for why signing
+happens server-side while the upload itself goes straight from the
+browser to Cloudinary, and for the exact signed-parameter set.
 
 **Local development files.** Each of the three runtime contexts loads its own gitignored file, with a committed `*.example` template as the tracked inventory:
 
@@ -832,6 +865,14 @@ Waterfall governs the *project timeline* (mapped below to the original 10-week p
 | `RESOURCE_SEARCH_RADIUS_DEFAULT_M` | 5000 (bounds 500–50,000) | `packages/types/api.ts`, `blood_within_radius()` | default/ceiling for the `ST_DWithin` blood search |
 | `HOSPITAL_RESULT_LIMIT` | 200 | `apps/api/src/routes/resources.ts` | caps a bbox or radius result set before it becomes a payload problem |
 | `RESOURCES_CACHE_TTL_S` | `s-maxage=60, swr=120` | `apps/api/src/routes/resources.ts` | short edge cache for the initial paint; live updates arrive via Realtime (ADR-010), so a long TTL would fight the ticker |
+| `ADMIN_USER_PAGE_SIZE` | 50 | `apps/api/src/routes/admin-users.ts` | default page size for the admin user list |
+| `AUDIT_DETAIL_MAX_KEYS` | 12 | `packages/types/audit.ts` | caps the audit `detail` map — a flat, key-capped scalar map makes it awkward to dump a whole request body into an append-only, admin-readable table |
+| `LIST_PAGE_SIZE_DEFAULT` | 25 | `packages/types/pagination.ts` | page size when `?pageSize=` is absent |
+| `LIST_PAGE_SIZE_MAX` | 100 | `packages/types/pagination.ts` | ceiling on any client-requested page size |
+| `LIST_SEARCH_MAX_CHARS` | 120 | `packages/types/pagination.ts` | bounds the `?q=` filter term |
+| `UPLOAD_MAX_BYTES` | 5242880 (5 MiB) | `packages/types/uploads.ts` | client-side pre-check + signed constraint |
+| `UPLOAD_SIGNATURE_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | bounds signature minting per account |
+| `UPLOAD_SIGNATURE_TTL_S` | 600 | `apps/api/src/lib/cloudinarySignature.ts` | how long a returned signature stays valid |
 
 ---
 

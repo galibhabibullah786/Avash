@@ -8,11 +8,19 @@ import {
   type AiValidation,
 } from '@avash/types';
 import { buildGenericErrorBody, logger } from '@avash/logger';
-import { BREEDING_REPORT_RATE_LIMIT, REPORT_VERIFY_RATE_LIMIT, isModerator, type RateLimitRedisLike } from '@avash/security';
+import {
+  BREEDING_REPORT_RATE_LIMIT,
+  REPORT_VERIFY_RATE_LIMIT,
+  isModerator,
+  buildAuditEntry,
+  writeAuditEntry,
+  type RateLimitRedisLike,
+} from '@avash/security';
 import { auth } from '../middleware/auth';
 import { turnstile } from '../middleware/turnstile';
 import { rateLimit } from '../middleware/rate-limit';
 import { createSupabaseAdmin } from '../lib/supabaseAdmin';
+import { createAuditSink } from '../lib/auditSink';
 import { jwtVerify } from '../lib/jwtVerify';
 import { validateReportDescription } from '../lib/reportValidation';
 import type { AppEnv, Bindings } from '../types';
@@ -136,10 +144,44 @@ export function createReports(options?: CreateReportsOptions) {
             return c.json(buildGenericErrorBody(requestId), 503);
           }
 
+          const flagged = isFlagged(aiValidation);
+
+          // Audit write is best-effort and isolated so a sink failure —
+          // thrown or returned — never turns a row that was already
+          // written into a 503. Flagged submissions are recorded as
+          // `outcome: 'failure'` even though the row is still stored: the
+          // audit trail tracks the spam-rejection signal, not row
+          // existence (baseline fact — spam is flagged, not deleted).
+          try {
+            const sink = createAuditSink(supabase);
+            const entry = buildAuditEntry({
+              action: 'report.submit',
+              entityType: 'breeding_report',
+              entityId: String(data.id),
+              actorId: reporterId,
+              actorRole: null,
+              outcome: flagged ? 'failure' : 'success',
+              requestId,
+              detail: {
+                category: aiValidation.category,
+                spamLikelihood: aiValidation.spamLikelihood,
+              },
+            });
+            const { error: auditLogError } = await writeAuditEntry(sink, entry);
+            if (auditLogError) {
+              logger.error('reports/breeding-site: submitted but audit_log write failed', { requestId });
+            }
+          } catch (auditThrown) {
+            logger.error('reports/breeding-site: submitted but audit_log write threw', {
+              requestId,
+              message: auditThrown instanceof Error ? auditThrown.message : String(auditThrown),
+            });
+          }
+
           const responseBody = breedingReportResponseSchema.parse({
             id: data.id,
             status: data.status,
-            flaggedForReview: isFlagged(aiValidation),
+            flaggedForReview: flagged,
             requestId,
           });
           return c.json(responseBody, 201);
@@ -204,6 +246,30 @@ export function createReports(options?: CreateReportsOptions) {
           }
           if (!data) {
             return c.json(buildGenericErrorBody(requestId), 404);
+          }
+
+          // Best-effort, isolated (see the POST handler above for why).
+          try {
+            const sink = createAuditSink(supabase);
+            const entry = buildAuditEntry({
+              action: 'report.verify',
+              entityType: 'breeding_report',
+              entityId: String(data.id),
+              actorId: user.id,
+              actorRole: user.role,
+              outcome: 'success',
+              requestId,
+              detail: { status: parsed.data.status },
+            });
+            const { error: auditLogError } = await writeAuditEntry(sink, entry);
+            if (auditLogError) {
+              logger.error('reports/breeding-site/verify: verified but audit_log write failed', { requestId });
+            }
+          } catch (auditThrown) {
+            logger.error('reports/breeding-site/verify: verified but audit_log write threw', {
+              requestId,
+              message: auditThrown instanceof Error ? auditThrown.message : String(auditThrown),
+            });
           }
 
           const responseBody = breedingReportResponseSchema.parse({
