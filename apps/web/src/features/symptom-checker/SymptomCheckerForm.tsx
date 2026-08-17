@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { SYMPTOM_TEXT_MAX_CHARS, type SymptomChecklist } from '@avash/types';
 import { useSymptomCheck } from './useSymptomCheck';
 import { SEVERE_SIGN_FIELDS, OTHER_SYMPTOM_FIELDS } from './checklistFields';
+import { SubmitButton } from '../../components/SubmitButton';
 import './symptom-checker.css';
 
 const EMPTY_CHECKLIST: Partial<SymptomChecklist> = {};
@@ -55,70 +56,72 @@ export function SymptomCheckerForm() {
   return (
     <div className="symptom-checker">
       <form className="form" onSubmit={handleSubmit} aria-label="Symptom checker">
-        <div className="field">
-          <label className="field__label" htmlFor="symptom-text">
-            Describe how you feel (optional)
-          </label>
-          <textarea
-            id="symptom-text"
-            data-testid="symptom-text-input"
-            rows={4}
-            maxLength={SYMPTOM_TEXT_MAX_CHARS}
-            value={symptomText}
-            onChange={(event) => setSymptomText(event.target.value)}
-            aria-describedby="symptom-text-counter"
-          />
-          <span
-            id="symptom-text-counter"
-            className="field__label"
-            data-testid="symptom-text-counter"
-          >
-            {Math.max(remainingChars, 0)} characters remaining
-          </span>
-        </div>
-
-        <fieldset className="symptom-checker__fieldset">
-          <legend>Warning signs</legend>
-          <p className="field__label">
-            These signs can indicate severe dengue and need urgent attention.
-          </p>
-          {SEVERE_SIGN_FIELDS.map((field) => (
-            <label key={field.key} className="symptom-checker__checkbox">
-              <input
-                type="checkbox"
-                data-testid={`checklist-${field.key}`}
-                checked={checklist[field.key] === true}
-                onChange={() => toggleField(field.key)}
-              />
-              {field.label}
+        <fieldset className="symptom-checker__form-fieldset" disabled={mutation.isPending}>
+          <div className="field">
+            <label className="field__label" htmlFor="symptom-text">
+              Describe how you feel (optional)
             </label>
-          ))}
+            <textarea
+              id="symptom-text"
+              data-testid="symptom-text-input"
+              rows={4}
+              maxLength={SYMPTOM_TEXT_MAX_CHARS}
+              value={symptomText}
+              onChange={(event) => setSymptomText(event.target.value)}
+              aria-describedby="symptom-text-counter"
+            />
+            <span
+              id="symptom-text-counter"
+              className="field__label"
+              data-testid="symptom-text-counter"
+            >
+              {Math.max(remainingChars, 0)} characters remaining
+            </span>
+          </div>
+
+          <fieldset className="symptom-checker__fieldset">
+            <legend>Warning signs</legend>
+            <p className="field__label">
+              These signs can indicate severe dengue and need urgent attention.
+            </p>
+            {SEVERE_SIGN_FIELDS.map((field) => (
+              <label key={field.key} className="symptom-checker__checkbox">
+                <input
+                  type="checkbox"
+                  data-testid={`checklist-${field.key}`}
+                  checked={checklist[field.key] === true}
+                  onChange={() => toggleField(field.key)}
+                />
+                {field.label}
+              </label>
+            ))}
+          </fieldset>
+
+          <fieldset className="symptom-checker__fieldset">
+            <legend>Other symptoms</legend>
+            {OTHER_SYMPTOM_FIELDS.map((field) => (
+              <label key={field.key} className="symptom-checker__checkbox">
+                <input
+                  type="checkbox"
+                  data-testid={`checklist-${field.key}`}
+                  checked={checklist[field.key] === true}
+                  onChange={() => toggleField(field.key)}
+                />
+                {field.label}
+              </label>
+            ))}
+          </fieldset>
+
+          {overLimit ? (
+            <p className="field__error" data-testid="symptom-text-error">
+              Please shorten your description to {SYMPTOM_TEXT_MAX_CHARS} characters or fewer.
+            </p>
+          ) : null}
         </fieldset>
 
-        <fieldset className="symptom-checker__fieldset">
-          <legend>Other symptoms</legend>
-          {OTHER_SYMPTOM_FIELDS.map((field) => (
-            <label key={field.key} className="symptom-checker__checkbox">
-              <input
-                type="checkbox"
-                data-testid={`checklist-${field.key}`}
-                checked={checklist[field.key] === true}
-                onChange={() => toggleField(field.key)}
-              />
-              {field.label}
-            </label>
-          ))}
-        </fieldset>
-
-        {overLimit ? (
-          <p className="field__error" data-testid="symptom-text-error">
-            Please shorten your description to {SYMPTOM_TEXT_MAX_CHARS} characters or fewer.
-          </p>
-        ) : null}
-
-        <button className="button" type="submit" disabled={mutation.isPending || overLimit}>
-          {mutation.isPending ? 'Checking…' : 'Check my symptoms'}
-        </button>
+        <SubmitButton pending={mutation.isPending} disabled={overLimit} pendingLabel="Checking…">
+          Check my symptoms
+        </SubmitButton>
       </form>
 
       {mutation.isError ? (
