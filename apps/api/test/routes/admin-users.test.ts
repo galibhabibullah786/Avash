@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, afterEach } from 'vitest';
 import { Hono } from 'hono';
-import { managedUserListResponseSchema, roleAssignmentResponseSchema } from '@avash/types';
+import { paginatedResponseSchema, managedUserSchema, roleAssignmentResponseSchema } from '@avash/types';
 import type { RateLimitRedisLike } from '@avash/security';
 import { createAdminUsers } from '../../src/routes/admin-users';
 import { requestId } from '../../src/middleware/request-id';
@@ -54,6 +54,8 @@ function buildApp() {
   app.route('/', createAdminUsers({ redisFactory: fakeRedis }));
   return app;
 }
+
+const adminUsersListResponseSchema = paginatedResponseSchema(managedUserSchema);
 
 const ADMIN_ID = '11111111-1111-4111-8111-111111111111';
 const TARGET_ID = '22222222-2222-4222-8222-222222222222';
@@ -124,16 +126,17 @@ describe('GET /api/admin/users', () => {
     );
     expect(res.status).toBe(200);
 
-    const body = managedUserListResponseSchema.parse(await res.json());
-    expect(body.users).toHaveLength(2);
-    expect(body.users[0]?.role).toBe('admin');
+    const body = adminUsersListResponseSchema.parse(await res.json());
+    expect(body.items).toHaveLength(2);
+    expect(body.items[0]?.role).toBe('admin');
     // No app_metadata.role at all resolves to citizen, never to null.
-    expect(body.users[1]?.role).toBe('citizen');
-    // A short page is the last page.
-    expect(body.nextPage).toBeNull();
+    expect(body.items[1]?.role).toBe('citizen');
+    // A short page is the last page; total is never fabricated (decision A).
+    expect(body.page.hasNext).toBe(false);
+    expect(body.page.total).toBeNull();
   });
 
-  test('a full page reports a nextPage; a short one does not', async () => {
+  test('a full page reports hasNext; a short one does not', async () => {
     const token = await signTestJwt({ sub: ADMIN_ID, role: 'admin' });
     const fullPage = Array.from({ length: 50 }, (_, i) =>
       goTrueUser(`3333333${(i % 10).toString()}-3333-4333-8333-333333333333`, 'citizen')
@@ -148,8 +151,8 @@ describe('GET /api/admin/users', () => {
       { headers: { Authorization: `Bearer ${token}` } },
       fakeBindings()
     );
-    const body = managedUserListResponseSchema.parse(await res.json());
-    expect(body.nextPage).toBe(2);
+    const body = adminUsersListResponseSchema.parse(await res.json());
+    expect(body.page.hasNext).toBe(true);
   });
 
   test('a user row in an unexpected shape is dropped, not rendered half-parsed', async () => {
@@ -170,9 +173,46 @@ describe('GET /api/admin/users', () => {
       { headers: { Authorization: `Bearer ${token}` } },
       fakeBindings()
     );
-    const body = managedUserListResponseSchema.parse(await res.json());
-    expect(body.users).toHaveLength(1);
-    expect(body.users[0]?.id).toBe(ADMIN_ID);
+    const body = adminUsersListResponseSchema.parse(await res.json());
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]?.id).toBe(ADMIN_ID);
+  });
+
+  test('?pageSize=101 → 400, over LIST_PAGE_SIZE_MAX', async () => {
+    const token = await signTestJwt({ sub: ADMIN_ID, role: 'admin' });
+    const res = await buildApp().request(
+      '/?pageSize=101',
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(400);
+  });
+
+  test('?sort=email → 400, the Admin API has no sortable columns', async () => {
+    const token = await signTestJwt({ sub: ADMIN_ID, role: 'admin' });
+    const res = await buildApp().request(
+      '/?sort=email',
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(400);
+  });
+
+  test('an omitted pageSize defaults to ADMIN_USER_PAGE_SIZE (50), not the shared default (25)', async () => {
+    const token = await signTestJwt({ sub: ADMIN_ID, role: 'admin' });
+    const fake = createFakeSupabase([{ path: ADMIN_USERS_PATH, body: { users: [], aud: 'authenticated' } }]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      '/',
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    const body = adminUsersListResponseSchema.parse(await res.json());
+    expect(body.page.pageSize).toBe(50);
+
+    const url = fake.calls.at(-1);
+    expect(url?.searchParams.get('per_page')).toBe('50');
   });
 
   test('an unexpected failure building the Supabase client → 503, generic body', async () => {
@@ -202,6 +242,7 @@ describe('PATCH /api/admin/users/:id/role', () => {
         body: goTrueUser(TARGET_ID, nextRole),
       },
       { path: '/rest/v1/role_assignments', body: [{ id: 1 }] },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
     ];
   }
 
@@ -275,6 +316,7 @@ describe('PATCH /api/admin/users/:id/role', () => {
         body: goTrueUser(ADMIN_ID, 'admin'),
       },
       { path: '/rest/v1/role_assignments', body: [{ id: 1 }] },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
     ]);
     vi.stubGlobal('fetch', fake.fetch);
 
@@ -312,6 +354,56 @@ describe('PATCH /api/admin/users/:id/role', () => {
     // The audit write actually happened — asserted on the outgoing call,
     // not inferred from the 200.
     expect(fake.calls.some((url) => url.pathname === '/rest/v1/role_assignments')).toBe(true);
+  });
+
+  test('the sink receives exactly one role.assign audit_log entry on success', async () => {
+    const token = await signTestJwt({ sub: ADMIN_ID, role: 'admin' });
+    const bodies: unknown[] = [];
+    const fake = createFakeSupabase(assignRules('citizen', 'moderator'));
+    const recordingFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof URL ? input : new URL(typeof input === 'string' ? input : input.url);
+      if (url.pathname === '/rest/v1/audit_log' && typeof init?.body === 'string') {
+        bodies.push(JSON.parse(init.body));
+      }
+      return fake.fetch(input, init);
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', recordingFetch);
+
+    const res = await buildApp().request(
+      `/${TARGET_ID}/role`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ role: 'moderator' }),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(200);
+    expect(bodies).toHaveLength(1);
+    const entry = bodies[0] as { action?: string; entity_id?: string; outcome?: string };
+    expect(entry.action).toBe('role.assign');
+    expect(entry.entity_id).toBe(TARGET_ID);
+    expect(entry.outcome).toBe('success');
+  });
+
+  test('an audit_log write failure (sink returns an error) still yields a 200', async () => {
+    const token = await signTestJwt({ sub: ADMIN_ID, role: 'admin' });
+    const fake = createFakeSupabase([
+      ...assignRules('citizen', 'moderator').slice(0, 3),
+      { path: '/rest/v1/audit_log', body: { message: 'permission denied' }, status: 403 },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/${TARGET_ID}/role`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ role: 'moderator' }),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(200);
   });
 
   test('app_metadata is merged, never replaced — Supabase’s own provider keys survive', async () => {
@@ -366,11 +458,58 @@ describe('PATCH /api/admin/users/:id/role', () => {
     expect(res.status).toBe(404);
   });
 
+  test('the updated user comes back in an unexpected shape → 503', async () => {
+    const token = await signTestJwt({ sub: ADMIN_ID, role: 'admin' });
+    const fake = createFakeSupabase([
+      {
+        path: `${ADMIN_USERS_PATH}/${TARGET_ID}`,
+        match: (_sp, method) => method === 'GET',
+        body: goTrueUser(TARGET_ID, 'citizen'),
+      },
+      {
+        path: `${ADMIN_USERS_PATH}/${TARGET_ID}`,
+        match: (_sp, method) => method === 'PUT',
+        // No `id` at all — toManagedUser() must reject this rather than
+        // render a half-parsed row.
+        body: { email: 'someone@example.com', app_metadata: { role: 'moderator' } },
+      },
+      { path: '/rest/v1/role_assignments', body: [{ id: 1 }] },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/${TARGET_ID}/role`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ role: 'moderator' }),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(503);
+  });
+
+  test('an unexpected failure building the Supabase client → 503, generic body (PATCH)', async () => {
+    const token = await signTestJwt({ sub: ADMIN_ID, role: 'admin' });
+    const res = await buildApp().request(
+      `/${TARGET_ID}/role`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ role: 'moderator' }),
+      },
+      fakeBindings({ SUPABASE_URL: INVALID_SUPABASE_URL })
+    );
+    expect(res.status).toBe(503);
+  });
+
   test('the role change succeeds but the audit write fails → still 200, because the grant did take effect', async () => {
     const token = await signTestJwt({ sub: ADMIN_ID, role: 'admin' });
     const fake = createFakeSupabase([
       ...assignRules('citizen', 'moderator').slice(0, 2),
       { path: '/rest/v1/role_assignments', body: { message: 'permission denied' }, status: 403 },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
     ]);
     vi.stubGlobal('fetch', fake.fetch);
 

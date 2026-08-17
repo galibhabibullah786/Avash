@@ -408,6 +408,7 @@ describe('PATCH /api/resources/blood/:id', () => {
         ],
       },
       { path: '/rest/v1/hospital_locations', body: [hospitalRow] },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
     ]);
     vi.stubGlobal('fetch', fake.fetch);
 
@@ -426,6 +427,55 @@ describe('PATCH /api/resources/blood/:id', () => {
     const parsed = bloodAvailabilityDtoSchema.parse(body);
     expect(parsed.unitsAvailable).toBe(20);
     expect(parsed.hospital.id).toBe(HOSPITAL_X);
+
+    expect(fake.calls.some((u) => u.pathname === '/rest/v1/audit_log')).toBe(true);
+  });
+
+  test('a staff id that is not a UUID makes buildAuditEntry throw — still 200, isolated from the response', async () => {
+    // auditEntrySchema requires actorId to be a UUID or null; a non-UUID
+    // subject exercises the isolated try/catch around the audit write
+    // without touching the network layer.
+    const userId = 'not-a-uuid-staffer';
+    const token = await signTestJwt({ sub: userId, role: 'hospital_staff' });
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/blood_inventory',
+        match: (_sp, method) => method === 'GET',
+        body: [{ id: 1, hospital_id: HOSPITAL_X }],
+      },
+      {
+        path: '/rest/v1/verified_hospital_staff',
+        body: [{ user_id: userId, hospital_id: HOSPITAL_X }],
+      },
+      {
+        path: '/rest/v1/blood_inventory',
+        match: (_sp, method) => method === 'PATCH',
+        body: [
+          {
+            id: 1,
+            hospital_id: HOSPITAL_X,
+            blood_group: 'O+',
+            units_available: 5,
+            platelet_units: 1,
+            updated_by: userId,
+            updated_at: '2026-08-15T00:00:00.000Z',
+          },
+        ],
+      },
+      { path: '/rest/v1/hospital_locations', body: [hospitalRow] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/blood/${INVENTORY_ID}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ unitsAvailable: 5, plateletUnits: 1 }),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(200);
   });
 
   test('target inventory row does not exist → 404', async () => {
@@ -591,6 +641,7 @@ describe('PATCH /api/resources/blood/:id', () => {
         ],
       },
       { path: '/rest/v1/hospital_locations', body: postgrestErrorBody(), status: 500 },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
     ]);
     vi.stubGlobal('fetch', fake.fetch);
 
@@ -635,6 +686,7 @@ describe('PATCH /api/resources/blood/:id', () => {
         ],
       },
       { path: '/rest/v1/hospital_locations', body: [] },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
     ]);
     vi.stubGlobal('fetch', fake.fetch);
 
@@ -694,6 +746,7 @@ describe('PATCH /api/resources/blood/:id', () => {
         ],
       },
       { path: '/rest/v1/hospital_locations', body: [hospitalRow] },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
     ]);
     vi.stubGlobal('fetch', fake.fetch);
 
