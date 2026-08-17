@@ -196,6 +196,21 @@ describe('CORS allow-list (env-driven, wrangler.toml CORS_ALLOWED_ORIGINS / CORS
     expect(res.headers.get('access-control-allow-methods')).toBeTruthy();
   });
 
+  // Every PATCH route (report verification, role assignment) is otherwise
+  // preflight-blocked in a real browser even though the handler itself is
+  // fine — this only shows up cross-origin, never through an in-process
+  // route mock, which is why it slipped through.
+  test('the preflight response allows PATCH', async () => {
+    const res = await SELF.fetch('https://example.com/health', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://avash.pages.dev',
+        'Access-Control-Request-Method': 'PATCH',
+      },
+    });
+    expect(res.headers.get('access-control-allow-methods')).toContain('PATCH');
+  });
+
   test('a disallowed origin gets a rejected OPTIONS preflight response', async () => {
     const res = await SELF.fetch('https://example.com/health', {
       method: 'OPTIONS',

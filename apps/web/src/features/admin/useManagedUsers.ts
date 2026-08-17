@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { z } from 'zod';
 import { managedUserSchema, paginatedResponseSchema, type ListQuery } from '@avash/types';
 import { fetchApi } from '../../lib/apiClient';
@@ -46,5 +46,12 @@ export function useManagedUsers(accessToken: string | null, query: Pick<ListQuer
     // Never fires without a token — the route 401s, and a signed-out
     // render of this page is already prevented by ProtectedRoute.
     enabled: Boolean(accessToken),
+    // Without this, changing `page`/`pageSize` changes the query key and
+    // React Query drops `data` until the new page resolves — Users.tsx
+    // swaps the whole DataTable (rows *and* its Prev/Next/page-size
+    // controls) for a bare loading string on every click. Keeping the
+    // previous page's data around during the refetch keeps the table
+    // and its pager mounted throughout.
+    placeholderData: keepPreviousData,
   });
 }

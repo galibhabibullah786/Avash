@@ -1,94 +1,94 @@
-version: 2
+# version: 2
 
-# Four entries, one grouped pull request each, instead of fifteen entries
-# producing a pull request per directory per package.
-#
-# WHY GROUPED ACROSS DIRECTORIES: Dependabot resolves "latest" per
-# directory, independently, at whatever moment it runs — so one package
-# pinned in several workspaces used to arrive as several uncoordinated
-# pull requests. That produced real breakage here: zod bumped in
-# packages/types and apps/api but not apps/web; react bumped without
-# react-dom; typescript opened against two different majors at once
-# because the root and apps/web were resolved at different times. A single
-# grouped update across `directories` bumps every copy of a package in the
-# same pull request, so the workspace cannot go inconsistent between
-# merges.
-#
-# WHY MAJORS ARE IN THE GROUP: keeping them separate is the usual advice,
-# and the trade-off is real — a breaking major lands alongside routine
-# patches and the whole group has to be reverted together. It is accepted
-# deliberately: this repo pins the same packages in up to eleven
-# manifests, and an ungrouped major is exactly the update that arrives for
-# one manifest and not the others. Review the group, do not rubber-stamp
-# it.
-#
-# Each grouped pull request squash-merges to a single commit, which is
-# what keeps the history readable — roughly four dependency commits a
-# month rather than thirty.
+# # Four entries, one grouped pull request each, instead of fifteen entries
+# # producing a pull request per directory per package.
+# #
+# # WHY GROUPED ACROSS DIRECTORIES: Dependabot resolves "latest" per
+# # directory, independently, at whatever moment it runs — so one package
+# # pinned in several workspaces used to arrive as several uncoordinated
+# # pull requests. That produced real breakage here: zod bumped in
+# # packages/types and apps/api but not apps/web; react bumped without
+# # react-dom; typescript opened against two different majors at once
+# # because the root and apps/web were resolved at different times. A single
+# # grouped update across `directories` bumps every copy of a package in the
+# # same pull request, so the workspace cannot go inconsistent between
+# # merges.
+# #
+# # WHY MAJORS ARE IN THE GROUP: keeping them separate is the usual advice,
+# # and the trade-off is real — a breaking major lands alongside routine
+# # patches and the whole group has to be reverted together. It is accepted
+# # deliberately: this repo pins the same packages in up to eleven
+# # manifests, and an ungrouped major is exactly the update that arrives for
+# # one manifest and not the others. Review the group, do not rubber-stamp
+# # it.
+# #
+# # Each grouped pull request squash-merges to a single commit, which is
+# # what keeps the history readable — roughly four dependency commits a
+# # month rather than thirty.
 
-updates:
-  # --- npm: root + every workspace directory (docs/PROJECT_PLAN.md §7.4) ---
-  # `directories` globs cover packages added later without anyone having to
-  # remember to register them here.
-  - package-ecosystem: npm
-    directories:
-      - "/"
-      - "/apps/*"
-      - "/packages/*"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    groups:
-      npm:
-        patterns: ["*"]
-        update-types: [major, minor, patch]
-    labels: [dependencies, npm]
+# updates:
+#   # --- npm: root + every workspace directory (docs/PROJECT_PLAN.md §7.4) ---
+#   # `directories` globs cover packages added later without anyone having to
+#   # remember to register them here.
+#   - package-ecosystem: npm
+#     directories:
+#       - "/"
+#       - "/apps/*"
+#       - "/packages/*"
+#     schedule:
+#       interval: weekly
+#     open-pull-requests-limit: 5
+#     groups:
+#       npm:
+#         patterns: ["*"]
+#         update-types: [major, minor, patch]
+#     labels: [dependencies, npm]
 
-  # --- pip: ml/ (exact `==` pins, so bumps arrive as reviewable PRs — see
-  # the header comment in ml/requirements.txt) ---
-  - package-ecosystem: pip
-    directory: "/ml"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    groups:
-      pip:
-        patterns: ["*"]
-        update-types: [major, minor, patch]
-    labels: [dependencies, pip, ml]
+#   # --- pip: ml/ (exact `==` pins, so bumps arrive as reviewable PRs — see
+#   # the header comment in ml/requirements.txt) ---
+#   - package-ecosystem: pip
+#     directory: "/ml"
+#     schedule:
+#       interval: weekly
+#     open-pull-requests-limit: 5
+#     groups:
+#       pip:
+#         patterns: ["*"]
+#         update-types: [major, minor, patch]
+#     labels: [dependencies, pip, ml]
 
-  # --- github-actions: workflow action versions ---
-  - package-ecosystem: github-actions
-    directories:
-      - "/"
-      - "/.github/actions/*"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    groups:
-      github-actions:
-        patterns: ["*"]
-        update-types: [major, minor, patch]
-    labels: [dependencies, github-actions]
+#   # --- github-actions: workflow action versions ---
+#   - package-ecosystem: github-actions
+#     directories:
+#       - "/"
+#       - "/.github/actions/*"
+#     schedule:
+#       interval: weekly
+#     open-pull-requests-limit: 5
+#     groups:
+#       github-actions:
+#         patterns: ["*"]
+#         update-types: [major, minor, patch]
+#     labels: [dependencies, github-actions]
 
-  # --- docker: base image pins (ADR-011 for ml, ADR-012 for the two apps) ---
-  - package-ecosystem: docker
-    directories:
-      - "/docker"
-      - "/apps/web"
-      - "/apps/api"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    groups:
-      docker:
-        patterns: ["*"]
-        update-types: [major, minor, patch]
-    labels: [dependencies, docker]
+#   # --- docker: base image pins (ADR-011 for ml, ADR-012 for the two apps) ---
+#   - package-ecosystem: docker
+#     directories:
+#       - "/docker"
+#       - "/apps/web"
+#       - "/apps/api"
+#     schedule:
+#       interval: weekly
+#     open-pull-requests-limit: 5
+#     groups:
+#       docker:
+#         patterns: ["*"]
+#         update-types: [major, minor, patch]
+#     labels: [dependencies, docker]
 
-  # NOTE: compose.yaml's `postgis/postgis:15-3.4` pin is intentionally NOT
-  # watched by Dependabot. That tag tracks parity with whatever Postgres/
-  # PostGIS version Supabase's managed platform runs (docs/docker.md §
-  # "Parity with Supabase"), not "the newest tag" — bumping it is a
-  # deliberate decision made after checking Supabase's version, not
-  # something that should arrive as an automated PR.
+#   # NOTE: compose.yaml's `postgis/postgis:15-3.4` pin is intentionally NOT
+#   # watched by Dependabot. That tag tracks parity with whatever Postgres/
+#   # PostGIS version Supabase's managed platform runs (docs/docker.md §
+#   # "Parity with Supabase"), not "the newest tag" — bumping it is a
+#   # deliberate decision made after checking Supabase's version, not
+#   # something that should arrive as an automated PR.
