@@ -68,8 +68,15 @@ only once the constant is actually wired into the code location listed.
 | `DEFAULT_APP_ROLE` | `citizen` | `packages/types/api.ts`, `public.app_role()` | what a **verified** token with no role claim resolves to; anonymous stays `null`, deliberately | implemented |
 | `ROLE_CAPABILITIES` | see `docs/features/rbac.md` § grant table | `packages/security/roles.ts`, mirrored by `public.has_capability()` in migration `20260816000013` | the single authorization grant table — not a rank, since moderator and hospital_staff are disjoint | implemented |
 | `ROLE_ASSIGNMENT_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | role admin is a rare deliberate action; a burst is a mistake or a compromised admin session | implemented |
-| `ADMIN_USER_PAGE_SIZE` | 50 | `apps/api/src/routes/admin-users.ts` | bounds one page of the admin user list | implemented |
+| `ADMIN_USER_PAGE_SIZE` | 50 | `apps/api/src/routes/admin-users.ts` | default page size for the admin user list | implemented |
 | `SUPABASE_LOCAL_API_PORT` | 54321 (db 54329, studio 54323, inbucket 54324) | `packages/db/supabase/config.toml` | the containerized local Supabase stack (ADR-014); deliberately clear of the ADR-011 `db` container on 54322 so both can run | implemented |
+| `AUDIT_DETAIL_MAX_KEYS` | 12 | `packages/types/audit.ts` | caps the audit `detail` map — a flat, key-capped scalar map makes it awkward to dump a whole request body into an append-only, admin-readable table | implemented |
+| `LIST_PAGE_SIZE_DEFAULT` | 25 | `packages/types/pagination.ts` | page size when `?pageSize=` is absent | implemented |
+| `LIST_PAGE_SIZE_MAX` | 100 | `packages/types/pagination.ts` | ceiling on any client-requested page size | implemented |
+| `LIST_SEARCH_MAX_CHARS` | 120 | `packages/types/pagination.ts` | bounds the `?q=` filter term | implemented |
+| `UPLOAD_MAX_BYTES` | 5242880 (5 MiB) | `packages/types/uploads.ts` | client-side pre-check + signed constraint | implemented |
+| `UPLOAD_SIGNATURE_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | bounds signature minting per account | implemented |
+| `UPLOAD_SIGNATURE_TTL_S` | 600 | `apps/api/src/lib/cloudinarySignature.ts` | how long a returned signature stays valid | documented — not yet read from this location; `signUpload()` has no expiry check today, only the `timestamp` param Cloudinary itself validates |
 
 `CORS_ALLOWED_ORIGINS`'s value in `apps/api/wrangler.toml` is
 `https://avash.pages.dev` — the real Cloudflare Pages project domain

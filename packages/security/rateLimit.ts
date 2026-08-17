@@ -35,6 +35,13 @@ export const REPORT_VERIFY_RATE_LIMIT = { perMinute: 20 } as const;
  * either way slowing it down is the right response.
  */
 export const ROLE_ASSIGNMENT_RATE_LIMIT = { perMinute: 10 } as const;
+/**
+ * `UPLOAD_SIGNATURE_RATE_LIMIT` (§14) — bounds signature minting per
+ * account. A signature costs Cloudinary nothing to issue, but every one
+ * minted is a standing invitation to upload against your quota, so the
+ * limit sits on the mint, not the upload itself (decision G).
+ */
+export const UPLOAD_SIGNATURE_RATE_LIMIT = { perMinute: 10 } as const;
 
 export type RateLimitWindow = 'minute' | 'day';
 

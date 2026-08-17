@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useGeolocation } from '../../hooks/useGeolocation';
 
 export interface ReportLocationState {
@@ -14,56 +14,31 @@ export interface ReportLocationState {
 }
 
 /**
- * `apps/web/src/hooks/useGeolocation.ts` is a frozen-shape Phase-0 stub
- * (`() => {}`, no return value) — calling it here is forward-compatible
- * with whatever real implementation lands there later, but nothing in
- * this hook depends on its result today. The actual device-location
- * logic lives here, built directly on the browser Geolocation API,
- * because the shared hook does not yet do anything (out of this
- * feature's owned-files scope — `apps/web/src/hooks/**` is not owned by
- * the breeding-reports slice).
- *
- * The browser Geolocation API's result is untrusted/nullable (R7) —
- * every access into `position`/`error` is optional-chained.
+ * Wraps the real `useGeolocation` hook, translating its `status` union into
+ * this feature's boolean `requesting`/`permissionDenied` shape so
+ * `Report.tsx` doesn't have to churn beyond the spinner wiring (B-T04).
+ * Manual entry always wins once the caller starts typing — `source` flips
+ * to `'manual'` and a late-arriving device fix is ignored so it can't
+ * clobber what the user is actively entering.
  */
 export function useReportLocation(): ReportLocationState {
-  useGeolocation?.();
+  const geolocation = useGeolocation();
 
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
   const [source, setSource] = useState<'device' | 'manual' | null>(null);
-  const [permissionDenied, setPermissionDenied] = useState(false);
-  const [requesting, setRequesting] = useState(false);
+
+  useEffect(() => {
+    if (geolocation?.status === 'granted' && source !== 'manual') {
+      setLat(geolocation.lat ?? null);
+      setLng(geolocation.lng ?? null);
+      setSource('device');
+    }
+  }, [geolocation?.status, geolocation?.lat, geolocation?.lng, source]);
 
   const requestDeviceLocation = useCallback(() => {
-    const geolocation = typeof navigator !== 'undefined' ? navigator?.geolocation : undefined;
-    if (!geolocation?.getCurrentPosition) {
-      setPermissionDenied(true);
-      return;
-    }
-
-    setRequesting(true);
-    geolocation.getCurrentPosition(
-      (position) => {
-        const latitude = position?.coords?.latitude;
-        const longitude = position?.coords?.longitude;
-        if (typeof latitude === 'number' && typeof longitude === 'number') {
-          setLat(latitude);
-          setLng(longitude);
-          setSource('device');
-          setPermissionDenied(false);
-        } else {
-          setPermissionDenied(true);
-        }
-        setRequesting(false);
-      },
-      () => {
-        setPermissionDenied(true);
-        setRequesting(false);
-      },
-      { enableHighAccuracy: false, timeout: 10000 }
-    );
-  }, []);
+    geolocation?.request?.();
+  }, [geolocation]);
 
   const setManualLat = useCallback((value: number | null) => {
     setLat(value);
@@ -75,5 +50,14 @@ export function useReportLocation(): ReportLocationState {
     setSource('manual');
   }, []);
 
-  return { lat, lng, source, permissionDenied, requesting, requestDeviceLocation, setManualLat, setManualLng };
+  return {
+    lat,
+    lng,
+    source,
+    permissionDenied: geolocation?.status === 'denied' || geolocation?.status === 'unavailable',
+    requesting: geolocation?.status === 'requesting',
+    requestDeviceLocation,
+    setManualLat,
+    setManualLng,
+  };
 }
