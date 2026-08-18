@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { type AlertSubscribe } from '@avash/types';
 import { fetchApi } from '../../lib/apiClient';
-import { ALERT_SUBSCRIPTIONS_QUERY_KEY } from './useAlertSubscriptions';
+import { ALERT_SUBSCRIPTION_QUERY_KEY } from './useAlertSubscription';
 
 // packages/types/alerts.ts freezes the request shape (`alertSubscribeSchema`)
 // but defines no response schema for this route — it upserts a row and
@@ -27,13 +27,18 @@ export async function subscribeAlert(input: SubscribeAlertInput): Promise<void> 
   }
 }
 
-/** Refetches the caller's own subscriptions on success so the form reflects the real, persisted state on the next mount/reload. */
+/**
+ * Both the create and the update path — the route upserts on `user_id`
+ * alone, so posting from a new point moves the caller's one geofence
+ * rather than adding a second. Refetches the real row on success so the
+ * form reflects persisted state on the next mount/reload.
+ */
 export function useSubscribeAlert() {
   const queryClient = useQueryClient();
   return useMutation<void, Error, SubscribeAlertInput>({
     mutationFn: subscribeAlert,
     onSuccess: () => {
-      queryClient?.invalidateQueries?.({ queryKey: ALERT_SUBSCRIPTIONS_QUERY_KEY });
+      queryClient?.invalidateQueries?.({ queryKey: ALERT_SUBSCRIPTION_QUERY_KEY });
     },
   });
 }

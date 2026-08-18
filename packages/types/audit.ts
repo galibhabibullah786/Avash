@@ -16,6 +16,7 @@ export const auditActionSchema = z.enum([
   'blood.update',
   'upload.sign',
   'alert.subscribe',
+  'alert.unsubscribe',
   'push.subscribe',
   'announcement.create',
   'announcement.delete',

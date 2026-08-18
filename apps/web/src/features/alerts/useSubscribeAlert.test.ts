@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // subscribeAlert itself only needs apiBaseUrl, but useSubscribeAlert.ts
-// (not exercised directly here) imports useAlertSubscriptions.ts for its
+// (not exercised directly here) imports useAlertSubscription.ts for its
 // query key, which imports the real lib/supabaseClient.ts — createClient()
 // throws at module load without these, so the mock covers the full shape.
 vi.mock('../../lib/env', () => ({

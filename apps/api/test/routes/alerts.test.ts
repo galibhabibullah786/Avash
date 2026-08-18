@@ -122,7 +122,7 @@ describe('POST /api/alerts/subscribe', () => {
     expect(res.status).toBe(200);
   });
 
-  test('subscribing twice at the same point upserts on (user_id, geom) — one call, not a plain insert twice', async () => {
+  test('subscribing twice upserts on user_id alone — a second subscribe MOVES the one geofence rather than adding another', async () => {
     const token = await signTestJwt({ sub: USER_ID });
     const fake = createFakeSupabase([
       { path: '/rest/v1/alert_subscriptions', body: [{ id: 'sub-1' }] },
@@ -148,11 +148,39 @@ describe('POST /api/alerts/subscribe', () => {
 
     const subscriptionCalls = fake.calls.filter((u) => u.pathname === '/rest/v1/alert_subscriptions');
     expect(subscriptionCalls).toHaveLength(2);
-    // Both calls carry the same on_conflict target — proof this is an
-    // upsert against (user_id, geom), never a bare insert that would
-    // duplicate the row on a second call.
+    // `user_id` alone, NOT `user_id,geom`: with the point in the conflict
+    // target, subscribing from a new location matched no existing row and
+    // silently created a second active subscription.
     for (const call of subscriptionCalls) {
-      expect(call.searchParams.get('on_conflict')).toBe('user_id,geom');
+      expect(call.searchParams.get('on_conflict')).toBe('user_id');
+    }
+  });
+
+  test('subscribing from a DIFFERENT point still targets the same single row', async () => {
+    const token = await signTestJwt({ sub: USER_ID });
+    const fake = createFakeSupabase([
+      { path: '/rest/v1/alert_subscriptions', body: [{ id: 'sub-1' }] },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const post = (lat: number, lng: number) =>
+      buildApp().request(
+        '/subscribe',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ lat, lng, radiusM: 2000 }),
+        },
+        fakeBindings()
+      );
+
+    expect((await post(23.7, 90.4)).status).toBe(200);
+    expect((await post(24.9, 91.8)).status).toBe(200);
+
+    const subscriptionCalls = fake.calls.filter((u) => u.pathname === '/rest/v1/alert_subscriptions');
+    for (const call of subscriptionCalls) {
+      expect(call.searchParams.get('on_conflict')).toBe('user_id');
     }
   });
 
@@ -197,6 +225,113 @@ describe('POST /api/alerts/subscribe', () => {
         headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ lat: 23.7, lng: 90.4 }),
       },
+      fakeBindings({ SUPABASE_URL: INVALID_SUPABASE_URL })
+    );
+    expect(res.status).toBe(503);
+  });
+});
+
+describe('DELETE /api/alerts/subscribe', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('no token → 401', async () => {
+    const res = await buildApp().request('/subscribe', { method: 'DELETE' }, fakeBindings());
+    expect(res.status).toBe(401);
+  });
+
+  test('deletes the caller\'s row and replies with its id', async () => {
+    const token = await signTestJwt({ sub: USER_ID });
+    const fake = createFakeSupabase([
+      { path: '/rest/v1/alert_subscriptions', body: [{ id: 'sub-1' }] },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      '/subscribe',
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ id: 'sub-1' });
+  });
+
+  test('scopes the delete to the caller\'s own user_id — the row is never identified from the request', async () => {
+    const token = await signTestJwt({ sub: USER_ID });
+    const fake = createFakeSupabase([
+      { path: '/rest/v1/alert_subscriptions', body: [{ id: 'sub-1' }] },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    await buildApp().request(
+      '/subscribe',
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+
+    const deleteCall = fake.calls.find((u) => u.pathname === '/rest/v1/alert_subscriptions');
+    // The service-role key bypasses RLS, so this filter IS the
+    // authorization boundary: without it, any signed-in caller could
+    // delete every subscription in the table.
+    expect(deleteCall?.searchParams.get('user_id')).toBe(`eq.${USER_ID}`);
+    expect(deleteCall?.searchParams.get('id')).toBeNull();
+  });
+
+  test('unsubscribing with nothing to remove still succeeds, with a null id', async () => {
+    const token = await signTestJwt({ sub: USER_ID });
+    const fake = createFakeSupabase([
+      { path: '/rest/v1/alert_subscriptions', body: [] },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      '/subscribe',
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    // Not a 404: an already-unsubscribed user retrying is not a failure.
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ id: null });
+  });
+
+  test('writes an audit_log row with action alert.unsubscribe', async () => {
+    const token = await signTestJwt({ sub: USER_ID });
+    const bodies: unknown[] = [];
+    const fake = createFakeSupabase([
+      { path: '/rest/v1/alert_subscriptions', body: [{ id: 'sub-1' }] },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
+    ]);
+    const recordingFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof URL ? input : new URL(typeof input === 'string' ? input : input.url);
+      if (url.pathname === '/rest/v1/audit_log' && typeof init?.body === 'string') {
+        bodies.push(JSON.parse(init.body));
+      }
+      return fake.fetch(input, init);
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', recordingFetch);
+
+    await buildApp().request(
+      '/subscribe',
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+
+    expect(bodies).toHaveLength(1);
+    const entry = bodies[0] as { action?: string; entity_type?: string; entity_id?: string };
+    expect(entry.action).toBe('alert.unsubscribe');
+    expect(entry.entity_type).toBe('alert_subscription');
+    expect(entry.entity_id).toBe('sub-1');
+  });
+
+  test('an unexpected failure building the Supabase client → 503', async () => {
+    const token = await signTestJwt({ sub: USER_ID });
+    const res = await buildApp().request(
+      '/subscribe',
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
       fakeBindings({ SUPABASE_URL: INVALID_SUPABASE_URL })
     );
     expect(res.status).toBe(503);
