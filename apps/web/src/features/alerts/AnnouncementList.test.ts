@@ -12,14 +12,20 @@ let geolocationState: {
 } = { lat: 23.8, lng: 90.4, status: 'granted' };
 const geolocationRequest = vi.fn();
 
+const refetchMock = vi.fn();
+
 let announcementsState: {
   data: { items: unknown[]; page: { page: number; pageSize: number; total: number | null; hasNext: boolean } } | undefined;
   isLoading: boolean;
   isError: boolean;
+  isFetching: boolean;
+  refetch: () => void;
 } = {
   data: { items: [], page: { page: 1, pageSize: 25, total: 0, hasNext: false } },
   isLoading: false,
   isError: false,
+  isFetching: false,
+  refetch: refetchMock,
 };
 
 const setPageMock = vi.fn();
@@ -71,9 +77,12 @@ describe('AnnouncementList', () => {
       data: { items: [], page: { page: 1, pageSize: 25, total: 0, hasNext: false } },
       isLoading: false,
       isError: false,
+      isFetching: false,
+      refetch: refetchMock,
     };
     geolocationRequest.mockReset();
     setPageMock.mockReset();
+    refetchMock.mockReset();
   });
 
   async function render() {
@@ -110,6 +119,8 @@ describe('AnnouncementList', () => {
       },
       isLoading: false,
       isError: false,
+      isFetching: false,
+      refetch: refetchMock,
     };
     const el = await render();
     const items = el.querySelectorAll('[data-testid="announcement-item"]');
@@ -122,5 +133,28 @@ describe('AnnouncementList', () => {
     const el = await render();
     expect(el.querySelector('[data-testid="announcement-list-locate"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="announcement-list-empty"]')).toBeNull();
+    // No point yet means nothing to refresh — the control shouldn't appear.
+    expect(el.querySelector('[data-testid="announcement-list-refresh"]')).toBeNull();
+  });
+
+  test('a refresh control lets a visitor manually re-fetch without reloading the page', async () => {
+    const el = await render();
+    const refreshButton = el.querySelector('[data-testid="announcement-list-refresh"]') as HTMLButtonElement;
+    expect(refreshButton).not.toBeNull();
+    expect(refreshButton.disabled).toBe(false);
+
+    await act(async () => {
+      refreshButton.click();
+    });
+
+    expect(refetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('the refresh control is disabled while a background refetch is in flight', async () => {
+    announcementsState = { ...announcementsState, isFetching: true };
+    const el = await render();
+    const refreshButton = el.querySelector('[data-testid="announcement-list-refresh"]') as HTMLButtonElement;
+    expect(refreshButton.disabled).toBe(true);
+    expect(refreshButton.textContent).toBe('Refreshing…');
   });
 });

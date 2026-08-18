@@ -33,10 +33,24 @@ export function AnnouncementList() {
   const announcements = useAnnouncements(accessToken, announcementsQuery);
   const items = announcements?.data?.items ?? [];
   const page = announcements?.data?.page;
+  const isRefreshing = Boolean(announcements?.isFetching) && !announcements?.isLoading;
 
   return (
     <section className="card" data-testid="announcement-list">
-      <h2 className="page__title">Local announcements</h2>
+      <div className="page__title-row">
+        <h2 className="page__title">Local announcements</h2>
+        {hasLocation ? (
+          <button
+            type="button"
+            className="button button--secondary"
+            onClick={() => announcements?.refetch?.()}
+            disabled={isRefreshing}
+            data-testid="announcement-list-refresh"
+          >
+            {isRefreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+        ) : null}
+      </div>
 
       {!hasLocation ? (
         <div className="field">

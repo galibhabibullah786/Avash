@@ -1,6 +1,17 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('../../lib/env', () => ({ env: { apiBaseUrl: 'https://api.example.test' } }));
+// subscribeAlert itself only needs apiBaseUrl, but useSubscribeAlert.ts
+// (not exercised directly here) imports useAlertSubscriptions.ts for its
+// query key, which imports the real lib/supabaseClient.ts — createClient()
+// throws at module load without these, so the mock covers the full shape.
+vi.mock('../../lib/env', () => ({
+  env: {
+    apiBaseUrl: 'https://api.example.test',
+    supabaseUrl: 'https://project.supabase.test',
+    supabaseAnonKey: 'anon-key',
+    turnstileSiteKey: 'turnstile-key',
+  },
+}));
 
 function mockFetchOnce(response: Partial<Response> | null, shouldReject = false) {
   global.fetch = vi.fn().mockImplementation(() => {

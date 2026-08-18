@@ -1,7 +1,8 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { type AlertSubscribe } from '@avash/types';
 import { fetchApi } from '../../lib/apiClient';
+import { ALERT_SUBSCRIPTIONS_QUERY_KEY } from './useAlertSubscriptions';
 
 // packages/types/alerts.ts freezes the request shape (`alertSubscribeSchema`)
 // but defines no response schema for this route — it upserts a row and
@@ -26,8 +27,13 @@ export async function subscribeAlert(input: SubscribeAlertInput): Promise<void> 
   }
 }
 
+/** Refetches the caller's own subscriptions on success so the form reflects the real, persisted state on the next mount/reload. */
 export function useSubscribeAlert() {
+  const queryClient = useQueryClient();
   return useMutation<void, Error, SubscribeAlertInput>({
     mutationFn: subscribeAlert,
+    onSuccess: () => {
+      queryClient?.invalidateQueries?.({ queryKey: ALERT_SUBSCRIPTIONS_QUERY_KEY });
+    },
   });
 }

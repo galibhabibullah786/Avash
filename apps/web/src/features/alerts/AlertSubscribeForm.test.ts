@@ -13,11 +13,15 @@ let geolocationState: {
 const geolocationRequest = vi.fn();
 
 const mutateMock = vi.fn();
-let mutationState: { isPending: boolean; isError: boolean; isSuccess: boolean; error: Error | null } = {
+let mutationState: { isPending: boolean; isError: boolean; error: Error | null } = {
   isPending: false,
   isError: false,
-  isSuccess: false,
   error: null,
+};
+
+let existingSubscriptionsState: { isLoading: boolean; data: { id: string; radiusM: number; active: boolean }[] } = {
+  isLoading: false,
+  data: [],
 };
 
 vi.mock('../../hooks/useGeolocation', () => ({
@@ -27,7 +31,7 @@ vi.mock('../../hooks/useGeolocation', () => ({
 vi.mock('../auth/SessionProvider', () => ({
   useSession: () => ({
     session: null,
-    user: null,
+    user: { id: 'user-1', email: 'user@example.com' },
     role: 'citizen',
     accessToken: 'token-1',
     status: 'authenticated',
@@ -36,6 +40,10 @@ vi.mock('../auth/SessionProvider', () => ({
 
 vi.mock('./useSubscribeAlert', () => ({
   useSubscribeAlert: () => ({ ...mutationState, mutate: mutateMock }),
+}));
+
+vi.mock('./useAlertSubscriptions', () => ({
+  useAlertSubscriptions: () => existingSubscriptionsState,
 }));
 
 describe('AlertSubscribeForm', () => {
@@ -52,7 +60,8 @@ describe('AlertSubscribeForm', () => {
     container = null;
     root = null;
     geolocationState = { lat: 23.8, lng: 90.4, status: 'granted' };
-    mutationState = { isPending: false, isError: false, isSuccess: false, error: null };
+    mutationState = { isPending: false, isError: false, error: null };
+    existingSubscriptionsState = { isLoading: false, data: [] };
     geolocationRequest.mockReset();
     mutateMock.mockReset();
   });
@@ -69,7 +78,7 @@ describe('AlertSubscribeForm', () => {
   }
 
   test('form inputs are disabled while submitting', async () => {
-    mutationState = { isPending: true, isError: false, isSuccess: false, error: null };
+    mutationState = { isPending: true, isError: false, error: null };
     const el = await render();
 
     const radiusInput = el.querySelector('[data-testid="alert-radius-input"]') as HTMLInputElement;
@@ -92,6 +101,29 @@ describe('AlertSubscribeForm', () => {
     expect(submitButton.disabled).toBe(true);
   });
 
+  test('before requesting a location, a hint explains why submit is disabled rather than leaving it unexplained', async () => {
+    geolocationState = { lat: null, lng: null, status: 'idle' };
+    const el = await render();
+
+    expect(el.querySelector('[data-testid="alert-subscribe-location-hint"]')?.textContent).toBe(
+      'Set your location before subscribing.'
+    );
+    expect(el.querySelector('[data-testid="alert-subscribe-location-error"]')).toBeNull();
+  });
+
+  test('an empty radius shows its own required message, distinct from the out-of-range message', async () => {
+    const el = await render();
+    const radiusInput = el.querySelector('[data-testid="alert-radius-input"]') as HTMLInputElement;
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setter?.call(radiusInput, '');
+      radiusInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    expect(el.querySelector('[data-testid="alert-radius-error"]')?.textContent).toBe('Radius is required.');
+  });
+
   test('a radius outside 100-20000 is rejected client-side before any network request fires', async () => {
     const el = await render();
     const radiusInput = el.querySelector('[data-testid="alert-radius-input"]') as HTMLInputElement;
@@ -105,7 +137,9 @@ describe('AlertSubscribeForm', () => {
 
     const submitButton = el.querySelector('[data-testid="alert-subscribe-submit"]') as HTMLButtonElement;
     expect(submitButton.disabled).toBe(true);
-    expect(el.querySelector('[data-testid="alert-radius-error"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="alert-radius-error"]')?.textContent).toBe(
+      'Radius must be between 100 and 20000 meters.'
+    );
 
     await act(async () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
@@ -122,12 +156,48 @@ describe('AlertSubscribeForm', () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     });
 
-    expect(mutateMock).toHaveBeenCalledWith({
+    expect(mutateMock).toHaveBeenCalledTimes(1);
+    expect(mutateMock.mock.calls[0]?.[0]).toEqual({
       lat: 23.8,
       lng: 90.4,
       radiusM: 2000,
       active: true,
       accessToken: 'token-1',
     });
+  });
+
+  test('the form stays rendered after a successful subscribe — a user may hold more than one geofence', async () => {
+    const el = await render();
+    const form = el.querySelector('[data-testid="alert-subscribe-form"]') as HTMLFormElement;
+
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    // Simulate the mutation's onSuccess callback firing, as useMutation would.
+    await act(async () => {
+      mutateMock.mock.calls[0]?.[1]?.onSuccess?.();
+    });
+
+    expect(el.querySelector('[data-testid="alert-subscribe-form"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="alert-subscribe-success"]')).not.toBeNull();
+  });
+
+  test('an existing active subscription is shown from real (server) state, not just the current session', async () => {
+    existingSubscriptionsState = { isLoading: false, data: [{ id: 'sub-1', radiusM: 2000, active: true }] };
+    const el = await render();
+
+    const status = el.querySelector('[data-testid="alert-subscribe-status"]');
+    expect(status?.textContent).toContain('1 active alert subscription');
+    // The form is still present — subscribing again (e.g. a second location) must remain possible.
+    expect(el.querySelector('[data-testid="alert-subscribe-form"]')).not.toBeNull();
+  });
+
+  test('an API-level subscribe error is shown verbatim, not swallowed into a generic message', async () => {
+    mutationState = { isPending: false, isError: true, error: new Error('Sign-in required. Please sign in again.') };
+    const el = await render();
+
+    expect(el.querySelector('[data-testid="alert-subscribe-error"]')?.textContent).toBe(
+      'Sign-in required. Please sign in again.'
+    );
   });
 });
