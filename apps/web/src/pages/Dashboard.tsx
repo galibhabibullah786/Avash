@@ -2,6 +2,9 @@ import { Link } from 'react-router-dom';
 import { can, DEFAULT_APP_ROLE } from '@avash/security';
 import { useSession } from '../features/auth/SessionProvider';
 import { ROLE_DASHBOARDS, ROLE_LABELS } from '../features/dashboard/roleDashboards';
+import { AlertSubscribeForm } from '../features/alerts/AlertSubscribeForm';
+import { AnnouncementList } from '../features/alerts/AnnouncementList';
+import { AnnouncementComposeForm } from '../features/alerts/AnnouncementComposeForm';
 import '../features/dashboard/dashboard.css';
 
 /**
@@ -47,6 +50,20 @@ export default function Dashboard() {
           </li>
         ))}
       </ul>
+
+      {/* Not a nav tile — there is no dedicated route for these (proximity
+          alerts and announcements are dashboard-embedded surfaces, not
+          pages of their own), so they render inline here rather than
+          through the tile list above. */}
+      <section className="dashboard__section">
+        <h2 className="page__title">Proximity alerts</h2>
+        <AlertSubscribeForm />
+      </section>
+
+      <section className="dashboard__section">
+        <AnnouncementComposeForm />
+        <AnnouncementList />
+      </section>
     </main>
   );
 }
