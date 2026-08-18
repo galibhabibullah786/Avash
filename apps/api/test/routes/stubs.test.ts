@@ -10,13 +10,15 @@ import { signTestJwt } from '../helpers/fakeJwt';
 
 // `weather`, `risk-map`/`risk`, `symptom-check`, `reports`, and
 // `resources` were unmounted, empty-body stubs at this point in the
-// branch history; they are now mounted, contract-shaped stubs
-// (Phase 0 — parse the frozen schema, then 501) exercised in
+// branch history; they are now mounted, contract-shaped stubs (parse the
+// frozen schema, then 501) exercised in
 // apps/api/test/routes/{weather,risk-map,symptom-check,reports,resources}.test.ts.
 //
-// `alerts`, `announcements`, and `audit-log` follow the same pattern as of
-// this slice: mounted, auth-and-rate-limit-enforced, 501 body. Real
-// handlers ship with Phase 1 (A-T01 through A-T06 in the slice plan).
+// `alerts`, `announcements`, and `audit-log` have real handlers now —
+// apps/api/test/routes/{alerts,announcements,audit-log}.test.ts cover
+// their success/failure paths in full. What remains here is the
+// auth-boundary shape (401/403 before any handler body runs), still worth
+// asserting at this coarse, cross-route level.
 
 function fakeRedis(): RateLimitRedisLike {
   const sets = new Map<string, Map<string, number>>();
@@ -64,22 +66,11 @@ function buildApp(route: Hono<AppEnv>) {
   return app;
 }
 
-describe('mounted route stubs (contract-shaped placeholders — real handlers ship with Phase 1)', () => {
+describe('mounted route stubs (contract-shaped placeholders where handlers remain 501; auth-boundary checks where they do not)', () => {
   test('alerts: POST /subscribe with no token → 401, not 501', async () => {
     const app = buildApp(createAlerts({ redisFactory: fakeRedis }));
     const res = await app.request('/subscribe', { method: 'POST' }, fakeBindings());
     expect(res.status).toBe(401);
-  });
-
-  test('alerts: POST /subscribe with a valid token → 501', async () => {
-    const app = buildApp(createAlerts({ redisFactory: fakeRedis }));
-    const token = await signTestJwt();
-    const res = await app.request(
-      '/subscribe',
-      { method: 'POST', headers: { authorization: `Bearer ${token}` } },
-      fakeBindings()
-    );
-    expect(res.status).toBe(501);
   });
 
   test('alerts: POST /push-subscription with no token → 401, not 501', async () => {
@@ -103,17 +94,6 @@ describe('mounted route stubs (contract-shaped placeholders — real handlers sh
       fakeBindings()
     );
     expect(res.status).toBe(403);
-  });
-
-  test('announcements: POST / with a moderator token → 501', async () => {
-    const app = buildApp(createAnnouncements({ redisFactory: fakeRedis }));
-    const token = await signTestJwt({ role: 'moderator' });
-    const res = await app.request(
-      '/',
-      { method: 'POST', headers: { authorization: `Bearer ${token}` } },
-      fakeBindings()
-    );
-    expect(res.status).toBe(501);
   });
 
   test('announcements: GET / with no token → 401, not 501', async () => {
@@ -143,16 +123,5 @@ describe('mounted route stubs (contract-shaped placeholders — real handlers sh
       fakeBindings()
     );
     expect(res.status).toBe(403);
-  });
-
-  test('audit-log: GET / with an admin token → 501', async () => {
-    const app = buildApp(createAuditLog({ redisFactory: fakeRedis }));
-    const token = await signTestJwt({ role: 'admin' });
-    const res = await app.request(
-      '/',
-      { method: 'GET', headers: { authorization: `Bearer ${token}` } },
-      fakeBindings()
-    );
-    expect(res.status).toBe(501);
   });
 });

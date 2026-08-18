@@ -1,0 +1,485 @@
+import { describe, test, expect, vi, afterEach } from 'vitest';
+import { Hono } from 'hono';
+import { announcementSchema, paginatedResponseSchema } from '@avash/types';
+import type { RateLimitRedisLike } from '@avash/security';
+import { createAnnouncements } from '../../src/routes/announcements';
+import { requestId } from '../../src/middleware/request-id';
+import { createFakeSupabase, INVALID_SUPABASE_URL } from '../helpers/fakeSupabase';
+import type { AppEnv, Bindings } from '../../src/types';
+import { signTestJwt } from '../helpers/fakeJwt';
+
+function fakeRedis(): RateLimitRedisLike {
+  const sets = new Map<string, Map<string, number>>();
+  return {
+    async zadd(key, entry) {
+      const set = sets.get(key) ?? new Map<string, number>();
+      set.set(entry.member, entry.score);
+      sets.set(key, set);
+      return 1;
+    },
+    async zremrangebyscore() {
+      return 0;
+    },
+    async zcard(key) {
+      return sets.get(key)?.size ?? 0;
+    },
+    async expire() {
+      return 1;
+    },
+  };
+}
+
+function fakeBindings(overrides: Partial<Bindings> = {}): Bindings {
+  return {
+    SUPABASE_URL: 'https://project.supabase.test',
+    SUPABASE_SERVICE_ROLE_KEY: 'test-key',
+    SUPABASE_JWT_SECRET: 'test-jwt-secret-do-not-use-in-production',
+    GEMINI_API_KEY: '',
+    UPSTASH_REDIS_REST_URL: '',
+    UPSTASH_REDIS_REST_TOKEN: '',
+    TURNSTILE_SECRET_KEY: '',
+    ENVIRONMENT: 'test',
+    CORS_ALLOWED_ORIGINS: 'https://avash.pages.dev',
+    CORS_PREVIEW_ORIGIN_SUFFIX: 'avash.pages.dev',
+    CLOUDINARY_CLOUD_NAME: '',
+    CLOUDINARY_API_KEY: '',
+    CLOUDINARY_API_SECRET: '',
+    ...overrides,
+  };
+}
+
+function buildApp() {
+  const app = new Hono<AppEnv>();
+  app.use('*', requestId());
+  app.route('/', createAnnouncements({ redisFactory: fakeRedis }));
+  return app;
+}
+
+const AUTHOR_ID = '11111111-1111-4111-8111-111111111111';
+const OTHER_MODERATOR_ID = '22222222-2222-4222-8222-222222222222';
+const ANNOUNCEMENT_ID = '33333333-3333-4333-8333-333333333333';
+const FUTURE = '2099-01-01T00:00:00.000Z';
+
+describe('POST /api/announcements', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const validBody = {
+    title: 'Standing water reported',
+    body: 'Clear standing water near the park by Friday.',
+    lat: 23.7,
+    lng: 90.4,
+    radiusM: 5000,
+    targetRoles: [],
+    expiresAt: FUTURE,
+  };
+
+  test('a citizen JWT → 403', async () => {
+    const token = await signTestJwt({ role: 'citizen' });
+    const res = await buildApp().request(
+      '/',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(validBody),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(403);
+  });
+
+  test('a moderator → 201', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'moderator' });
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/announcements',
+        match: (_sp, method) => method === 'GET',
+        body: [],
+      },
+      {
+        path: '/rest/v1/announcements',
+        match: (_sp, method) => method === 'POST',
+        // `.single()` sets Accept: application/vnd.pgrst.object+json — the
+        // client trusts the response body IS the single row, not an array
+        // (see reports.test.ts's combinedFetch for the same convention).
+        body: { id: ANNOUNCEMENT_ID, author_id: AUTHOR_ID, created_at: '2026-08-18T00:00:00.000Z' },
+      },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      '/',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(validBody),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(201);
+    const body = announcementSchema.parse(await res.json());
+    expect(body.id).toBe(ANNOUNCEMENT_ID);
+  });
+
+  test('a title over 120 chars → 400', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'moderator' });
+    const res = await buildApp().request(
+      '/',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ...validBody, title: 'x'.repeat(121) }),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(400);
+  });
+
+  test('at the active cap (20 live announcements already) → 409', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'moderator' });
+    const liveRows = Array.from({ length: 20 }, (_, i) => ({ id: `live-${i}` }));
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/announcements',
+        match: (_sp, method) => method === 'GET',
+        body: liveRows,
+      },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      '/',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(validBody),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(409);
+  });
+
+  test('a successful create writes an audit_log row whose detail has ≤ 12 scalar keys and no array/object value', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'moderator' });
+    const bodies: unknown[] = [];
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/announcements',
+        match: (_sp, method) => method === 'GET',
+        body: [],
+      },
+      {
+        path: '/rest/v1/announcements',
+        match: (_sp, method) => method === 'POST',
+        body: { id: ANNOUNCEMENT_ID, author_id: AUTHOR_ID, created_at: '2026-08-18T00:00:00.000Z' },
+      },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
+    ]);
+    const recordingFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof URL ? input : new URL(typeof input === 'string' ? input : input.url);
+      if (url.pathname === '/rest/v1/audit_log' && typeof init?.body === 'string') {
+        bodies.push(JSON.parse(init.body));
+      }
+      return fake.fetch(input, init);
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', recordingFetch);
+
+    const res = await buildApp().request(
+      '/',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ...validBody, targetRoles: ['admin', 'moderator'] }),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(201);
+    expect(bodies).toHaveLength(1);
+    const entry = bodies[0] as { action?: string; detail?: Record<string, unknown> | null };
+    expect(entry.action).toBe('announcement.create');
+    const detail = entry.detail ?? {};
+    expect(Object.keys(detail).length).toBeLessThanOrEqual(12);
+    for (const value of Object.values(detail)) {
+      expect(typeof value === 'object' && value !== null).toBe(false);
+    }
+    expect(detail['target.roles']).toBe('admin,moderator');
+  });
+
+  test('an unexpected failure building the Supabase client → 503', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'moderator' });
+    const res = await buildApp().request(
+      '/',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(validBody),
+      },
+      fakeBindings({ SUPABASE_URL: INVALID_SUPABASE_URL })
+    );
+    expect(res.status).toBe(503);
+  });
+});
+
+describe('GET /api/announcements', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const CALLER_LAT = 23.7;
+  const CALLER_LNG = 90.4;
+  // ~2.0km north of the caller.
+  const NEAR_LAT = CALLER_LAT + 0.018;
+  // ~6.0km north of the caller.
+  const FAR_LAT = CALLER_LAT + 0.054;
+
+  function row(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      id: '44444444-4444-4444-8444-444444444444',
+      author_id: AUTHOR_ID,
+      title: 'Notice',
+      body: 'Body text',
+      geom: { type: 'Point', coordinates: [CALLER_LNG, CALLER_LAT] },
+      radius_m: 5000,
+      target_roles: [],
+      expires_at: FUTURE,
+      created_at: '2026-08-18T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  test('an expired announcement is absent from results', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'citizen' });
+    const fake = createFakeSupabase([
+      // The route filters on expires_at > now() in the query itself, so a
+      // fake that only ever returns live rows models that filter — the
+      // expired fixture below is never returned by the stubbed query.
+      { path: '/rest/v1/announcements', body: [] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/?lat=${CALLER_LAT}&lng=${CALLER_LNG}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(200);
+    const body = paginatedResponseSchema(announcementSchema).parse(await res.json());
+    expect(body.items).toHaveLength(0);
+  });
+
+  test('an announcement targeting only admin is absent for a citizen caller', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'citizen' });
+    const fake = createFakeSupabase([
+      { path: '/rest/v1/announcements', body: [row({ target_roles: ['admin'] })] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/?lat=${CALLER_LAT}&lng=${CALLER_LNG}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(200);
+    const body = paginatedResponseSchema(announcementSchema).parse(await res.json());
+    expect(body.items).toHaveLength(0);
+  });
+
+  test('a moderator caller sees a moderator-targeted announcement', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'moderator' });
+    const fake = createFakeSupabase([
+      { path: '/rest/v1/announcements', body: [row({ target_roles: ['moderator'] })] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/?lat=${CALLER_LAT}&lng=${CALLER_LNG}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(200);
+    const body = paginatedResponseSchema(announcementSchema).parse(await res.json());
+    expect(body.items).toHaveLength(1);
+  });
+
+  test('6km away with radiusM 5000 is absent while 2km away is present', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'citizen' });
+    const nearId = '55555555-5555-4555-8555-555555555555';
+    const farId = '66666666-6666-4666-8666-666666666666';
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/announcements',
+        body: [
+          row({ id: nearId, geom: { type: 'Point', coordinates: [CALLER_LNG, NEAR_LAT] }, radius_m: 5000 }),
+          row({ id: farId, geom: { type: 'Point', coordinates: [CALLER_LNG, FAR_LAT] }, radius_m: 5000 }),
+        ],
+      },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/?lat=${CALLER_LAT}&lng=${CALLER_LNG}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(200);
+    const body = paginatedResponseSchema(announcementSchema).parse(await res.json());
+    const ids = body.items.map((item) => item.id);
+    expect(ids).toContain(nearId);
+    expect(ids).not.toContain(farId);
+  });
+
+  test('no token → 401', async () => {
+    const res = await buildApp().request(`/?lat=${CALLER_LAT}&lng=${CALLER_LNG}`, {}, fakeBindings());
+    expect(res.status).toBe(401);
+  });
+
+  test('a missing lat/lng → 400', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'citizen' });
+    const res = await buildApp().request('/', { headers: { Authorization: `Bearer ${token}` } }, fakeBindings());
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('DELETE /api/announcements/:id', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('a different moderator (not the author, not admin) → 403', async () => {
+    const token = await signTestJwt({ sub: OTHER_MODERATOR_ID, role: 'moderator' });
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/announcements',
+        match: (_sp, method) => method === 'GET',
+        body: [{ id: ANNOUNCEMENT_ID, author_id: AUTHOR_ID }],
+      },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/${ANNOUNCEMENT_ID}`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(403);
+  });
+
+  test('the author → 204', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'moderator' });
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/announcements',
+        match: (_sp, method) => method === 'GET',
+        body: [{ id: ANNOUNCEMENT_ID, author_id: AUTHOR_ID }],
+      },
+      {
+        path: '/rest/v1/announcements',
+        match: (_sp, method) => method === 'DELETE',
+        body: [],
+      },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/${ANNOUNCEMENT_ID}`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(204);
+  });
+
+  test('an admin who is not the author → 204', async () => {
+    const token = await signTestJwt({ sub: OTHER_MODERATOR_ID, role: 'admin' });
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/announcements',
+        match: (_sp, method) => method === 'GET',
+        body: [{ id: ANNOUNCEMENT_ID, author_id: AUTHOR_ID }],
+      },
+      {
+        path: '/rest/v1/announcements',
+        match: (_sp, method) => method === 'DELETE',
+        body: [],
+      },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/${ANNOUNCEMENT_ID}`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(204);
+  });
+
+  test('a missing id → 404', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'moderator' });
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/announcements',
+        match: (_sp, method) => method === 'GET',
+        body: [],
+      },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/${ANNOUNCEMENT_ID}`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(404);
+  });
+
+  test('a malformed id → 400, not a database call', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'moderator' });
+    const res = await buildApp().request(
+      '/not-a-uuid',
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(400);
+  });
+
+  test('a successful delete writes an audit_log row with action announcement.delete whose detail has no body field', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'moderator' });
+    const bodies: unknown[] = [];
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/announcements',
+        match: (_sp, method) => method === 'GET',
+        body: [{ id: ANNOUNCEMENT_ID, author_id: AUTHOR_ID }],
+      },
+      {
+        path: '/rest/v1/announcements',
+        match: (_sp, method) => method === 'DELETE',
+        body: [],
+      },
+      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
+    ]);
+    const recordingFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof URL ? input : new URL(typeof input === 'string' ? input : input.url);
+      if (url.pathname === '/rest/v1/audit_log' && typeof init?.body === 'string') {
+        bodies.push(JSON.parse(init.body));
+      }
+      return fake.fetch(input, init);
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', recordingFetch);
+
+    const res = await buildApp().request(
+      `/${ANNOUNCEMENT_ID}`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(204);
+    expect(bodies).toHaveLength(1);
+    const entry = bodies[0] as { action?: string; entity_id?: string; detail?: Record<string, unknown> | null };
+    expect(entry.action).toBe('announcement.delete');
+    expect(entry.entity_id).toBe(ANNOUNCEMENT_ID);
+    expect(entry.detail ?? {}).not.toHaveProperty('body');
+  });
+});
