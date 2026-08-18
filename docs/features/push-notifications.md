@@ -50,22 +50,11 @@ that writes `risk_predictions` (ADR-002, ADR-007).
   outright with `400 Ttl value conflicts with X-WNS-Cache-Policy`,
   making every Edge/Windows subscriber undeliverable 100% of the time.
   Both were observed against real endpoints. `PUSH_TTL_SECONDS` (24h,
-  matching `BATCH_PREDICT_CADENCE`) is the default; an announcement
-  instead passes the time remaining until its own `expires_at`, because
-  "fogging tonight" woken up tomorrow is worse than not delivered.
-- **Announcements are delivered here too, not only risk crossings.**
-  `deliver_pending_announcements()` pushes every live announcement whose
-  `pushed_at` is still null, then stamps it so a later run cannot repeat
-  it. It runs BEFORE the risk-prediction early returns in
-  `batch_predict()`: an announcement is a person broadcasting now, and
-  an empty `risk_predictions` table used to abandon the whole delivery
-  pass. Reach is the announcement's own radius around its own point —
-  the same circle `GET /api/announcements` uses — so the push and the
-  in-app feed agree about who a notice is for. `target_roles` is the one
-  thing not applied: a `push_subscriptions` row carries only a
-  `user_id`, and resolving a role per subscriber is a join this job does
-  not do, so a role-targeted announcement over-delivers to everyone in
-  range and the targeting applies when they open the app.
+  matching `BATCH_PREDICT_CADENCE`) is the only TTL this module ever
+  sends — the region-crossing push is the only kind of push it sends.
+  See `docs/features/announcement-push.md` for how a published
+  announcement is delivered now; that service uses its own TTL, derived
+  from the announcement's `expires_at`, not this constant.
 - **The browser half: a service worker plus a control that registers
   one.** Web Push has no in-page delivery path — the browser wakes a
   service worker to handle the `push` event whether or not a tab is
@@ -183,7 +172,7 @@ that writes `risk_predictions` (ADR-002, ADR-007).
 | Constant | Value | Defined in | Purpose |
 |---|---|---|---|
 | `ALERT_PROXIMITY_RADIUS_DEFAULT_M` | 2000 (bounds: 100–20,000) | `packages/geo`, `alert_subscriptions` check constraint | default/ceiling every proximity match (including this one) clamps to; no new constant introduced here — this delivery path reuses the existing registry entry |
-| `BATCH_PREDICT_CADENCE` | every 24h | `.github/workflows/cron-batch-predict.yml` | how often a region can cross into `high`/`severe` and trigger a push; also how often a published announcement goes out |
+| `BATCH_PREDICT_CADENCE` | every 24h | `.github/workflows/cron-batch-predict.yml` | how often a region can cross into `high`/`severe` and trigger a push |
 | `PUSH_TTL_SECONDS` | 86,400 (24h) | `ml/serving/push_delivery.py` | how long a push service holds a message for an offline device. Must not be 0 — that discards it unless the device is awake at that instant, and WNS rejects it outright |
 
 **Security Considerations:**
@@ -270,7 +259,12 @@ same hosted project and real endpoints (Chrome/FCM and Edge/WNS):
   write.
 - Publishing an announcement and running the delivery job produced the
   notification in the browser, with the second run reporting 0 attempts
-  (no duplicate delivery).
+  (no duplicate delivery). **This behavior has since moved off this batch
+  job entirely** — announcement delivery is now `apps/notify` /
+  `packages/push`, not `ml/serving/push_delivery.py`; see
+  `docs/features/announcement-push.md`. This entry is kept as the
+  historical record of the pass that was actually run against the old
+  path, not as a description of current behavior.
 - The service worker is active and controlling at boot with no click,
   and an offline navigation renders the offline page instead of the
   browser's network-error page.

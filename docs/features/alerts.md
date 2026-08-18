@@ -114,24 +114,23 @@ audited write in the system, including the ones this feature adds.
   predicate must be immutable. The route filters `expires_at > now()`
   in the query itself instead, which the plain index still serves as a
   range scan.
-- **Delivery is split, deliberately, across two systems.** This Worker
-  only ever manages rows — `alert_subscriptions`, `push_subscriptions`,
-  `announcements`. It never scores a proximity match and never sends a
-  push notification itself. That work lives in `ml/serving/predict.py`,
-  the same nightly batch job that already holds `VAPID_PRIVATE_KEY` and
-  runs the `ST_DWithin` match between live subscriptions and whatever
-  needs delivering, then calls `pywebpush`. A new announcement is
-  visible in-app immediately through `GET /api/announcements`, but rides
-  the next nightly batch run for push delivery
-  (`deliver_pending_announcements`, keyed on the `announcements.pushed_at`
-  column so a later run can never re-push the same notice). Nothing
-  under `apps/api` runs per-request inference or holds a push-signing
-  key — which is also why publishing cannot notify anyone
-  synchronously, and why an announcement whose `expires_at` falls before
-  the next scheduled run will lapse without ever being pushed. That is a
-  real limitation of putting the signing key exclusively in the batch
-  job, not an oversight: moving delivery into the Worker would mean
-  giving an internet-facing edge runtime the VAPID private key.
+- **Delivery is split, deliberately, across two systems, and it is not
+  the same system for a subscription's proximity alert as it is for an
+  announcement.** This Worker only ever manages rows —
+  `alert_subscriptions`, `push_subscriptions`, `announcements`. It never
+  scores a proximity match and never sends a push notification itself.
+  A region crossing into `high`/`severe` risk is still matched and
+  pushed by `ml/serving/predict.py`, the nightly batch job that holds
+  `VAPID_PRIVATE_KEY` and runs the proximity match between live
+  subscriptions and the crossing, then calls `pywebpush` — unchanged.
+  A published announcement is a different path: it is picked up by
+  `apps/notify` (a Supabase Database Webhook plus a scheduled sweep) and
+  delivered within seconds, independent of the nightly cadence, via
+  `packages/push`. See `docs/features/announcement-push.md` for that
+  path's full data flow, claim/lease semantics, and the role-targeting
+  bug it fixes relative to what this batch job used to do. `GET
+  /api/announcements` remains the in-app read path either way and is
+  unaffected by which system delivered the push.
 
 **Critical Constants:**
 

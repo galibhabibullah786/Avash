@@ -79,35 +79,6 @@ def test_batch_predict_logs_and_returns_when_no_region_crosses(monkeypatch, capl
     assert any("no region crossed into high/severe risk" in record.getMessage() for record in caplog.records)
 
 
-def test_batch_predict_delivers_announcements_before_the_risk_prediction_guards(monkeypatch, caplog):
-    """An announcement is a person broadcasting right now, so it must not
-    be abandoned by an early return that only concerns model output.
-
-    Both early-return paths are exercised: an empty `risk_predictions`
-    table (a system that has not run inference yet) and a run where no
-    region crossed. Under the original ordering both returned before any
-    announcement was looked at, so publishing one notified nobody.
-    """
-    for store in ({"risk_predictions": []}, {"risk_predictions": [
-        {"region_id": "r1", "horizon_weeks": 2, "risk_level": "low", "prediction_date": "2026-08-17"},
-    ]}):
-        client = FakeSupabaseClient(store)
-        monkeypatch.setattr(predict, "_build_supabase_client", lambda: client)
-
-        calls = []
-        monkeypatch.setattr(
-            predict,
-            "deliver_pending_announcements",
-            lambda *a, **k: calls.append(k) or 1,
-        )
-
-        with caplog.at_level(logging.INFO):
-            predict.batch_predict()
-
-        assert len(calls) == 1
-        assert "now_iso" in calls[0]
-
-
 def test_find_crossings_flags_first_time_high_with_no_prior_row():
     predictions = [
         {"region_id": "r1", "horizon_weeks": 2, "risk_level": "high", "prediction_date": "2026-08-17"},

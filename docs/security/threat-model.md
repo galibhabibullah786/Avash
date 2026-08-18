@@ -52,6 +52,17 @@ general principle.
 | Tampering | A compromised dependency or supply-chain attack alters the ONNX artifact | Checksum-pinned model file; version recorded in `risk_predictions.model_version`; `predict.py` verifies SHA256 against `ml/training/MODEL_MANIFEST.json` before running, aborts the job on mismatch | `ml/serving/predict.py` |
 | Secret Exposure | `VAPID_PRIVATE_KEY` / `SUPABASE_SERVICE_ROLE_KEY` leaked via job logs | Exist only as GitHub Actions encrypted secrets, injected as ephemeral env vars into the runner — never logged; explicit `::add-mask::` on any accidental echo | `.github/workflows/cron-batch-predict.yml` |
 
+## Announcement Push (apps/notify, ADR-016)
+
+Full technical detail: `docs/features/announcement-push.md`.
+
+| Threat | Vector | Mitigation | Enforcement point |
+|---|---|---|---|
+| Spoofing | An unauthenticated actor `POST`s directly to `apps/notify`'s Supabase Database Webhook endpoint to trigger arbitrary delivery attempts or probe response timing | Constant-time comparison of a shared-secret header before the body is parsed; only `record.id` is ever trusted from the payload, everything else is re-read from the database under the service-role key | `apps/notify/api/announcement-published.ts` |
+| Information Disclosure (closed by this slice) | The prior Python matcher never applied `target_roles`, so a role-targeted announcement's full title/body reached every citizen in radius, not just the target role | Role join + spatial match moved into one `security definer` SQL function granted to `service_role` only, so the caller cannot omit the role filter | `packages/db/supabase/migrations/20260819000023_announcement_push_targets.sql` |
+| Secret Exposure | `SUPABASE_SERVICE_ROLE_KEY` now has a third home (`apps/notify`, Vercel-hosted) in addition to GitHub Actions and the Cloudflare Worker; `VAPID_PRIVATE_KEY` has a second home alongside `ml/serving/predict.py` | Same handling discipline as existing homes: environment-injected only, never logged, never echoed | `docs/security/secrets-matrix.md` |
+| Denial of Service | Repeated delivery attempts for the same announcement (duplicate webhook fires, sweep overlap) | Inngest `idempotency` keyed on the announcement id collapses duplicate events; `ANNOUNCEMENT_PUSH_MAX_PER_USER_PER_HOUR` bounds per-subscriber delivery regardless of trigger count | `apps/notify/src/inngest/deliverAnnouncement.ts`, `packages/push` |
+
 ## Cross-Origin Surface (new with the two-app split)
 
 | Threat | Vector | Mitigation | Enforcement point |
