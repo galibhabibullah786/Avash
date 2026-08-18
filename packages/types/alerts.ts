@@ -24,7 +24,14 @@ export const announcementCreateSchema = z.object({
 export const announcementSchema = announcementCreateSchema.extend({
   id: z.string().uuid(),
   authorId: z.string().uuid().nullable(),
-  createdAt: z.string().datetime(),
+  // Both server-returned, read back from a Postgres `timestamptz` column
+  // via PostgREST — that comes back with a `+00:00`-style offset, not the
+  // literal `Z` suffix `.datetime()` requires, so this diverges from
+  // announcementCreateSchema's stricter client-input `expiresAt`
+  // (matches the `z.string()` convention every other server timestamp in
+  // packages/types uses, e.g. api.ts's `createdAt`/`updatedAt`).
+  createdAt: z.string(),
+  expiresAt: z.string(),
 });
 
 export type AnnouncementCreate = z.infer<typeof announcementCreateSchema>;
