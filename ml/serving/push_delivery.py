@@ -26,7 +26,6 @@ from __future__ import annotations
 import json
 import logging
 import math
-import struct
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -43,12 +42,6 @@ ALERT_PROXIMITY_RADIUS_CEILING_M = 20_000
 
 _EARTH_RADIUS_M = 6_371_000.0
 
-# Postgres's EWKB type header sets this bit when an SRID follows the type
-# word — every geom column in this schema is SRID 4326, so it is always
-# set in practice, but the parser checks the flag rather than assuming.
-_WKB_SRID_FLAG = 0x20000000
-_WKB_POINT_TYPE = 1
-
 
 def haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Great-circle distance in meters between two WGS84 points."""
@@ -61,27 +54,31 @@ def haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> 
     return _EARTH_RADIUS_M * c
 
 
-def decode_point_wkb(hex_ewkb: str) -> tuple[float, float]:
+def decode_point_geojson(geom: Any) -> tuple[float, float]:
     """Decode a PostGIS `geometry(Point, 4326)` returned by PostgREST.
 
-    A plain `select` over a geometry column comes back as Postgres's text
-    output for `geometry`, which is extended WKB (EWKB) hex — there is no
-    view here doing the `ST_X`/`ST_Y` conversion PostgREST itself cannot
-    do (see module docstring).
+    PostGIS registers a `geometry -> json`/`jsonb` cast that emits GeoJSON
+    (the same `ST_AsGeoJSON`-shaped output the `apps/api` route handlers
+    already read via `row.geom.coordinates` — see
+    `apps/api/src/lib/announcementDto.ts`'s `extractLatLng`), so a plain
+    `select` over a geometry column comes back as a parsed
+    `{"type": "Point", "coordinates": [lon, lat]}` dict, never a raw WKB
+    string — `supabase-py`'s JSON response parsing hands this function a
+    dict, not text.
 
     Returns `(lon, lat)` to match GeoJSON coordinate order.
     """
-    raw = bytes.fromhex(hex_ewkb)
-    byte_order = raw[0]
-    endian = "<" if byte_order == 1 else ">"
-    geom_type = struct.unpack_from(endian + "I", raw, 1)[0]
-    if (geom_type & 0xFFFF) != _WKB_POINT_TYPE:
-        raise ValueError(f"expected a Point geometry, got wkb type {geom_type:#x}")
-    offset = 5
-    if geom_type & _WKB_SRID_FLAG:
-        offset += 4
-    x, y = struct.unpack_from(endian + "dd", raw, offset)
-    return x, y
+    if not isinstance(geom, dict) or geom.get("type") != "Point":
+        raise ValueError(f"expected a GeoJSON Point, got {geom!r}")
+    coordinates = geom.get("coordinates")
+    if (
+        not isinstance(coordinates, (list, tuple))
+        or len(coordinates) != 2
+        or not all(isinstance(c, (int, float)) for c in coordinates)
+    ):
+        raise ValueError(f"expected a two-element numeric coordinates array, got {coordinates!r}")
+    lon, lat = coordinates
+    return float(lon), float(lat)
 
 
 @dataclass(frozen=True)
@@ -122,8 +119,8 @@ def find_matching_push_targets(
         if not geom or not user_id or radius_m is None:
             continue
         try:
-            lon, lat = decode_point_wkb(geom)
-        except (ValueError, struct.error) as exc:
+            lon, lat = decode_point_geojson(geom)
+        except ValueError as exc:
             logger.warning("skipping alert_subscription %s — unreadable geom: %s", row.get("id"), exc)
             continue
         effective_radius_m = min(radius_m, ALERT_PROXIMITY_RADIUS_CEILING_M)

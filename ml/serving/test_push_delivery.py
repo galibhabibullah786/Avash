@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 import math
-import struct
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import push_delivery  # noqa: E402
 from push_delivery import (  # noqa: E402
     PushTarget,
-    decode_point_wkb,
+    decode_point_geojson,
     find_matching_push_targets,
     haversine_distance_m,
     send_push_notifications,
@@ -35,11 +34,20 @@ CENTROID_LON = 90.4
 _METERS_PER_DEG_LAT = push_delivery._EARTH_RADIUS_M * math.pi / 180
 
 
-def _encode_point_wkb(lon: float, lat: float, srid: int = 4326) -> str:
-    """Little-endian EWKB Point hex — the inverse of decode_point_wkb,
-    used only to build fixture rows the way PostgREST would return them.
+def _geojson_point(lon: float, lat: float) -> dict:
+    """The exact shape PostgREST returns for a `geometry(Point, 4326)`
+    column — confirmed live against this project's own hosted Supabase
+    instance (`GET .../rest/v1/announcements?select=id,geom`), not a
+    hand-rolled guess. PostGIS's geometry->json cast is what produces
+    this, and it is what `supabase-py`'s JSON parsing hands to a row —
+    never a raw WKB hex string, which the old fixture here wrongly
+    assumed.
     """
-    return struct.pack("<BIIdd", 1, 0x20000001, srid, lon, lat).hex()
+    return {
+        "type": "Point",
+        "crs": {"type": "name", "properties": {"name": "EPSG:4326"}},
+        "coordinates": [lon, lat],
+    }
 
 
 def _point_due_north(distance_m: float) -> tuple[float, float]:
@@ -65,21 +73,31 @@ def test_haversine_distance_m_zero_for_identical_points():
     assert haversine_distance_m(CENTROID_LAT, CENTROID_LON, CENTROID_LAT, CENTROID_LON) == pytest.approx(0, abs=1e-6)
 
 
-# --- decode_point_wkb -----------------------------------------------------
+# --- decode_point_geojson --------------------------------------------------
 
 
-def test_decode_point_wkb_round_trips():
-    lon, lat = decode_point_wkb(_encode_point_wkb(90.4123, 23.7456))
+def test_decode_point_geojson_round_trips():
+    lon, lat = decode_point_geojson(_geojson_point(90.4123, 23.7456))
     assert lon == pytest.approx(90.4123)
     assert lat == pytest.approx(23.7456)
 
 
-def test_decode_point_wkb_rejects_non_point():
-    # WKB type 3 = Polygon, no SRID flag, minimal (and invalid past the
-    # header, which is fine — the type check must fail before that).
-    bogus = struct.pack("<BI", 1, 3).hex()
+def test_decode_point_geojson_rejects_non_point():
     with pytest.raises(ValueError):
-        decode_point_wkb(bogus)
+        decode_point_geojson({"type": "Polygon", "coordinates": [[[0, 0], [1, 1], [1, 0], [0, 0]]]})
+
+
+def test_decode_point_geojson_rejects_malformed_coordinates():
+    with pytest.raises(ValueError):
+        decode_point_geojson({"type": "Point", "coordinates": [90.4]})
+
+
+def test_decode_point_geojson_rejects_non_dict():
+    # Guards against a stale assumption resurfacing — a hex WKB string,
+    # or anything else that isn't the GeoJSON dict PostgREST actually
+    # returns, must be rejected rather than silently mishandled.
+    with pytest.raises(ValueError):
+        decode_point_geojson("0101000020E6100000...")
 
 
 # --- fake Supabase client (mimics the supabase-py table().select()...execute() chain) ---
@@ -145,14 +163,14 @@ def test_find_matching_push_targets_19km_matches_20km_radius():
                 "id": "sub-near",
                 "user_id": "user-near",
                 "active": True,
-                "geom": _encode_point_wkb(near_lon, near_lat),
+                "geom": _geojson_point(near_lon, near_lat),
                 "radius_m": 20_000,
             },
             {
                 "id": "sub-far",
                 "user_id": "user-far",
                 "active": True,
-                "geom": _encode_point_wkb(far_lon, far_lat),
+                "geom": _geojson_point(far_lon, far_lat),
                 "radius_m": 20_000,
             },
         ],
@@ -172,7 +190,7 @@ def test_find_matching_push_targets_ignores_inactive_subscriptions():
     near_lat, near_lon = _point_due_north(1_000)
     store = {
         "alert_subscriptions": [
-            {"id": "sub-1", "user_id": "user-1", "active": False, "geom": _encode_point_wkb(near_lon, near_lat), "radius_m": 20_000},
+            {"id": "sub-1", "user_id": "user-1", "active": False, "geom": _geojson_point(near_lon, near_lat), "radius_m": 20_000},
         ],
         "push_subscriptions": [
             {"id": "push-1", "user_id": "user-1", "endpoint": "e", "p256dh": "p", "auth_key": "a"},
@@ -190,7 +208,7 @@ def test_find_matching_push_targets_clamps_radius_to_ceiling():
     far_lat, far_lon = _point_due_north(20_500)
     store = {
         "alert_subscriptions": [
-            {"id": "sub-1", "user_id": "user-1", "active": True, "geom": _encode_point_wkb(far_lon, far_lat), "radius_m": 50_000},
+            {"id": "sub-1", "user_id": "user-1", "active": True, "geom": _geojson_point(far_lon, far_lat), "radius_m": 50_000},
         ],
         "push_subscriptions": [
             {"id": "push-1", "user_id": "user-1", "endpoint": "e", "p256dh": "p", "auth_key": "a"},
