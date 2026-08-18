@@ -340,6 +340,132 @@ describe('GET /api/announcements', () => {
     const res = await buildApp().request('/', { headers: { Authorization: `Bearer ${token}` } }, fakeBindings());
     expect(res.status).toBe(400);
   });
+
+  test('an unrecognised scope → 400', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'moderator' });
+    const res = await buildApp().request(
+      `/?scope=everything&lat=${CALLER_LAT}&lng=${CALLER_LNG}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(400);
+  });
+
+  test('scope=manage is refused for a citizen — it exposes rows the nearby filter would have withheld', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'citizen' });
+    const res = await buildApp().request(
+      '/?scope=manage',
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(403);
+  });
+
+  test('scope=manage needs no lat/lng — a management list is not filtered by where the moderator is standing', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'moderator' });
+    const fake = createFakeSupabase([{ path: '/rest/v1/announcements', body: [row()] }]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      '/?scope=manage',
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(200);
+    const body = paginatedResponseSchema(announcementSchema).parse(await res.json());
+    expect(body.items).toHaveLength(1);
+  });
+
+  test('scope=manage narrows to the caller\'s own rows for a moderator', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'moderator' });
+    const fake = createFakeSupabase([{ path: '/rest/v1/announcements', body: [row()] }]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    await buildApp().request('/?scope=manage', { headers: { Authorization: `Bearer ${token}` } }, fakeBindings());
+
+    const call = fake.calls.find((u) => u.pathname === '/rest/v1/announcements');
+    // Mirrors the DELETE handler's author-or-admin rule, so the list shows
+    // exactly the rows the caller is allowed to remove.
+    expect(call?.searchParams.get('author_id')).toBe(`eq.${AUTHOR_ID}`);
+  });
+
+  test('scope=manage returns every row for an admin, matching what an admin may delete', async () => {
+    const token = await signTestJwt({ sub: OTHER_MODERATOR_ID, role: 'admin' });
+    const fake = createFakeSupabase([{ path: '/rest/v1/announcements', body: [row()] }]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      '/?scope=manage',
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(200);
+
+    const call = fake.calls.find((u) => u.pathname === '/rest/v1/announcements');
+    expect(call?.searchParams.get('author_id')).toBeNull();
+    // Another moderator's row, returned because an admin may delete it.
+    const body = paginatedResponseSchema(announcementSchema).parse(await res.json());
+    expect(body.items).toHaveLength(1);
+  });
+
+  test('scope=manage keeps EXPIRED rows — their author is the one person who needs to see they lapsed', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'moderator' });
+    const fake = createFakeSupabase([
+      { path: '/rest/v1/announcements', body: [row({ expires_at: '2020-01-01T00:00:00.000Z' })] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      '/?scope=manage',
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+
+    const call = fake.calls.find((u) => u.pathname === '/rest/v1/announcements');
+    expect(call?.searchParams.get('expires_at')).toBeNull();
+    const body = paginatedResponseSchema(announcementSchema).parse(await res.json());
+    expect(body.items).toHaveLength(1);
+  });
+
+  test('scope=manage applies no role targeting or proximity filter', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'moderator' });
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/announcements',
+        // Targeted at admins only and 6km from anywhere the caller might
+        // be — the nearby scope would drop it on both counts.
+        body: [row({ target_roles: ['admin'], geom: { type: 'Point', coordinates: [CALLER_LNG, FAR_LAT] } })],
+      },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      '/?scope=manage',
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    const body = paginatedResponseSchema(announcementSchema).parse(await res.json());
+    expect(body.items).toHaveLength(1);
+  });
+
+  test('the default scope is unchanged — no scope param still means the nearby feed', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'moderator' });
+    const fake = createFakeSupabase([
+      { path: '/rest/v1/announcements', body: [row({ target_roles: ['admin'] })] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/?lat=${CALLER_LAT}&lng=${CALLER_LNG}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    const call = fake.calls.find((u) => u.pathname === '/rest/v1/announcements');
+    expect(call?.searchParams.get('expires_at')).toContain('gt.');
+    const body = paginatedResponseSchema(announcementSchema).parse(await res.json());
+    // Admin-targeted, so still filtered out for a moderator.
+    expect(body.items).toHaveLength(0);
+  });
 });
 
 describe('DELETE /api/announcements/:id', () => {

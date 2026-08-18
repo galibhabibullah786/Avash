@@ -95,6 +95,12 @@ export const ROLE_DASHBOARDS: Readonly<Record<AppRole, RoleDashboard>> = {
         description: 'Verify or reject pending breeding-site reports.',
         capability: 'reports:moderate',
       },
+      {
+        to: '/announcements',
+        label: 'Announcements',
+        description: 'Broadcast a message to an area, and retire ones you have published.',
+        capability: 'reports:moderate',
+      },
       ...CITIZEN_TILES,
     ]),
   },
@@ -112,6 +118,12 @@ export const ROLE_DASHBOARDS: Readonly<Record<AppRole, RoleDashboard>> = {
         to: '/moderation',
         label: 'Moderation queue',
         description: 'Verify or reject pending breeding-site reports.',
+        capability: 'reports:moderate',
+      },
+      {
+        to: '/announcements',
+        label: 'Announcements',
+        description: 'Broadcast a message to an area, and retire any published announcement.',
         capability: 'reports:moderate',
       },
       {

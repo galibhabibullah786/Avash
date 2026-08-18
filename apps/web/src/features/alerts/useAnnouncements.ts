@@ -13,11 +13,16 @@ import { fetchApi } from '../../lib/apiClient';
 const announcementsResponseSchema = paginatedResponseSchema(announcementSchema);
 export type AnnouncementsResponse = z.infer<typeof announcementsResponseSchema>;
 
-export interface AnnouncementsQuery extends Pick<ListQuery, 'page' | 'pageSize'> {
-  /** Decision H (docs/PROJECT_PLAN.md §6) — the route is authenticated and takes a caller-supplied point. */
-  lat: number;
-  lng: number;
-}
+/**
+ * A discriminated union rather than one shape with optional fields,
+ * because the two scopes take genuinely different inputs: `nearby` is
+ * meaningless without a point (decision H, docs/PROJECT_PLAN.md §6 — the
+ * route is authenticated and takes a caller-supplied point), and `manage`
+ * ignores one entirely. Optional lat/lng would let a nearby query compile
+ * with no point and fail at runtime with a 400.
+ */
+export type AnnouncementsQuery = Pick<ListQuery, 'page' | 'pageSize'> &
+  ({ scope?: 'nearby'; lat: number; lng: number } | { scope: 'manage' });
 
 export const ANNOUNCEMENTS_QUERY_KEY = ['alerts', 'announcements'] as const;
 
@@ -28,8 +33,9 @@ export async function fetchAnnouncements(
   const params = new URLSearchParams({
     page: String(query.page),
     pageSize: String(query.pageSize),
-    lat: String(query.lat),
-    lng: String(query.lng),
+    ...(query.scope === 'manage'
+      ? { scope: 'manage' }
+      : { lat: String(query.lat), lng: String(query.lng) }),
   });
   const result = await fetchApi(`/api/announcements?${params.toString()}`, announcementsResponseSchema, {
     accessToken,
@@ -41,14 +47,17 @@ export async function fetchAnnouncements(
 }
 
 /**
- * Never fires without both a token and a resolved point (decision H) —
- * `AnnouncementList.tsx` passes `null` for `query` until `useGeolocation()`
- * has settled, so a signed-in visitor who hasn't granted location yet sees
- * a prompt rather than a doomed request.
+ * Never fires without a token, and — in the `nearby` scope — without a
+ * resolved point either (decision H): `AnnouncementList.tsx` passes `null`
+ * for `query` until `useGeolocation()` has settled, so a signed-in visitor
+ * who hasn't granted location yet sees a prompt rather than a doomed
+ * request. The `manage` scope has no such gate, since it takes no point.
  */
 export function useAnnouncements(accessToken: string | null, query: AnnouncementsQuery | null) {
+  const scope = query?.scope ?? 'nearby';
+  const point = query && query.scope !== 'manage' ? query : null;
   return useQuery<AnnouncementsResponse, Error>({
-    queryKey: [...ANNOUNCEMENTS_QUERY_KEY, query?.page, query?.pageSize, query?.lat, query?.lng],
+    queryKey: [...ANNOUNCEMENTS_QUERY_KEY, scope, query?.page, query?.pageSize, point?.lat, point?.lng],
     queryFn: () => fetchAnnouncements(accessToken as string, query as AnnouncementsQuery),
     enabled: Boolean(accessToken) && query !== null,
     placeholderData: keepPreviousData,

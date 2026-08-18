@@ -54,6 +54,29 @@ describe('fetchAnnouncements', () => {
     );
   });
 
+  test('the manage scope sends scope=manage and NO point — a management list must not be filtered by where you are standing', async () => {
+    let capturedUrl: string | undefined;
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      capturedUrl = url;
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          items: [],
+          page: { page: 1, pageSize: 25, total: 0, hasNext: false, sort: null, dir: 'asc' },
+          requestId: 'req-1',
+        }),
+      } as Response);
+    });
+
+    const { fetchAnnouncements } = await import('./useAnnouncements');
+    await fetchAnnouncements('token-1', { scope: 'manage', page: 2, pageSize: 10 });
+
+    expect(capturedUrl).toBe('https://api.example.test/api/announcements?page=2&pageSize=10&scope=manage');
+    expect(capturedUrl).not.toContain('lat=');
+    expect(capturedUrl).not.toContain('lng=');
+  });
+
   test('resolves with parsed items on a schema-matching 200', async () => {
     mockFetchOnce({
       ok: true,

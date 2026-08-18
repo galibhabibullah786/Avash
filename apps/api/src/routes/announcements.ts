@@ -8,7 +8,7 @@ import {
   ANNOUNCEMENT_MAX_ACTIVE_PER_AUTHOR,
 } from '@avash/types';
 import { buildGenericErrorBody, logger } from '@avash/logger';
-import { ANNOUNCEMENT_CREATE_RATE_LIMIT, isAdmin, type RateLimitRedisLike } from '@avash/security';
+import { ANNOUNCEMENT_CREATE_RATE_LIMIT, can, isAdmin, type RateLimitRedisLike } from '@avash/security';
 import { auth } from '../middleware/auth';
 import { rateLimit } from '../middleware/rate-limit';
 import { createSupabaseAdmin } from '../lib/supabaseAdmin';
@@ -32,6 +32,21 @@ const announcementsGeoQuerySchema = z.object({
   lat: z.coerce.number().min(-90).max(90),
   lng: z.coerce.number().min(-180).max(180),
 });
+
+/**
+ * `nearby` (the default, and the only behaviour that existed before) is
+ * the citizen-facing feed: live rows targeted at your role, within their
+ * own radius of the point you supplied.
+ *
+ * `manage` backs the moderator/admin announcements page. It returns
+ * exactly the rows the caller is allowed to DELETE — their own, or every
+ * row for an admin, matching the author-or-admin rule the DELETE handler
+ * below enforces — and takes no point, because a management view that
+ * hides your own announcement the moment you walk out of its radius is
+ * not a management view. Expired rows are included for the same reason:
+ * their author is the one person who needs to see that they lapsed.
+ */
+const announcementsScopeSchema = z.enum(['nearby', 'manage']).default('nearby');
 
 export interface CreateAnnouncementsOptions {
   /** Test seam — route tests inject a fake in place of a real Upstash client. */
@@ -176,12 +191,31 @@ export function createAnnouncements(options?: CreateAnnouncementsOptions) {
           return c.json(buildGenericErrorBody(requestId), 401);
         }
 
-        const geoQuery = announcementsGeoQuerySchema.safeParse({
-          lat: c.req.query('lat'),
-          lng: c.req.query('lng'),
-        });
-        if (!geoQuery.success) {
+        const scope = announcementsScopeSchema.safeParse(c.req.query('scope') ?? undefined);
+        if (!scope.success) {
           return c.json(buildGenericErrorBody(requestId), 400);
+        }
+        const isManageScope = scope.data === 'manage';
+
+        // Capability check, not a role check: `manage` exposes rows the
+        // `nearby` filter would have withheld (other roles' targeting,
+        // other areas, expired rows), so it is gated on the same
+        // capability that lets you author one in the first place.
+        if (isManageScope && !can(user.role, 'reports:moderate')) {
+          return c.json(buildGenericErrorBody(requestId), 403);
+        }
+
+        // lat/lng are required for `nearby` and meaningless for `manage`.
+        let callerPoint: { lat: number; lng: number } | null = null;
+        if (!isManageScope) {
+          const geoQuery = announcementsGeoQuerySchema.safeParse({
+            lat: c.req.query('lat'),
+            lng: c.req.query('lng'),
+          });
+          if (!geoQuery.success) {
+            return c.json(buildGenericErrorBody(requestId), 400);
+          }
+          callerPoint = geoQuery.data;
         }
 
         const parsedQuery = parseListQuery(c, announcementsListQuerySchema);
@@ -195,11 +229,19 @@ export function createAnnouncements(options?: CreateAnnouncementsOptions) {
           const nowIso = new Date().toISOString();
 
           // `expires_at > now()` is the only predicate the query itself can
-          // express (decision B / the migration note — no partial index,
-          // filtered here instead). Role targeting and the proximity check
-          // cannot be expressed by PostgREST filters without an RPC this
-          // table does not have, so both run in-process below.
-          const { data, error } = await supabase.from('announcements').select('*').gt('expires_at', nowIso);
+          // express for the feed (decision B / the migration note — no
+          // partial index, filtered here instead). Role targeting and the
+          // proximity check cannot be expressed by PostgREST filters
+          // without an RPC this table does not have, so both run
+          // in-process below. `manage` narrows server-side by author
+          // instead, and keeps expired rows.
+          const baseQuery = supabase.from('announcements').select('*');
+          const scopedQuery = isManageScope
+            ? isAdmin(user.role)
+              ? baseQuery
+              : baseQuery.eq('author_id', user.id)
+            : baseQuery.gt('expires_at', nowIso);
+          const { data, error } = await scopedQuery;
 
           if (error) {
             logger.error('announcements: list read failed', { requestId });
@@ -207,9 +249,12 @@ export function createAnnouncements(options?: CreateAnnouncementsOptions) {
           }
 
           const rows = (data ?? []) as Record<string, unknown>[];
-          const visibleRows = rows.filter((row) =>
-            announcementVisibleTo(row, user.role, geoQuery.data.lat, geoQuery.data.lng)
-          );
+          // Aliased to a const so the null-check narrowing holds inside the
+          // filter callback.
+          const point = callerPoint;
+          const visibleRows = point
+            ? rows.filter((row) => announcementVisibleTo(row, user.role, point.lat, point.lng))
+            : rows;
           visibleRows.sort((a, b) => {
             const aTime = new Date(String(a.created_at)).getTime();
             const bTime = new Date(String(b.created_at)).getTime();

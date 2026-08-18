@@ -4,7 +4,7 @@ import { useSession } from '../features/auth/SessionProvider';
 import { ROLE_DASHBOARDS, ROLE_LABELS } from '../features/dashboard/roleDashboards';
 import { AlertSubscribeForm } from '../features/alerts/AlertSubscribeForm';
 import { AnnouncementList } from '../features/alerts/AnnouncementList';
-import { AnnouncementComposeForm } from '../features/alerts/AnnouncementComposeForm';
+import { PushNotificationToggle } from '../features/alerts/PushNotificationToggle';
 import '../features/dashboard/dashboard.css';
 
 /**
@@ -51,17 +51,18 @@ export default function Dashboard() {
         ))}
       </ul>
 
-      {/* Not a nav tile — there is no dedicated route for these (proximity
-          alerts and announcements are dashboard-embedded surfaces, not
-          pages of their own), so they render inline here rather than
-          through the tile list above. */}
+      {/* Not nav tiles — the proximity-alert subscription and the local
+          announcement feed are surfaces you read and act on in place, not
+          destinations, so they render inline here rather than through the
+          tile list above. Authoring announcements is a task of its own and
+          lives at /announcements, which IS a tile (moderator/admin only). */}
       <section className="dashboard__section">
         <h2 className="page__title">Proximity alerts</h2>
+        <PushNotificationToggle />
         <AlertSubscribeForm />
       </section>
 
       <section className="dashboard__section">
-        <AnnouncementComposeForm />
         <AnnouncementList />
       </section>
     </main>
