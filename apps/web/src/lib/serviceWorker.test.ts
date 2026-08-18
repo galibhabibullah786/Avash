@@ -1,5 +1,9 @@
 import { describe, test, expect, afterEach, vi } from 'vitest';
-import { ensureServiceWorkerRegistration, SERVICE_WORKER_URL } from './serviceWorker';
+import {
+  ensureServiceWorkerRegistration,
+  listenForServiceWorkerNavigation,
+  SERVICE_WORKER_URL,
+} from './serviceWorker';
 
 describe('ensureServiceWorkerRegistration', () => {
   const original = (navigator as unknown as { serviceWorker?: unknown }).serviceWorker;
@@ -77,5 +81,68 @@ describe('ensureServiceWorkerRegistration', () => {
     });
 
     expect(await ensureServiceWorkerRegistration()).toBeNull();
+  });
+});
+
+describe('listenForServiceWorkerNavigation', () => {
+  const original = (navigator as unknown as { serviceWorker?: unknown }).serviceWorker;
+
+  afterEach(() => {
+    Object.defineProperty(navigator, 'serviceWorker', { value: original, configurable: true });
+    vi.restoreAllMocks();
+  });
+
+  function stub(value: unknown) {
+    Object.defineProperty(navigator, 'serviceWorker', { value, configurable: true });
+  }
+
+  test('calls navigate with the url from a well-formed avash:navigate message', () => {
+    let handler: ((event: unknown) => void) | undefined;
+    const addEventListener = vi.fn((type: string, fn: (event: unknown) => void) => {
+      if (type === 'message') handler = fn;
+    });
+    stub({ addEventListener, removeEventListener: vi.fn() });
+
+    const navigate = vi.fn();
+    listenForServiceWorkerNavigation(navigate);
+
+    expect(addEventListener).toHaveBeenCalledWith('message', expect.any(Function));
+    handler?.({ data: { type: 'avash:navigate', url: '/dashboard?announcement=abc' } });
+    expect(navigate).toHaveBeenCalledWith('/dashboard?announcement=abc');
+  });
+
+  test('ignores a message of a different type or a malformed url', () => {
+    let handler: ((event: unknown) => void) | undefined;
+    stub({
+      addEventListener: vi.fn((type: string, fn: (event: unknown) => void) => {
+        if (type === 'message') handler = fn;
+      }),
+      removeEventListener: vi.fn(),
+    });
+
+    const navigate = vi.fn();
+    listenForServiceWorkerNavigation(navigate);
+
+    handler?.({ data: { type: 'something-else', url: '/dashboard' } });
+    handler?.({ data: { type: 'avash:navigate', url: 123 } });
+    handler?.({ data: null });
+    handler?.({});
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  test('cleanup removes the listener', () => {
+    const removeEventListener = vi.fn();
+    stub({ addEventListener: vi.fn(), removeEventListener });
+
+    const cleanup = listenForServiceWorkerNavigation(vi.fn());
+    cleanup();
+
+    expect(removeEventListener).toHaveBeenCalledWith('message', expect.any(Function));
+  });
+
+  test('returns a no-op cleanup instead of throwing when serviceWorker is unavailable', () => {
+    stub(undefined);
+    const cleanup = listenForServiceWorkerNavigation(vi.fn());
+    expect(() => cleanup()).not.toThrow();
   });
 });

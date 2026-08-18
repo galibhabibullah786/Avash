@@ -1,10 +1,23 @@
+import { useEffect, useRef } from 'react';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { useListQuery } from '../../hooks/useListQuery';
 import { useSession } from '../auth/SessionProvider';
 import { useAnnouncements } from './useAnnouncements';
+import { useAnnouncement } from './useAnnouncement';
 
 /** `GET /api/announcements` has no declared sortable columns (decision B, read-time targeting). */
 const SORTABLE: readonly string[] = [];
+
+export interface AnnouncementListProps {
+  /**
+   * The `?announcement=<id>` a deep-linked push notification lands with
+   * (see `Dashboard.tsx`, `sw.js`'s `notificationclick`). Resolved via
+   * `useAnnouncement` — independent of geolocation and of which page of
+   * the feed below it would otherwise be on — and rendered as a pinned
+   * card above the normal feed.
+   */
+  highlightedAnnouncementId?: string | null;
+}
 
 /**
  * In-app announcement feed (`GET /api/announcements`, decision H —
@@ -13,10 +26,30 @@ const SORTABLE: readonly string[] = [];
  * pattern elsewhere in this app, so the query stays `null` — and the
  * fetch never fires — until the visitor opts in.
  */
-export function AnnouncementList() {
+export function AnnouncementList({ highlightedAnnouncementId = null }: AnnouncementListProps = {}) {
   const { accessToken } = useSession();
   const geolocation = useGeolocation();
   const { query, setPage } = useListQuery(SORTABLE);
+
+  const highlighted = useAnnouncement(accessToken, highlightedAnnouncementId);
+  const highlightedItem = highlighted?.isSuccess ? highlighted.data : null;
+
+  const highlightRef = useRef<HTMLLIElement | null>(null);
+  useEffect(() => {
+    if (!highlightedItem || !highlightRef.current) {
+      return;
+    }
+    // A missing/unauthorized/errored id renders the normal dashboard
+    // silently — this effect only ever runs once a real announcement has
+    // resolved, never on a stale/broken link.
+    const prefersReducedMotion =
+      typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+        ? window.matchMedia('(prefers-reduced-motion: reduce)')?.matches
+        : false;
+    if (!prefersReducedMotion) {
+      highlightRef.current.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    }
+  }, [highlightedItem]);
 
   const hasLocation = typeof geolocation?.lat === 'number' && typeof geolocation?.lng === 'number';
   const locationFailed = geolocation?.status === 'denied' || geolocation?.status === 'unavailable';
@@ -37,6 +70,24 @@ export function AnnouncementList() {
 
   return (
     <section className="card" data-testid="announcement-list">
+      {highlightedItem ? (
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0, marginBottom: 'var(--space-3)' }}>
+          <li
+            ref={highlightRef}
+            className="card"
+            data-testid="announcement-highlighted"
+            data-highlighted="true"
+            style={{ border: '2px solid var(--color-warning)' }}
+          >
+            <h3>{highlightedItem.title}</h3>
+            <p>{highlightedItem.body}</p>
+            <p className="field__label">
+              Expires {highlightedItem.expiresAt ? new Date(highlightedItem.expiresAt).toLocaleString() : '—'}
+            </p>
+          </li>
+        </ul>
+      ) : null}
+
       <div className="page__title-row">
         <h2 className="page__title">Local announcements</h2>
         {hasLocation ? (

@@ -1,10 +1,12 @@
-import { Link } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { can, DEFAULT_APP_ROLE } from '@avash/security';
 import { useSession } from '../features/auth/SessionProvider';
 import { ROLE_DASHBOARDS, ROLE_LABELS } from '../features/dashboard/roleDashboards';
 import { AlertSubscribeForm } from '../features/alerts/AlertSubscribeForm';
 import { AnnouncementList } from '../features/alerts/AnnouncementList';
 import { PushNotificationToggle } from '../features/alerts/PushNotificationToggle';
+import { listenForServiceWorkerNavigation } from '../lib/serviceWorker';
 import '../features/dashboard/dashboard.css';
 
 /**
@@ -26,6 +28,25 @@ export default function Dashboard() {
   const tiles = (dashboard?.tiles ?? []).filter(
     (tile) => !tile?.capability || can(effectiveRole, tile.capability)
   );
+
+  // A deep-linked push notification lands here as `?announcement=<id>`
+  // (sw.js's `notificationclick` handler) — resolved via `useAnnouncement`
+  // independent of geolocation/pagination. Not validated as a UUID here:
+  // an unknown/malformed id degrades to "nothing pinned" through the same
+  // 404-swallowing path AnnouncementList already uses, rather than
+  // needing a second validation path.
+  const [searchParams] = useSearchParams();
+  const announcementId = searchParams?.get?.('announcement') ?? null;
+
+  // Wires sw.js's `avash:navigate` postMessage (sent when a subscriber
+  // clicks a notification while this tab is already open) to a
+  // client-side route change instead of a full reload. Registered here
+  // rather than at the app root: every notification this slice sends
+  // targets `/dashboard`, so a listener that only lives while Dashboard is
+  // mounted covers the real case without reaching into files outside this
+  // worker's owned paths.
+  const navigate = useNavigate();
+  useEffect(() => listenForServiceWorkerNavigation((url) => navigate(url)), [navigate]);
 
   return (
     <main className="page page--wide">
@@ -63,7 +84,7 @@ export default function Dashboard() {
       </section>
 
       <section className="dashboard__section">
-        <AnnouncementList />
+        <AnnouncementList highlightedAnnouncementId={announcementId} />
       </section>
     </main>
   );

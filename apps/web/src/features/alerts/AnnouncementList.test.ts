@@ -1,5 +1,5 @@
 import { describe, test, expect, afterEach, vi } from 'vitest';
-import { createElement } from 'react';
+import { createElement, type ComponentType } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { act } from 'react';
 
@@ -59,6 +59,17 @@ vi.mock('./useAnnouncements', () => ({
   useAnnouncements: () => announcementsState,
 }));
 
+let highlightedState: {
+  isSuccess: boolean;
+  data:
+    | { id: string; title: string; body: string; expiresAt: string }
+    | undefined;
+} = { isSuccess: false, data: undefined };
+
+vi.mock('./useAnnouncement', () => ({
+  useAnnouncement: () => highlightedState,
+}));
+
 describe('AnnouncementList', () => {
   let container: HTMLDivElement | null = null;
   let root: Root | null = null;
@@ -80,18 +91,20 @@ describe('AnnouncementList', () => {
       isFetching: false,
       refetch: refetchMock,
     };
+    highlightedState = { isSuccess: false, data: undefined };
     geolocationRequest.mockReset();
     setPageMock.mockReset();
     refetchMock.mockReset();
   });
 
-  async function render() {
+  async function render(props: { highlightedAnnouncementId?: string | null } = {}) {
     const { AnnouncementList } = await import('./AnnouncementList');
+    const Component = AnnouncementList as ComponentType<{ highlightedAnnouncementId?: string | null }>;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
     act(() => {
-      root?.render(createElement(AnnouncementList));
+      root?.render(createElement(Component, props));
     });
     return container;
   }
@@ -156,5 +169,40 @@ describe('AnnouncementList', () => {
     const refreshButton = el.querySelector('[data-testid="announcement-list-refresh"]') as HTMLButtonElement;
     expect(refreshButton.disabled).toBe(true);
     expect(refreshButton.textContent).toBe('Refreshing…');
+  });
+
+  test('a deep-linked announcement renders pinned above the feed with data-highlighted="true", even with geolocation DENIED', async () => {
+    geolocationState = { lat: null, lng: null, status: 'denied' };
+    highlightedState = {
+      isSuccess: true,
+      data: {
+        id: 'deep-linked-1',
+        title: 'Rising risk nearby',
+        body: 'Watch for standing water.',
+        expiresAt: '2026-08-20T00:00:00.000Z',
+      },
+    };
+    const el = await render({ highlightedAnnouncementId: 'deep-linked-1' });
+
+    const highlighted = el.querySelector('[data-testid="announcement-highlighted"]');
+    expect(highlighted).not.toBeNull();
+    expect(highlighted?.getAttribute('data-highlighted')).toBe('true');
+    expect(highlighted?.textContent).toContain('Rising risk nearby');
+    // The rest of the dashboard still renders its normal (location-gated) state.
+    expect(el.querySelector('[data-testid="announcement-list-locate"]')).not.toBeNull();
+  });
+
+  test('an unknown/unauthorized id renders the normal dashboard silently — no highlight, nothing throws', async () => {
+    highlightedState = { isSuccess: false, data: undefined };
+    const el = await render({ highlightedAnnouncementId: 'unknown-id' });
+
+    expect(el.querySelector('[data-testid="announcement-highlighted"]')).toBeNull();
+    expect(el.querySelector('[data-testid="announcement-list-empty"]')).not.toBeNull();
+  });
+
+  test('the highlight attribute is absent when the param is absent', async () => {
+    const el = await render();
+    expect(el.querySelector('[data-testid="announcement-highlighted"]')).toBeNull();
+    expect(el.querySelector('[data-highlighted]')).toBeNull();
   });
 });

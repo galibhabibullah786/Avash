@@ -289,6 +289,89 @@ export function createAnnouncements(options?: CreateAnnouncementsOptions) {
         }
       }
     )
+    .get(
+      '/:id',
+      auth(),
+      rateLimit({
+        guard: 'announcement-get',
+        window: 'minute',
+        windowSeconds: 60,
+        limit: ANNOUNCEMENT_CREATE_RATE_LIMIT.perMinute,
+        keyStrategy: 'user',
+        redisFactory: options?.redisFactory,
+      }),
+      async (c) => {
+        const requestId = c.get('requestId');
+        const user = c.get('user');
+        if (!user) {
+          // auth() always sets this before next() — defensive only, never
+          // exercised in practice.
+          return c.json(buildGenericErrorBody(requestId), 401);
+        }
+
+        const id = c.req.param('id');
+        if (!UUID_PATTERN.test(id)) {
+          return c.json(buildGenericErrorBody(requestId), 400);
+        }
+
+        try {
+          const supabase = createSupabaseAdmin(c.env);
+
+          const { data: rows, error: readError } = await supabase
+            .from('announcements')
+            .select('*')
+            .eq('id', id)
+            .limit(1);
+
+          if (readError) {
+            logger.error('announcements/get: read failed', { requestId });
+            return c.json(buildGenericErrorBody(requestId), 503);
+          }
+
+          const row = (rows ?? [])[0] as Record<string, unknown> | undefined;
+          // A deep-linked notification must resolve regardless of the
+          // caller's geolocation state (that's the whole point of this
+          // route), so — unlike GET /?scope=nearby — no proximity check
+          // runs here. Role targeting still applies: this mirrors
+          // announcementVisibleTo()'s role predicate exactly (empty
+          // target_roles = every role, otherwise the caller's role must be
+          // listed), just without the point-dependent radius half of that
+          // function, which has nothing to check against here.
+          //
+          // Every failure mode below — missing, expired, wrong role —
+          // returns the SAME 404. A 403 for "exists but not for you" would
+          // let an unauthorized caller distinguish a real id from a
+          // made-up one, which is itself an information leak.
+          if (!row) {
+            return c.json(buildGenericErrorBody(requestId), 404);
+          }
+
+          const expiresAt = typeof row.expires_at === 'string' ? row.expires_at : null;
+          if (!expiresAt || new Date(expiresAt).getTime() <= Date.now()) {
+            return c.json(buildGenericErrorBody(requestId), 404);
+          }
+
+          const targetRoles = Array.isArray(row.target_roles) ? (row.target_roles as unknown[]) : [];
+          const roleMatches = targetRoles.length === 0 || targetRoles.includes(user.role);
+          if (!roleMatches) {
+            return c.json(buildGenericErrorBody(requestId), 404);
+          }
+
+          const dto = toAnnouncementDto(row);
+          if (!dto) {
+            return c.json(buildGenericErrorBody(requestId), 404);
+          }
+
+          return c.json(announcementSchema.parse(dto), 200);
+        } catch (thrown) {
+          logger.error('announcements/get: unexpected failure', {
+            requestId,
+            message: thrown instanceof Error ? thrown.message : String(thrown),
+          });
+          return c.json(buildGenericErrorBody(requestId), 503);
+        }
+      }
+    )
     .delete(
       '/:id',
       auth(),

@@ -37,3 +37,34 @@ export async function ensureServiceWorkerRegistration(): Promise<ServiceWorkerRe
     return null;
   }
 }
+
+/** The message shape `sw.js`'s `notificationclick` handler posts back to the page. */
+export const SERVICE_WORKER_NAVIGATE_MESSAGE_TYPE = 'avash:navigate';
+
+/**
+ * Wires up `navigator.serviceWorker`'s `message` event so an
+ * `avash:navigate` message from `sw.js` (sent when a subscriber clicks a
+ * notification while this tab is already open and focused) drives React
+ * Router's imperative navigation instead of the full document reload
+ * `client.navigate()` would have caused. Every field on the incoming
+ * message is untrusted (R4) — checked before use, ignored otherwise.
+ *
+ * Returns a cleanup function that removes the listener; safe to call even
+ * when `navigator.serviceWorker` doesn't exist (no-op cleanup).
+ */
+export function listenForServiceWorkerNavigation(navigate: (url: string) => void): () => void {
+  const container = typeof navigator !== 'undefined' ? navigator?.serviceWorker : undefined;
+  if (!container?.addEventListener) {
+    return () => undefined;
+  }
+
+  const handler = (event: MessageEvent) => {
+    const data = event?.data as { type?: unknown; url?: unknown } | undefined;
+    if (data?.type === SERVICE_WORKER_NAVIGATE_MESSAGE_TYPE && typeof data.url === 'string' && data.url) {
+      navigate(data.url);
+    }
+  };
+
+  container.addEventListener('message', handler);
+  return () => container.removeEventListener?.('message', handler);
+}

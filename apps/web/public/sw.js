@@ -93,29 +93,75 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
+// Mirrors packages/types/alerts.ts's UUID validation (z.string().uuid())
+// — sw.js is a raw public/ asset and cannot import that package, so this
+// is hand-copied. Keep in sync with that file.
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Matches the payload `ml/serving/predict.py` builds for a region crossing into high/severe risk. */
-function readPayload(event) {
-  const fallback = {
-    title: 'Avash alert',
-    body: 'There is a new dengue risk alert for your area.',
-    url: '/dashboard',
+const RISK_FALLBACK = {
+  title: 'Avash alert',
+  body: 'There is a new dengue risk alert for your area.',
+  url: '/dashboard',
+  tag: 'avash-risk-alert',
+};
+
+/**
+ * Mirrors `announcementPushPayloadSchema` from packages/types/alerts.ts
+ * BY HAND — sw.js is a raw public/ asset and cannot import that package.
+ * If that schema ever changes, this function needs a matching edit in
+ * the same commit.
+ *
+ * `{ kind: 'announcement', title, body, announcementId }`
+ */
+function readAnnouncementPayload(data) {
+  const announcementId = typeof data?.announcementId === 'string' ? data.announcementId : '';
+  if (!UUID_PATTERN.test(announcementId)) {
+    // A malformed/missing id falls back to the generic dashboard route —
+    // never trust the shape of push data past this point.
+    return {
+      title: typeof data?.title === 'string' && data.title ? data.title : RISK_FALLBACK.title,
+      body: typeof data?.body === 'string' && data.body ? data.body : RISK_FALLBACK.body,
+      url: '/dashboard',
+      tag: RISK_FALLBACK.tag,
+    };
+  }
+  return {
+    title: typeof data?.title === 'string' && data.title ? data.title : RISK_FALLBACK.title,
+    body: typeof data?.body === 'string' && data.body ? data.body : RISK_FALLBACK.body,
+    // Built HERE from a validated UUID, never taken directly from any URL
+    // field the payload might carry — same open-redirect defence as the
+    // risk-alert path below, extended to this payload kind.
+    url: `/dashboard?announcement=${announcementId}`,
+    // Distinct per announcement so two announcements published minutes
+    // apart don't collapse into one notification in the tray; repeat
+    // deliveries of the SAME announcement (at-least-once delivery) still
+    // collapse via renotify below.
+    tag: `avash-announcement-${announcementId}`,
   };
+}
+
+function readPayload(event) {
   try {
     const data = event?.data?.json?.();
     if (!data || typeof data !== 'object') {
-      return fallback;
+      return RISK_FALLBACK;
+    }
+    if (data.kind === 'announcement') {
+      return readAnnouncementPayload(data);
     }
     return {
-      title: typeof data.title === 'string' && data.title ? data.title : fallback.title,
-      body: typeof data.body === 'string' && data.body ? data.body : fallback.body,
+      title: typeof data.title === 'string' && data.title ? data.title : RISK_FALLBACK.title,
+      body: typeof data.body === 'string' && data.body ? data.body : RISK_FALLBACK.body,
       // Only ever a same-origin path, never a URL from the payload — a
       // push message is attacker-controlled input if the VAPID key ever
       // leaks, and `notificationclick` opening an arbitrary origin would
       // turn that into an open redirect.
-      url: typeof data.regionCode === 'string' && data.regionCode ? '/risk' : fallback.url,
+      url: typeof data.regionCode === 'string' && data.regionCode ? '/risk' : RISK_FALLBACK.url,
+      tag: RISK_FALLBACK.tag,
     };
   } catch {
-    return fallback;
+    return RISK_FALLBACK;
   }
 }
 
@@ -129,9 +175,10 @@ self.addEventListener('push', (event) => {
       body: payload.body,
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
-      // Collapses repeat alerts into one notification rather than
-      // stacking one per batch run.
-      tag: 'avash-risk-alert',
+      // Per-announcement tag (or the shared risk-alert tag) collapses
+      // repeat deliveries of the SAME thing into one notification, while
+      // distinct announcements/alerts still stack as separate entries.
+      tag: payload.tag,
       renotify: true,
       data: { url: payload.url },
     })
@@ -148,7 +195,20 @@ self.addEventListener('notificationclick', (event) => {
         // Reuse an already-open tab rather than opening a duplicate.
         for (const client of clientList) {
           if (client?.url && new URL(client.url).origin === self.location.origin && client.focus) {
-            return client.focus().then(() => client.navigate?.(target));
+            return client.focus().then(() => {
+              // Preferred path: hand the target to the page over
+              // postMessage so an already-open SPA tab does a client-side
+              // route change (SessionProvider/query cache stay intact)
+              // instead of `client.navigate()`'s full document reload,
+              // which would blow away all React state.
+              if (typeof client.postMessage === 'function') {
+                client.postMessage({ type: 'avash:navigate', url: target });
+                return undefined;
+              }
+              // Fallback for a client that can't receive messages —
+              // unchanged from the original behaviour.
+              return client.navigate?.(target);
+            });
           }
         }
         return self.clients.openWindow?.(target);

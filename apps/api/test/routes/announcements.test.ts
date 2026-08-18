@@ -4,7 +4,7 @@ import { announcementSchema, paginatedResponseSchema } from '@avash/types';
 import type { RateLimitRedisLike } from '@avash/security';
 import { createAnnouncements } from '../../src/routes/announcements';
 import { requestId } from '../../src/middleware/request-id';
-import { createFakeSupabase, INVALID_SUPABASE_URL } from '../helpers/fakeSupabase';
+import { createFakeSupabase, INVALID_SUPABASE_URL, postgrestErrorBody } from '../helpers/fakeSupabase';
 import type { AppEnv, Bindings } from '../../src/types';
 import { signTestJwt } from '../helpers/fakeJwt';
 
@@ -465,6 +465,140 @@ describe('GET /api/announcements', () => {
     const body = paginatedResponseSchema(announcementSchema).parse(await res.json());
     // Admin-targeted, so still filtered out for a moderator.
     expect(body.items).toHaveLength(0);
+  });
+});
+
+describe('GET /api/announcements/:id', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function row(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      id: ANNOUNCEMENT_ID,
+      author_id: AUTHOR_ID,
+      title: 'Notice',
+      body: 'Body text',
+      geom: { type: 'Point', coordinates: [90.4, 23.7] },
+      radius_m: 5000,
+      target_roles: [],
+      expires_at: FUTURE,
+      created_at: '2026-08-18T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  test('a non-UUID id → 400, not a database call', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'citizen' });
+    const res = await buildApp().request(
+      '/not-a-uuid',
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(400);
+  });
+
+  test('an unknown id → 404', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'citizen' });
+    const fake = createFakeSupabase([{ path: '/rest/v1/announcements', body: [] }]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/${ANNOUNCEMENT_ID}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(404);
+  });
+
+  test('an announcement targeted at a different role → 404, not 403 — a 403 would confirm the id exists', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'citizen' });
+    const fake = createFakeSupabase([
+      { path: '/rest/v1/announcements', body: [row({ target_roles: ['admin'] })] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/${ANNOUNCEMENT_ID}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(404);
+  });
+
+  test('an expired announcement → 404', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'citizen' });
+    const fake = createFakeSupabase([
+      { path: '/rest/v1/announcements', body: [row({ expires_at: '2020-01-01T00:00:00.000Z' })] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/${ANNOUNCEMENT_ID}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(404);
+  });
+
+  test('a matching id → 200 with a body that parses under announcementSchema, resolving independent of geolocation (no lat/lng supplied)', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'citizen' });
+    const fake = createFakeSupabase([{ path: '/rest/v1/announcements', body: [row()] }]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/${ANNOUNCEMENT_ID}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(200);
+    const body = announcementSchema.parse(await res.json());
+    expect(body.id).toBe(ANNOUNCEMENT_ID);
+  });
+
+  test('no token → 401', async () => {
+    const res = await buildApp().request(`/${ANNOUNCEMENT_ID}`, {}, fakeBindings());
+    expect(res.status).toBe(401);
+  });
+
+  test('a Supabase client construction failure (invalid SUPABASE_URL) → 503', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'citizen' });
+    const res = await buildApp().request(
+      `/${ANNOUNCEMENT_ID}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings({ SUPABASE_URL: INVALID_SUPABASE_URL })
+    );
+    expect(res.status).toBe(503);
+  });
+
+  test('a PostgREST read error (non-2xx response) → 503', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'citizen' });
+    const fake = createFakeSupabase([
+      { path: '/rest/v1/announcements', body: postgrestErrorBody(), status: 500 },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/${ANNOUNCEMENT_ID}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(503);
+  });
+
+  test('a row whose geom cannot be parsed into a DTO → 404, not a 500 — malformed stored data never leaks as a server error', async () => {
+    const token = await signTestJwt({ sub: AUTHOR_ID, role: 'citizen' });
+    const fake = createFakeSupabase([
+      { path: '/rest/v1/announcements', body: [row({ geom: null })] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/${ANNOUNCEMENT_ID}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(404);
   });
 });
 
