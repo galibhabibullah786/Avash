@@ -122,8 +122,16 @@ audited write in the system, including the ones this feature adds.
   runs the `ST_DWithin` match between live subscriptions and whatever
   needs delivering, then calls `pywebpush`. A new announcement is
   visible in-app immediately through `GET /api/announcements`, but rides
-  the next nightly batch run for push delivery. Nothing under
-  `apps/api` runs per-request inference or holds a push-signing key.
+  the next nightly batch run for push delivery
+  (`deliver_pending_announcements`, keyed on the `announcements.pushed_at`
+  column so a later run can never re-push the same notice). Nothing
+  under `apps/api` runs per-request inference or holds a push-signing
+  key — which is also why publishing cannot notify anyone
+  synchronously, and why an announcement whose `expires_at` falls before
+  the next scheduled run will lapse without ever being pushed. That is a
+  real limitation of putting the signing key exclusively in the batch
+  job, not an oversight: moving delivery into the Worker would mean
+  giving an internet-facing edge runtime the VAPID private key.
 
 **Critical Constants:**
 

@@ -128,6 +128,7 @@
 | ADR-011 | **Docker for local infrastructure and ML reproducibility** — a PostGIS database, the Python ML runtime, and CI service containers. *(The "apps are never containerized" clause is superseded by ADR-012; everything else stands)* | Schema/RLS/spatial work needs a real PostGIS instance, and ONNX export is dependency-version-sensitive — both are worth a pinned container |
 | ADR-012 | **Both apps ship container images**, built and published per app — `apps/web` on nginx serving the Vite build, `apps/api` on Node via `@hono/node-server`. Cloudflare Pages/Workers stays the primary deploy target | Images make the project portable, handover-ready, and self-hostable without a Cloudflare account or a local toolchain, and leave a SHA-tagged artifact per merge. The cost — `apps/api` now runs on both workerd and Node — is paid explicitly: CI runs `apps/api`'s Playwright suite against **both** runtimes, so a divergence is a red build, not a surprise for whoever self-hosts |
 | ADR-013 | **Leaflet with OpenStreetMap raster tiles, no map credential** — the basemap comes from `tile.openstreetmap.org`; region polygons and markers are drawn from our own `apps/api` GeoJSON on top of it | Splits "map library" from "tile provider," which §7.1 had previously conflated. Leaflet renders our dynamic layers without a WebGL dependency on low-end hardware, and OSM tiles remove `VITE_PUBLIC_MAPBOX_TOKEN` — along with its account, scoping procedure, and rotation path — from the project entirely. The tile source is one registry constant plus one CSP `img-src` entry, so moving to a keyed or self-hosted provider under real traffic is a swap, not a rewrite |
+| ADR-016 | **A third deployable app, `apps/notify`** (Vercel + Inngest), for live announcement push | Announcement delivery is neither a per-request browser call nor a fixed-cadence batch job — it needs durable retries and per-subscriber fan-out triggered by a database write. All delivery logic lives in `packages/push` (no Vercel/Inngest imports), so `apps/notify` stays a thin, re-hostable adapter and the vendor bet is a deployment detail, not a structural commitment |
 
 New decisions get a new file in `docs/adr/`, numbered sequentially, never edited retroactively (superseded ADRs are marked, not deleted).
 
@@ -945,6 +946,11 @@ Waterfall governs the *project timeline* (mapped below to the original 10-week p
 | `ALERT_SUBSCRIBE_RATE_LIMIT` | 5/min per user | `packages/security/rateLimit.ts` | §6's `POST /api/alerts/subscribe` and `POST /api/alerts/push-subscription` rows |
 | `ANNOUNCEMENT_CREATE_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | §6's `POST /api/announcements` row |
 | `AUDIT_LOG_PAGE_SIZE_DEFAULT` | 50 | `apps/api/src/routes/audit-log.ts` | default page size for `GET /api/admin/audit-log` |
+| `ANNOUNCEMENT_PUSH_LEASE_SECONDS` | 300 | `packages/types/alerts.ts` | how long one delivery claim is held before the sweep may reclaim it |
+| `ANNOUNCEMENT_PUSH_SWEEP_CADENCE` | every 5 min | `apps/notify` Inngest cron | safety-net scan for undelivered announcements |
+| `ANNOUNCEMENT_PUSH_CONCURRENCY` | 10 | `packages/push` | simultaneous in-flight sends per delivery run |
+| `ANNOUNCEMENT_PUSH_BATCH_SIZE` | 100 | `packages/push` | targets per Inngest step, keeping each invocation inside the function time limit |
+| `ANNOUNCEMENT_PUSH_MAX_PER_USER_PER_HOUR` | 6 | `packages/push` | anti-spam ceiling per subscriber (applied per-user rather than as a global cadence) |
 
 ---
 

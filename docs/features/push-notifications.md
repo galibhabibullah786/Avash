@@ -43,11 +43,40 @@ that writes `risk_predictions` (ADR-002, ADR-007).
   different place it's computed; a later slice can move it into a
   migration-owned function without changing `push_delivery.py`'s public
   shape.
+- **`TTL` is explicit and never zero.** `pywebpush` sends `TTL: 0` when
+  the caller omits it, which means "deliver this instant or discard" —
+  so every subscriber whose laptop was shut or phone was idle silently
+  received nothing, and Windows' push service (WNS) rejected the request
+  outright with `400 Ttl value conflicts with X-WNS-Cache-Policy`,
+  making every Edge/Windows subscriber undeliverable 100% of the time.
+  Both were observed against real endpoints. `PUSH_TTL_SECONDS` (24h,
+  matching `BATCH_PREDICT_CADENCE`) is the default; an announcement
+  instead passes the time remaining until its own `expires_at`, because
+  "fogging tonight" woken up tomorrow is worse than not delivered.
+- **Announcements are delivered here too, not only risk crossings.**
+  `deliver_pending_announcements()` pushes every live announcement whose
+  `pushed_at` is still null, then stamps it so a later run cannot repeat
+  it. It runs BEFORE the risk-prediction early returns in
+  `batch_predict()`: an announcement is a person broadcasting now, and
+  an empty `risk_predictions` table used to abandon the whole delivery
+  pass. Reach is the announcement's own radius around its own point —
+  the same circle `GET /api/announcements` uses — so the push and the
+  in-app feed agree about who a notice is for. `target_roles` is the one
+  thing not applied: a `push_subscriptions` row carries only a
+  `user_id`, and resolving a role per subscriber is a join this job does
+  not do, so a role-targeted announcement over-delivers to everyone in
+  range and the targeting applies when they open the app.
 - **The browser half: a service worker plus a control that registers
   one.** Web Push has no in-page delivery path — the browser wakes a
   service worker to handle the `push` event whether or not a tab is
   open — so `apps/web/public/sw.js` is what a push is actually delivered
-  to. It handles `push` (always calling `showNotification`, which
+  to. It is registered at app boot (`main.tsx`), not on the toggle
+  click: a browser that granted permission on an earlier visit needs an
+  active worker before the dashboard can ask whether a subscription
+  still exists, and a browser only offers "Install app" for a page with
+  a manifest AND a service worker with a `fetch` handler — on
+  iOS/iPadOS an installed app is the only context where Web Push works
+  at all. It handles `push` (always calling `showNotification`, which
   `userVisibleOnly: true` requires) and `notificationclick` (focusing an
   already-open tab rather than opening a duplicate, and only ever
   navigating to a same-origin path derived in the worker, never a URL
@@ -66,6 +95,22 @@ that writes `risk_predictions` (ADR-002, ADR-007).
   `usePushSubscription`, so `push_subscriptions` was necessarily empty
   and every delivery pass matched zero targets no matter how many
   proximity subscriptions existed.
+- **Registration status is resolved from the browser, never assumed.**
+  `Notification.permission === 'granted'` says only that the user once
+  allowed notifications; it says nothing about whether a subscription
+  still exists. Deriving the UI state from it alone made the control
+  reset to "Enable push notifications" on every reload even for a
+  browser that was already registered. The hook now asks the push
+  manager, checks the subscription is bound to THIS deployment's VAPID
+  key (one bound to a different key cannot receive our pushes and would
+  make `subscribe()` reject), and then confirms the server still holds
+  the row — reading `push_subscriptions` under RLS. A browser and its
+  server row can drift apart (row deleted, backup restored, a 410
+  cleanup racing a re-subscribe), and that combination is silently
+  undeliverable forever, because the browser believes it is already
+  subscribed and never re-registers. When the row is missing it
+  re-POSTs; when it is present nothing is written, so a page load is not
+  a write.
 - **Not a WebSocket, and not a connection the app holds open.** The push
   travels from this batch job to the browser vendor's push service
   (signed with `VAPID_PRIVATE_KEY`) and from there to the service
@@ -138,7 +183,8 @@ that writes `risk_predictions` (ADR-002, ADR-007).
 | Constant | Value | Defined in | Purpose |
 |---|---|---|---|
 | `ALERT_PROXIMITY_RADIUS_DEFAULT_M` | 2000 (bounds: 100–20,000) | `packages/geo`, `alert_subscriptions` check constraint | default/ceiling every proximity match (including this one) clamps to; no new constant introduced here — this delivery path reuses the existing registry entry |
-| `BATCH_PREDICT_CADENCE` | every 24h | `.github/workflows/cron-batch-predict.yml` | how often a region can cross into `high`/`severe` and trigger a push |
+| `BATCH_PREDICT_CADENCE` | every 24h | `.github/workflows/cron-batch-predict.yml` | how often a region can cross into `high`/`severe` and trigger a push; also how often a published announcement goes out |
+| `PUSH_TTL_SECONDS` | 86,400 (24h) | `ml/serving/push_delivery.py` | how long a push service holds a message for an offline device. Must not be 0 — that discards it unless the device is awake at that instant, and WNS rejects it outright |
 
 **Security Considerations:**
 
@@ -207,3 +253,32 @@ The test account's `push_subscriptions` row was deleted afterwards,
 since the endpoint belonged to a throwaway browser profile. The 410
 cleanup path is still only covered by its unit test — provoking a real
 `410` needs a subscription to be revoked out-of-band and left to expire.
+
+2026-08-18, follow-up pass after "push still isn't working", against the
+same hosted project and real endpoints (Chrome/FCM and Edge/WNS):
+
+- **WNS rejected every send with `400`**, header
+  `X-WNS-ERROR-DESCRIPTION: Ttl value conflicts with X-WNS-Cache-Policy`
+  — reproduced, then confirmed accepted after passing an explicit
+  non-zero `TTL`. This is why nothing ever arrived on Windows/Edge.
+- Enabling notifications, then reloading twice and opening a new tab,
+  now reports "on" every time; previously it reverted to the Enable
+  button on each load.
+- The browser/server drift repair fired for real: a live browser
+  subscription whose row had been deleted was detected on mount and
+  re-registered, and a subsequent load with the row present performed no
+  write.
+- Publishing an announcement and running the delivery job produced the
+  notification in the browser, with the second run reporting 0 attempts
+  (no duplicate delivery).
+- The service worker is active and controlling at boot with no click,
+  and an offline navigation renders the offline page instead of the
+  browser's network-error page.
+
+Not verified here: the `offline.html` PRECACHE specifically. The Cache
+API is unavailable in the sandbox this was run in — `caches.open()`
+fails with an internal error even on a clean profile — so only the
+inline fallback path could be exercised. That fallback is deliberately
+independent of the cache for this reason, so an offline navigation
+degrades to a plain page rather than the browser's error screen either
+way.

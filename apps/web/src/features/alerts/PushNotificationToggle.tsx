@@ -2,7 +2,8 @@ import { useSession } from '../auth/SessionProvider';
 import { usePushSubscription } from '../../hooks/usePushSubscription';
 
 /**
- * Registers this browser to receive Web Push alerts.
+ * Registers this browser to receive Web Push alerts, and reports whether
+ * it already is.
  *
  * Without this control nothing ever called `usePushSubscription`, so
  * `push_subscriptions` stayed empty and `ml/serving/push_delivery.py` had
@@ -17,12 +18,28 @@ import { usePushSubscription } from '../../hooks/usePushSubscription';
 export function PushNotificationToggle() {
   const { accessToken } = useSession();
   const push = usePushSubscription(accessToken ?? null);
-  const status = push?.status ?? 'idle';
+  const status = push?.status ?? 'checking';
+
+  // Resolving the real state needs a round trip to the service worker
+  // registration, so render nothing rather than flashing "Enable" at a
+  // browser that turns out to be subscribed already.
+  if (status === 'checking') {
+    return <p className="status-panel__item" data-testid="push-toggle-checking">Checking notification status…</p>;
+  }
 
   if (status === 'unsupported') {
     return (
       <p className="status-panel__item" data-testid="push-toggle-unsupported">
-        This browser doesn't support push notifications, so alerts will only appear here on the dashboard.
+        This browser doesn't support push notifications, so alerts will only appear here on the dashboard. On iPhone
+        or iPad, add Avash to your Home Screen first — Safari only offers notifications to an installed app.
+      </p>
+    );
+  }
+
+  if (status === 'unconfigured') {
+    return (
+      <p className="field__error" data-testid="push-toggle-unconfigured">
+        Push notifications aren't configured for this deployment, so alerts will only appear here on the dashboard.
       </p>
     );
   }

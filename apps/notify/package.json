@@ -1,0 +1,21 @@
+{
+  "name": "notify",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@avash/push": "workspace:*",
+    "@avash/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@avash/eslint-config": "workspace:*",
+    "@types/node": "^26.1.2",
+    "eslint": "^10.8.0",
+    "typescript": "^6.0.3"
+  }
+}

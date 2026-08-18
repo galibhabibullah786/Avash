@@ -56,3 +56,51 @@ export const pushSubscriptionRegisterSchema = z.object({
   authKey: z.string().min(1).max(256),
 });
 export type PushSubscriptionRegister = z.infer<typeof pushSubscriptionRegisterSchema>;
+
+/** `ANNOUNCEMENT_PUSH_LEASE_SECONDS` (§14) — how long one delivery claim is held before the sweep may reclaim it. */
+export const ANNOUNCEMENT_PUSH_LEASE_SECONDS = 300;
+/** `ANNOUNCEMENT_PUSH_SWEEP_CADENCE` (§14) — safety-net scan cadence for undelivered announcements. */
+export const ANNOUNCEMENT_PUSH_SWEEP_CADENCE = '*/5 * * * *';
+/** `ANNOUNCEMENT_PUSH_CONCURRENCY` (§14) — simultaneous in-flight sends per delivery run. */
+export const ANNOUNCEMENT_PUSH_CONCURRENCY = 10;
+/** `ANNOUNCEMENT_PUSH_BATCH_SIZE` (§14) — targets per Inngest step, keeping each invocation inside the function time limit. */
+export const ANNOUNCEMENT_PUSH_BATCH_SIZE = 100;
+/** `ANNOUNCEMENT_PUSH_MAX_PER_USER_PER_HOUR` (§14) — anti-spam ceiling per subscriber, applied per-user rather than as a global cadence. */
+export const ANNOUNCEMENT_PUSH_MAX_PER_USER_PER_HOUR = 6;
+
+/**
+ * What `packages/push` sends and `apps/web/public/sw.js` receives.
+ * NOTE: sw.js cannot import this file (it is a raw public/ asset, not a
+ * bundled module). Any change here must be mirrored into readPayload() in
+ * the same commit.
+ */
+export const announcementPushPayloadSchema = z.object({
+  kind: z.literal('announcement'),
+  title: z.string().min(1).max(ANNOUNCEMENT_TITLE_MAX_CHARS),
+  body: z.string().min(1).max(ANNOUNCEMENT_BODY_MAX_CHARS),
+  announcementId: z.string().uuid(),
+});
+export type AnnouncementPushPayload = z.infer<typeof announcementPushPayloadSchema>;
+
+/**
+ * Supabase Database Webhook body. Only `record.id` is ever used —
+ * everything else is re-read from the database (decision F, critique
+ * §11 in temp/live-announcement-push.md).
+ */
+export const announcementWebhookBodySchema = z.object({
+  type: z.literal('INSERT'),
+  table: z.literal('announcements'),
+  record: z.object({ id: z.string().uuid() }),
+});
+export type AnnouncementWebhookBody = z.infer<typeof announcementWebhookBodySchema>;
+
+/** What one delivery pass reports back. */
+export const announcementPushResultSchema = z.object({
+  announcementId: z.string().uuid(),
+  claimed: z.boolean(),
+  targetCount: z.number().int().min(0),
+  sent: z.number().int().min(0),
+  gone: z.number().int().min(0), // 410s, rows deleted
+  failed: z.number().int().min(0),
+});
+export type AnnouncementPushResult = z.infer<typeof announcementPushResultSchema>;

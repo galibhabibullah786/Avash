@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +39,7 @@ from supabase import Client, create_client
 # this directory on sys.path). Adding it explicitly makes the following
 # import work either way.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from push_delivery import deliver_region_alert  # noqa: E402
+from push_delivery import deliver_pending_announcements, deliver_region_alert  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -100,18 +101,39 @@ def _region_centroid(supabase: Client, region_id: str) -> dict[str, Any] | None:
 def batch_predict() -> None:
     supabase = _build_supabase_client()
 
+    vapid_public_key = os.environ.get("VAPID_PUBLIC_KEY")
+    vapid_private_key = os.environ.get("VAPID_PRIVATE_KEY")
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # Announcements first, and unconditionally. They are a human
+    # broadcasting to an area right now, not a model output, so they must
+    # not sit behind the risk-prediction early returns below — an empty
+    # `risk_predictions` table or a run with no crossing used to abandon
+    # the whole delivery pass, which meant a published announcement
+    # notified nobody on a system that had not run inference yet.
+    announcements_sent = deliver_pending_announcements(
+        supabase,
+        vapid_public_key=vapid_public_key,
+        vapid_private_key=vapid_private_key,
+        vapid_claims={"sub": _VAPID_CLAIMS_SUBJECT},
+        now_iso=now_iso,
+    )
+
     predictions = supabase.table("risk_predictions").select("*").execute().data or []
     if not predictions:
-        logger.info("risk_predictions is empty — nothing to score against, skipping delivery entirely")
+        logger.info(
+            "risk_predictions is empty — no risk alerts to score; %d announcement push attempt(s) already sent",
+            announcements_sent,
+        )
         return
 
     crossings = _find_crossings(predictions)
     if not crossings:
-        logger.info("no region crossed into high/severe risk this run — nothing to deliver")
+        logger.info(
+            "no region crossed into high/severe risk this run; %d announcement push attempt(s) sent",
+            announcements_sent,
+        )
         return
-
-    vapid_public_key = os.environ.get("VAPID_PUBLIC_KEY")
-    vapid_private_key = os.environ.get("VAPID_PRIVATE_KEY")
 
     total_sent = 0
     for prediction in crossings:
@@ -140,7 +162,13 @@ def batch_predict() -> None:
         total_sent += sent
         logger.info("region %s crossed into %s — %d push attempt(s)", region.get("code"), prediction.get("risk_level"), sent)
 
-    logger.info("batch_predict delivery pass complete — %d region(s) crossed, %d push attempt(s) total", len(crossings), total_sent)
+    logger.info(
+        "batch_predict delivery pass complete — %d region(s) crossed, %d risk push attempt(s), "
+        "%d announcement push attempt(s)",
+        len(crossings),
+        total_sent,
+        announcements_sent,
+    )
 
 
 if __name__ == "__main__":

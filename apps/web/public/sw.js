@@ -13,20 +13,84 @@
  * browser vendor's push service (signed with the VAPID private key) and
  * from there to this worker; the app itself may be closed entirely.
  *
- * Deliberately no offline/caching strategy here. `public/offline.html`
- * exists but nothing has ever registered a worker to serve it, and adding
- * a fetch handler would change what every request in the app resolves to
- * — a separate decision from making push work.
+ * The fetch handler below is deliberately minimal: a navigation that the
+ * network cannot serve falls back to `public/offline.html`, and every
+ * other request passes through untouched. It is NOT the Workbox
+ * precaching strategy docs/PROJECT_PLAN.md §10 describes for the offline
+ * ONNX/model-snapshot feature — that is a separate piece of work, and
+ * quietly caching every asset here would change what the whole app
+ * resolves to. It exists because a browser will not offer to install a
+ * PWA without a fetch handler, and on iOS/iPadOS an installed app is the
+ * only place Web Push works at all.
  */
+
+const OFFLINE_URL = '/offline.html';
+const OFFLINE_CACHE = 'avash-offline-v1';
+
+/**
+ * `fetch` + `cache.put`, deliberately not `cache.add`: Chrome rejects
+ * `add()` here with `InvalidAccessError: Entry already exists` (observed,
+ * not theorised), which left the cache empty and the offline fallback
+ * dead while the install still reported success. `put` takes a response
+ * this code already holds, so a failure is visible in the status check
+ * rather than swallowed by the helper.
+ */
+async function precacheOfflinePage() {
+  const cache = await caches.open(OFFLINE_CACHE);
+  const response = await fetch(OFFLINE_URL, { cache: 'reload' });
+  if (response?.ok) {
+    await cache.put(OFFLINE_URL, response);
+  }
+}
 
 // A newly installed worker would otherwise sit in "waiting" until every
 // tab closes, so a subscriber who reloads still runs the old handler.
-self.addEventListener('install', () => {
-  self.skipWaiting();
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    precacheOfflinePage()
+      .catch(() => undefined)
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((key) => key !== OFFLINE_CACHE).map((key) => caches.delete(key))))
+      .catch(() => undefined)
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  // Navigations only. API calls, Supabase requests and static assets are
+  // left entirely alone — an offline page served in place of a failed
+  // fetch() would be far worse than the failure itself.
+  if (event.request?.mode !== 'navigate') {
+    return;
+  }
+  event.respondWith(
+    fetch(event.request).catch(async () => {
+      const cached = await caches.match(OFFLINE_URL);
+      // Always a real Response, never Response.error(): the browser
+      // renders its own network-error page for a rejected navigation,
+      // which is the exact outcome this handler exists to replace. If
+      // the precache did not survive, an inline page still beats that.
+      return (
+        cached ??
+        new Response(
+          '<!doctype html><html lang="en"><meta charset="utf-8">' +
+            '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+            '<title>Offline — Avash</title>' +
+            '<body style="font-family:system-ui;background:#0b1220;color:#f5f7fa;display:grid;' +
+            'place-items:center;height:100vh;margin:0;text-align:center">' +
+            '<main><h1>You are offline</h1><p>Reconnect and try again.</p></main>',
+          { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+        )
+      );
+    })
+  );
 });
 
 /** Matches the payload `ml/serving/predict.py` builds for a region crossing into high/severe risk. */

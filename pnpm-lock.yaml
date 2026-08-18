@@ -119,6 +119,28 @@ importers:
         specifier: ^4.118.0
         version: 4.118.0(@cloudflare/workers-types@5.20260814.1)
 
+  apps/notify:
+    dependencies:
+      '@avash/push':
+        specifier: workspace:*
+        version: link:../../packages/push
+      '@avash/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+    devDependencies:
+      '@avash/eslint-config':
+        specifier: workspace:*
+        version: link:../../packages/config/eslint-config
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.2.0
+      eslint:
+        specifier: ^10.8.0
+        version: 10.8.1
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   apps/web:
     dependencies:
       '@avash/security':
@@ -210,6 +232,15 @@ importers:
   packages/logger: {}
 
   packages/ml-inference: {}
+
+  packages/push:
+    dependencies:
+      '@avash/types':
+        specifier: workspace:*
+        version: link:../types
+      '@supabase/supabase-js':
+        specifier: ^2.112.3
+        version: 2.112.3
 
   packages/security:
     dependencies:

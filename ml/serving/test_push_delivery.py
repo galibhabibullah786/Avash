@@ -125,6 +125,21 @@ class _FakeQuery:
         self._op = "delete"
         return self
 
+    def is_(self, col, val):
+        # PostgREST spells `is null` as the string "null", which is what
+        # supabase-py passes through — not Python's None.
+        self._filters.append(("is", col, None if val == "null" else val))
+        return self
+
+    def gt(self, col, val):
+        self._filters.append(("gt", col, val))
+        return self
+
+    def update(self, patch):
+        self._op = "update"
+        self._patch = patch
+        return self
+
     def _matching_rows(self):
         rows = self._store[self._table]
         for kind, col, val in self._filters:
@@ -132,6 +147,10 @@ class _FakeQuery:
                 rows = [r for r in rows if r.get(col) == val]
             elif kind == "in":
                 rows = [r for r in rows if r.get(col) in val]
+            elif kind == "is":
+                rows = [r for r in rows if r.get(col) is val]
+            elif kind == "gt":
+                rows = [r for r in rows if (r.get(col) or "") > val]
         return rows
 
     def execute(self):
@@ -139,6 +158,9 @@ class _FakeQuery:
         if self._op == "delete":
             ids = {r["id"] for r in rows}
             self._store[self._table] = [r for r in self._store[self._table] if r["id"] not in ids]
+        elif self._op == "update":
+            for row in rows:
+                row.update(self._patch)
         return SimpleNamespace(data=rows)
 
 
@@ -243,7 +265,7 @@ def test_send_push_notifications_deletes_only_the_410_row(monkeypatch, caplog):
     fake_private_key = "FAKE-VAPID-PRIVATE-KEY-DO-NOT-LEAK-INTO-LOGS"
     calls = []
 
-    def fake_webpush(subscription_info, data, vapid_private_key, vapid_claims):
+    def fake_webpush(subscription_info, data, vapid_private_key, vapid_claims, ttl):
         calls.append(subscription_info["endpoint"])
         if subscription_info["endpoint"].endswith("/1"):
             raise WebPushException("push service returned 410", response=_FakeResponse(410))
@@ -279,7 +301,7 @@ def test_send_push_notifications_leaves_row_on_non_410_failure(monkeypatch):
     client = FakeSupabaseClient(store)
     targets = [PushTarget("push-1", "https://push.example/1", "p1", "a1")]
 
-    def fake_webpush(subscription_info, data, vapid_private_key, vapid_claims):
+    def fake_webpush(subscription_info, data, vapid_private_key, vapid_claims, ttl):
         raise WebPushException("boom", response=_FakeResponse(500))
 
     monkeypatch.setattr(push_delivery, "webpush", fake_webpush)
@@ -308,7 +330,7 @@ def test_send_push_notifications_survives_unexpected_exception(monkeypatch):
         PushTarget("push-2", "https://push.example/2", "p2", "a2"),
     ]
 
-    def fake_webpush(subscription_info, data, vapid_private_key, vapid_claims):
+    def fake_webpush(subscription_info, data, vapid_private_key, vapid_claims, ttl):
         if subscription_info["endpoint"].endswith("/1"):
             raise ConnectionError("network blip")
         return None  # second send succeeds
@@ -346,3 +368,309 @@ def test_deliver_region_alert_skips_when_vapid_keys_missing(caplog):
 
     assert sent == 0
     assert any("VAPID keys not configured" in record.getMessage() for record in caplog.records)
+
+
+# --- deliver_pending_announcements ------------------------------------------
+
+
+def _announcement(**overrides) -> dict:
+    row = {
+        "id": "ann-1",
+        "title": "Fogging tonight",
+        "body": "Ward 12 will be fogged after 9pm.",
+        "geom": _geojson_point(CENTROID_LON, CENTROID_LAT),
+        "radius_m": 5_000,
+        "expires_at": "2099-01-01T00:00:00+00:00",
+        "pushed_at": None,
+    }
+    row.update(overrides)
+    return row
+
+
+def _subscriber_at(distance_m: float, *, radius_m: int, user_id: str, sub_id: str) -> dict:
+    lat, lon = _point_due_north(distance_m)
+    return {
+        "id": sub_id,
+        "user_id": user_id,
+        "active": True,
+        "geom": _geojson_point(lon, lat),
+        "radius_m": radius_m,
+    }
+
+
+def _push_row(user_id: str, push_id: str) -> dict:
+    return {
+        "id": push_id,
+        "user_id": user_id,
+        "endpoint": f"https://push.example.com/{push_id}",
+        "p256dh": "p",
+        "auth_key": "a",
+    }
+
+
+def _deliver(client, monkeypatch, now_iso="2026-08-18T00:00:00+00:00"):
+    sends: list[dict] = []
+    monkeypatch.setattr(
+        push_delivery,
+        "webpush",
+        lambda subscription_info, data, vapid_private_key, vapid_claims, ttl: sends.append(
+            {"endpoint": subscription_info["endpoint"], "data": data}
+        ),
+    )
+    count = push_delivery.deliver_pending_announcements(
+        client,
+        vapid_public_key="pub",
+        vapid_private_key="priv",
+        vapid_claims={"sub": "mailto:test@example.com"},
+        now_iso=now_iso,
+    )
+    return count, sends
+
+
+def test_deliver_pending_announcements_reaches_a_subscriber_inside_the_announcement_radius(monkeypatch):
+    store = {
+        "announcements": [_announcement(radius_m=5_000)],
+        # A tight 500m personal radius: under the region-crossing rule
+        # this subscriber would NOT match at 3km out, but an announcement
+        # asks who is inside ITS circle, not inside theirs.
+        "alert_subscriptions": [_subscriber_at(3_000, radius_m=500, user_id="u1", sub_id="s1")],
+        "push_subscriptions": [_push_row("u1", "push-1")],
+    }
+    count, sends = _deliver(FakeSupabaseClient(store), monkeypatch)
+
+    assert count == 1
+    assert len(sends) == 1
+    assert "Fogging tonight" in sends[0]["data"]
+
+
+def test_deliver_pending_announcements_skips_a_subscriber_outside_the_announcement_radius(monkeypatch):
+    store = {
+        "announcements": [_announcement(radius_m=5_000)],
+        # A 20km personal radius does not buy a seat at a 5km broadcast:
+        # the announcement's own circle is what decides.
+        "alert_subscriptions": [_subscriber_at(9_000, radius_m=20_000, user_id="u1", sub_id="s1")],
+        "push_subscriptions": [_push_row("u1", "push-1")],
+    }
+    count, sends = _deliver(FakeSupabaseClient(store), monkeypatch)
+
+    assert count == 0
+    assert sends == []
+
+
+def test_deliver_pending_announcements_stamps_pushed_at_so_the_next_run_does_not_repeat_it(monkeypatch):
+    store = {
+        "announcements": [_announcement()],
+        "alert_subscriptions": [_subscriber_at(1_000, radius_m=2_000, user_id="u1", sub_id="s1")],
+        "push_subscriptions": [_push_row("u1", "push-1")],
+    }
+    client = FakeSupabaseClient(store)
+
+    first_count, first_sends = _deliver(client, monkeypatch)
+    assert first_count == 1
+    assert store["announcements"][0]["pushed_at"] == "2026-08-18T00:00:00+00:00"
+
+    # A second scheduled run must find nothing — without the stamp every
+    # run would re-push every live announcement.
+    second_count, second_sends = _deliver(client, monkeypatch)
+    assert second_count == 0
+    assert second_sends == []
+
+
+def test_deliver_pending_announcements_stamps_even_when_nobody_was_in_range(monkeypatch):
+    store = {
+        "announcements": [_announcement(radius_m=1_000)],
+        "alert_subscriptions": [_subscriber_at(50_000, radius_m=20_000, user_id="u1", sub_id="s1")],
+        "push_subscriptions": [_push_row("u1", "push-1")],
+    }
+    client = FakeSupabaseClient(store)
+    count, sends = _deliver(client, monkeypatch)
+
+    # Delivered to zero subscribers is still delivered; leaving it null
+    # would make every future run re-scan this row forever.
+    assert (count, sends) == (0, [])
+    assert store["announcements"][0]["pushed_at"] == "2026-08-18T00:00:00+00:00"
+
+
+def test_deliver_pending_announcements_ignores_an_already_delivered_row(monkeypatch):
+    store = {
+        "announcements": [_announcement(pushed_at="2026-08-17T00:00:00+00:00")],
+        "alert_subscriptions": [_subscriber_at(1_000, radius_m=2_000, user_id="u1", sub_id="s1")],
+        "push_subscriptions": [_push_row("u1", "push-1")],
+    }
+    count, sends = _deliver(FakeSupabaseClient(store), monkeypatch)
+    assert (count, sends) == (0, [])
+
+
+def test_deliver_pending_announcements_ignores_an_expired_row(monkeypatch):
+    store = {
+        "announcements": [_announcement(expires_at="2020-01-01T00:00:00+00:00")],
+        "alert_subscriptions": [_subscriber_at(1_000, radius_m=2_000, user_id="u1", sub_id="s1")],
+        "push_subscriptions": [_push_row("u1", "push-1")],
+    }
+    count, sends = _deliver(FakeSupabaseClient(store), monkeypatch)
+    assert (count, sends) == (0, [])
+
+
+def test_deliver_pending_announcements_leaves_an_unreadable_geom_undelivered(monkeypatch, caplog):
+    store = {
+        "announcements": [_announcement(geom="not-geojson")],
+        "alert_subscriptions": [_subscriber_at(1_000, radius_m=2_000, user_id="u1", sub_id="s1")],
+        "push_subscriptions": [_push_row("u1", "push-1")],
+    }
+    client = FakeSupabaseClient(store)
+    with caplog.at_level(logging.WARNING):
+        count, sends = _deliver(client, monkeypatch)
+
+    assert (count, sends) == (0, [])
+    # NOT stamped: a data problem should resurface next run, not be
+    # silently marked as sent.
+    assert store["announcements"][0]["pushed_at"] is None
+    assert any("unreadable geom" in record.getMessage() for record in caplog.records)
+
+
+def test_deliver_pending_announcements_skips_entirely_without_vapid_keys(caplog):
+    store = {"announcements": [_announcement()], "alert_subscriptions": [], "push_subscriptions": []}
+    with caplog.at_level(logging.WARNING):
+        sent = push_delivery.deliver_pending_announcements(
+            FakeSupabaseClient(store),
+            vapid_public_key=None,
+            vapid_private_key=None,
+            vapid_claims={"sub": "mailto:test@example.com"},
+            now_iso="2026-08-18T00:00:00+00:00",
+        )
+
+    assert sent == 0
+    # Crucially NOT stamped — a run that could not send must not mark the
+    # announcement as delivered, or it would never go out.
+    assert store["announcements"][0]["pushed_at"] is None
+    assert any("VAPID keys not configured" in record.getMessage() for record in caplog.records)
+
+
+def test_announcement_radius_clamps_to_its_own_50km_ceiling_not_the_20km_subscription_one(monkeypatch):
+    store = {
+        "announcements": [_announcement(radius_m=45_000)],
+        "alert_subscriptions": [_subscriber_at(30_000, radius_m=500, user_id="u1", sub_id="s1")],
+        "push_subscriptions": [_push_row("u1", "push-1")],
+    }
+    count, sends = _deliver(FakeSupabaseClient(store), monkeypatch)
+
+    # 30km out is inside a 45km broadcast. Reusing the subscription
+    # ceiling (20km) here would have silently dropped this recipient.
+    assert count == 1
+    assert len(sends) == 1
+
+
+# --- TTL --------------------------------------------------------------------
+
+
+def _capture_ttl(monkeypatch) -> list:
+    seen: list = []
+
+    def fake_webpush(subscription_info, data, vapid_private_key, vapid_claims, ttl):
+        seen.append({"ttl": ttl, "aud": vapid_claims.get("aud"), "endpoint": subscription_info["endpoint"]})
+        # pywebpush MUTATES the claims dict it is handed, writing an
+        # `aud` derived from the endpoint. Reproduced here because the
+        # bug it causes — signing endpoint B with endpoint A's audience —
+        # is invisible unless the double is equally rude.
+        vapid_claims["aud"] = subscription_info["endpoint"].split("/", 3)[0:3]
+
+    monkeypatch.setattr(push_delivery, "webpush", fake_webpush)
+    return seen
+
+
+def test_send_push_notifications_never_uses_ttl_zero(monkeypatch):
+    seen = _capture_ttl(monkeypatch)
+    client = FakeSupabaseClient({"push_subscriptions": []})
+
+    send_push_notifications(
+        client,
+        [PushTarget(subscription_id="p1", endpoint="https://push.example.com/1", p256dh="p", auth_key="a")],
+        {"title": "x"},
+        vapid_private_key="k",
+        vapid_claims={"sub": "mailto:test@example.com"},
+    )
+
+    # TTL 0 means "deliver this instant or discard", so a closed laptop
+    # gets nothing — and Windows' push service rejects it outright with
+    # `400 Ttl value conflicts with X-WNS-Cache-Policy`, which made every
+    # Edge/Windows subscriber undeliverable.
+    assert seen[0]["ttl"] == push_delivery.PUSH_TTL_SECONDS
+    assert seen[0]["ttl"] > 0
+
+
+def test_each_send_gets_its_own_claims_dict(monkeypatch):
+    seen = _capture_ttl(monkeypatch)
+    client = FakeSupabaseClient({"push_subscriptions": []})
+    claims = {"sub": "mailto:test@example.com"}
+
+    send_push_notifications(
+        client,
+        [
+            PushTarget(subscription_id="p1", endpoint="https://a.example.com/1", p256dh="p", auth_key="a"),
+            PushTarget(subscription_id="p2", endpoint="https://b.example.com/2", p256dh="p", auth_key="a"),
+        ],
+        {"title": "x"},
+        vapid_private_key="k",
+        vapid_claims=claims,
+    )
+
+    # Neither send may inherit the other's audience, and the caller's own
+    # dict must come back unmodified.
+    assert seen[0]["aud"] is None and seen[1]["aud"] is None
+    assert claims == {"sub": "mailto:test@example.com"}
+
+
+def test_announcement_ttl_follows_its_own_expiry(monkeypatch):
+    store = {
+        "announcements": [_announcement(expires_at="2026-08-18T02:00:00+00:00")],
+        "alert_subscriptions": [_subscriber_at(1_000, radius_m=2_000, user_id="u1", sub_id="s1")],
+        "push_subscriptions": [_push_row("u1", "push-1")],
+    }
+    seen = _capture_ttl(monkeypatch)
+    push_delivery.deliver_pending_announcements(
+        FakeSupabaseClient(store),
+        vapid_public_key="pub",
+        vapid_private_key="priv",
+        vapid_claims={"sub": "mailto:test@example.com"},
+        now_iso="2026-08-18T00:00:00+00:00",
+    )
+
+    # Two hours left, so the push service must not wake a device with it
+    # tomorrow — "fogging tonight" delivered late is worse than dropped.
+    assert seen[0]["ttl"] == 7_200
+
+
+def test_announcement_ttl_clamps_to_the_default_ceiling(monkeypatch):
+    store = {
+        "announcements": [_announcement(expires_at="2099-01-01T00:00:00+00:00")],
+        "alert_subscriptions": [_subscriber_at(1_000, radius_m=2_000, user_id="u1", sub_id="s1")],
+        "push_subscriptions": [_push_row("u1", "push-1")],
+    }
+    seen = _capture_ttl(monkeypatch)
+    push_delivery.deliver_pending_announcements(
+        FakeSupabaseClient(store),
+        vapid_public_key="pub",
+        vapid_private_key="priv",
+        vapid_claims={"sub": "mailto:test@example.com"},
+        now_iso="2026-08-18T00:00:00+00:00",
+    )
+
+    assert seen[0]["ttl"] == push_delivery.PUSH_TTL_SECONDS
+
+
+def test_announcement_ttl_falls_back_rather_than_dropping_to_zero_on_a_bad_timestamp(monkeypatch):
+    store = {
+        "announcements": [_announcement(expires_at="not-a-timestamp")],
+        "alert_subscriptions": [_subscriber_at(1_000, radius_m=2_000, user_id="u1", sub_id="s1")],
+        "push_subscriptions": [_push_row("u1", "push-1")],
+    }
+    seen = _capture_ttl(monkeypatch)
+    push_delivery.deliver_pending_announcements(
+        FakeSupabaseClient(store),
+        vapid_public_key="pub",
+        vapid_private_key="priv",
+        vapid_claims={"sub": "mailto:test@example.com"},
+        now_iso="2026-08-18T00:00:00+00:00",
+    )
+
+    assert seen[0]["ttl"] == push_delivery.PUSH_TTL_SECONDS

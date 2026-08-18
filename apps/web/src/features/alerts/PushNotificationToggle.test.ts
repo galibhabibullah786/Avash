@@ -5,7 +5,7 @@ import { act } from 'react';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-type Status = 'unsupported' | 'idle' | 'requesting' | 'denied' | 'subscribed' | 'error';
+type Status = 'unsupported' | 'unconfigured' | 'checking' | 'idle' | 'requesting' | 'denied' | 'subscribed' | 'error';
 
 let pushStatus: Status = 'idle';
 let accessToken: string | null = 'token-1';
@@ -95,6 +95,32 @@ describe('PushNotificationToggle', () => {
 
     expect(el.querySelector('[data-testid="push-toggle-unsupported"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="push-toggle-enable"]')).toBeNull();
+  });
+
+  test('while the real state is still being resolved, no Enable button is shown', async () => {
+    // Flashing "Enable push notifications" at a browser that turns out
+    // to be subscribed is exactly what made this control look broken.
+    pushStatus = 'checking';
+    const el = await render();
+
+    expect(el.querySelector('[data-testid="push-toggle-checking"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="push-toggle-enable"]')).toBeNull();
+  });
+
+  test('a deployment with no VAPID key says so, instead of a generic "try again"', async () => {
+    pushStatus = 'unconfigured';
+    const el = await render();
+
+    expect(el.querySelector('[data-testid="push-toggle-unconfigured"]')).not.toBeNull();
+    // Nothing the user can do here, so no button to press.
+    expect(el.querySelector('[data-testid="push-toggle-enable"]')).toBeNull();
+  });
+
+  test('an unsupported browser explains the iOS Home Screen requirement', async () => {
+    pushStatus = 'unsupported';
+    const el = await render();
+
+    expect(el.querySelector('[data-testid="push-toggle-unsupported"]')?.textContent).toContain('Home Screen');
   });
 
   test('an error is surfaced, not swallowed into a silently-unchanged button', async () => {

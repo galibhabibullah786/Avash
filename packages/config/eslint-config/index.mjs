@@ -32,7 +32,10 @@ export default [
   {
     rules: {
       'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': 'error',
+      // argsIgnorePattern: an unimplemented stub's parameters are unused by
+      // definition (e.g. `throw new Error('not implemented')`) but still
+      // need to be named to declare the eventual contract shape.
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
   noNonPublicEnvUnderWeb,
