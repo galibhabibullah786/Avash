@@ -67,9 +67,12 @@ jobs:
       publish: ${{ steps.resolve.outputs.publish }}
       deploy_web: ${{ steps.resolve.outputs.deploy_web }}
       deploy_api: ${{ steps.resolve.outputs.deploy_api }}
+      deploy_notify: ${{ steps.resolve.outputs.deploy_notify }}
       pages_branch: ${{ steps.resolve.outputs.pages_branch }}
       wrangler_env: ${{ steps.resolve.outputs.wrangler_env }}
       origin_var: ${{ steps.resolve.outputs.origin_var }}
+      vercel_target: ${{ steps.resolve.outputs.vercel_target }}
+      notify_origin_var: ${{ steps.resolve.outputs.notify_origin_var }}
       environment: ${{ steps.resolve.outputs.channel }}
     steps:
       - id: resolve
@@ -86,15 +89,21 @@ jobs:
           publish=false
           deploy_web=false
           deploy_api=false
+          deploy_notify=false
           pages_branch="$HEAD_REF"
           wrangler_env=preview
           origin_var=PREVIEW_API_ORIGIN
+          vercel_target=preview
+          notify_origin_var=PREVIEW_NOTIFY_ORIGIN
 
           case "$EVENT" in
             pull_request)
               # Pages preview per pull request, keyed on the source branch.
-              # No Worker deploy — a pull request has no environment of its
-              # own to deploy an API into.
+              # No Worker deploy and no apps/notify deploy — a pull request
+              # has no environment of its own to deploy either into, and
+              # deploying apps/notify per-PR would mean per-PR Inngest
+              # environments the Supabase Database Webhook doesn't know
+              # about anyway (see the deploy-notify job comment below).
               deploy_web=true
               ;;
             push | workflow_dispatch)
@@ -104,14 +113,18 @@ jobs:
                   publish=true
                   deploy_web=true
                   deploy_api=true
+                  deploy_notify=true
                   pages_branch=main
                   wrangler_env=production
                   origin_var=PRODUCTION_API_ORIGIN
+                  vercel_target=production
+                  notify_origin_var=PRODUCTION_NOTIFY_ORIGIN
                   ;;
                 dev)
                   publish=true
                   deploy_web=true
                   deploy_api=true
+                  deploy_notify=true
                   pages_branch=dev
                   ;;
                 *)
@@ -133,9 +146,12 @@ jobs:
             echo "publish=$publish"
             echo "deploy_web=$deploy_web"
             echo "deploy_api=$deploy_api"
+            echo "deploy_notify=$deploy_notify"
             echo "pages_branch=$pages_branch"
             echo "wrangler_env=$wrangler_env"
             echo "origin_var=$origin_var"
+            echo "vercel_target=$vercel_target"
+            echo "notify_origin_var=$notify_origin_var"
           } | tee -a "$GITHUB_OUTPUT"
 
   # ---- Stage 1: gates. Nothing is built for release until these pass. ----
@@ -228,6 +244,56 @@ jobs:
       environment: ${{ needs.context.outputs.environment }}
       wrangler_env: ${{ needs.context.outputs.wrangler_env }}
       smoke_test_origin_var: ${{ needs.context.outputs.origin_var }}
+
+  deploy-notify:
+    # `ml-image` is deliberately not a need here, unlike deploy-web/
+    # deploy-api: apps/notify ships no container image at all (it's a
+    # Vercel deploy, ADR-016) and has no relationship to the ML image or
+    # its Trivy scan. `images` still gates it — that job already carries
+    # `needs: [context, ci, codeql]`, so waiting on it (rather than on
+    # `ci`/`codeql` directly) keeps deploy-notify at the same stage-3 depth
+    # as its siblings and behind the same ci/codeql gate, without adding a
+    # wait on a scan result that says nothing about this service.
+    needs: [context, images]
+    if: needs.context.outputs.deploy_notify == 'true'
+    # See deploy-web's comment above — same schema reasoning, same fix:
+    # `environment:` lives on deploy-notify.yml's own job, not here.
+    uses: ./.github/workflows/deploy-notify.yml
+    # Named, not `secrets: inherit` — same audit-trail reasoning as every
+    # other deploy job in this file.
+    secrets:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      INNGEST_EVENT_KEY: ${{ secrets.INNGEST_EVENT_KEY }}
+      INNGEST_SIGNING_KEY: ${{ secrets.INNGEST_SIGNING_KEY }}
+      ANNOUNCEMENT_WEBHOOK_SECRET: ${{ secrets.ANNOUNCEMENT_WEBHOOK_SECRET }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+      VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+    with:
+      environment: ${{ needs.context.outputs.environment }}
+      vercel_target: ${{ needs.context.outputs.vercel_target }}
+      smoke_test_origin_var: ${{ needs.context.outputs.notify_origin_var }}
+    # CRITICAL: the preview build above deploys to Vercel's preview
+    # environment and syncs a SEPARATE Inngest environment from
+    # production's (Inngest scopes registered apps by the signing key/
+    # environment the deploy carries, same idea as Cloudflare's `--env
+    # preview` vs `--env production` Workers). The Supabase Database
+    # Webhook that actually triggers `announcement/published`
+    # (docs/manual-deploy.md's new Supabase Database Webhook section)
+    # points ONLY at the production apps/notify origin — it is configured
+    # once, by hand, in the Supabase dashboard, and is never pointed at a
+    # preview deployment. If it were, every announcement insert would fire
+    # the webhook once and have BOTH the production Inngest environment and
+    # the preview Inngest environment pick it up independently whenever a
+    # preview deploy exists alongside production, double-sending (or worse,
+    # N-sending across however many preview deploys are live) every
+    # announcement push to real subscribers. Nothing in this workflow
+    # enforces that — it is a one-time manual configuration fact outside
+    # GitHub Actions entirely — so it is recorded here, at the job that
+    # would otherwise make it easy to assume "preview" is symmetric with
+    # "production" the way it is for deploy-web/deploy-api.
 
   # ---- The weekly CVE report. ----
   #

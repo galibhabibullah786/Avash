@@ -577,6 +577,119 @@ images, a bad one affects only whoever pulled it.
 
 ---
 
+## Service 7 — Notifications (`apps/notify`, Vercel + Inngest)
+
+`apps/notify` (ADR-016) delivers announcement push notifications: a
+Supabase Database Webhook fires on insert, `apps/notify` receives it and
+emits an Inngest event, and an Inngest function (backed by
+`packages/push`) does the actual Web Push send. It talks to Supabase
+directly with the service-role key and never goes through `apps/api`
+(ADR-007).
+
+### Preconditions
+
+- The Vercel project exists and `VERCEL_TOKEN`/`VERCEL_ORG_ID`/
+  `VERCEL_PROJECT_ID` are set (`docs/security/secrets-matrix.md`).
+- An Inngest app/environment exists for this target — **preview and
+  production are separate Inngest environments**, each with its own
+  `INNGEST_EVENT_KEY`/`INNGEST_SIGNING_KEY` pair.
+- `SUPABASE_SERVICE_ROLE_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
+  `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`, and
+  `ANNOUNCEMENT_WEBHOOK_SECRET` are set as Vercel project environment
+  variables for the target environment (`docs/security/secrets-matrix.md`
+  § How to set each secret per environment).
+
+### Deploy — preview / production
+
+```bash
+cd apps/notify
+
+pnpm dlx vercel pull --yes --environment=preview      # or =production
+pnpm dlx vercel build                                 # add --prod for production
+pnpm dlx vercel deploy --prebuilt                      # add --prod for production
+```
+
+**Sync the Inngest app registration immediately after — this step is easy
+to forget and the deploy looks fine without it.** Vercel serving new code
+and Inngest knowing about it are two separate facts; without this,
+Inngest keeps invoking whatever function versions it last saw, against
+the new deploy's code:
+
+```bash
+curl -X PUT "https://<the-deployment-url>/api/inngest"
+```
+
+### Verify
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' "https://<origin>/api/inngest"
+curl -sS "https://<origin>/api/inngest" | jq '[.. | objects | select(has("id"))] | length'
+```
+
+Expect `200` and a function count of at least 2 (the delivery function and
+the sweep function) — a `200` with zero functions listed means Vercel is
+serving but Inngest has not picked up this deploy; re-run the sync step
+above.
+
+### Rollback
+
+```bash
+cd apps/notify
+pnpm dlx vercel rollback
+```
+
+Or, via the dashboard: **Vercel → apps/notify → Deployments → find the
+last known-good deployment → Promote to Production.** Both are instant
+and ship bytes already verified — no rebuild. After rolling back, re-run
+the Inngest sync step (`curl -X PUT`) against the rolled-back deployment's
+URL; rolling back the Vercel deployment alone does not tell Inngest to
+stop invoking the function versions the bad deploy registered.
+
+### Setting up the Supabase Database Webhook
+
+The webhook is what actually triggers delivery — it is configured **once,
+by hand, in the Supabase dashboard**, not through this repository's CI.
+There is one webhook per environment, and **the production webhook is the
+only one that should exist against a live `announcements` table** — see
+the warning below.
+
+1. In the Supabase dashboard for the target project: **Database →
+   Webhooks → Create a new hook**.
+2. **Table:** `announcements`. **Events:** `INSERT` only — the trigger
+   condition is `AFTER INSERT ON announcements`; `UPDATE`/`DELETE` are not
+   wired to this webhook.
+3. **Type:** HTTP Request. **Method:** `POST`. **URL:** the deployed
+   `apps/notify` origin's `/api/announcement-published` endpoint, e.g.
+   `https://<production-notify-origin>/api/announcement-published`.
+4. **HTTP Headers:** add a header the receiver checks in constant time
+   against `ANNOUNCEMENT_WEBHOOK_SECRET` — e.g.
+   `X-Announcement-Webhook-Secret: <the same value stored as
+   ANNOUNCEMENT_WEBHOOK_SECRET in apps/notify's Vercel environment
+   variables>`. Generate the secret once with
+   `openssl rand -hex 32` and set it in both places (Supabase webhook
+   header, Vercel env var) — a mismatch here means the receiver silently
+   rejects every real webhook call.
+5. Save, then trigger a test insert against the target project and
+   confirm the webhook fired (Supabase's webhook log shows the delivery
+   attempt and response status) and that `apps/notify` emitted the
+   `announcement/published` Inngest event (Inngest dashboard → the app's
+   **Events** view).
+
+**Do not point the webhook at a preview `apps/notify` deployment, and
+never configure more than one webhook against the same `announcements`
+table.** Preview deploys sync into their own, separate Inngest
+environment (§ Preconditions above); if a preview webhook existed
+alongside the production one, every announcement insert would fire both,
+and both Inngest environments would independently deliver it —
+subscribers receive the same push notification twice (or more, once per
+extra webhook/preview combination that exists). The Supabase Database
+Webhook is production-only, permanently — the Inngest scheduled sweep
+(`packages/push`, safety net for missed webhook deliveries) is the only
+thing that should ever run against preview data without a live webhook
+behind it.
+
+---
+
 ## Full manual release — production, in order
 
 When deploying everything by hand, the order is not arbitrary. Each step

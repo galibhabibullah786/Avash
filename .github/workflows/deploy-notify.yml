@@ -1,0 +1,257 @@
+name: deploy-notify
+
+# Vercel deploy for apps/notify (docs/adr/ADR-016-dedicated-notification-service.md).
+# apps/notify is a thin adapter over packages/push — a Supabase Database
+# Webhook receiver and an Inngest function definition, both running on
+# Vercel rather than Cloudflare. Modeled on deploy-api.yml's shape and
+# reasoning as closely as the different vendor allows; read that file's
+# comments too if something here looks unmotivated.
+#
+# This workflow must be safe when Vercel is not yet configured: apps/notify
+# lands on dev/main before its Vercel project is actually provisioned, so
+# the deploy step is guarded on VERCEL_TOKEN/VERCEL_ORG_ID/VERCEL_PROJECT_ID
+# being present and no-ops cleanly otherwise — same contract as
+# deploy-web.yml/deploy-api.yml's Cloudflare guard, never a hard pipeline
+# failure for a downstream service's credentials not existing yet.
+#
+# Called by pipeline.yml only after every gate and the image scan are
+# green. Which Vercel/Inngest environment it targets is the caller's
+# decision, passed in as `vercel_target`.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: >-
+          GitHub Environment ("preview" or "production") to draw secrets
+          and variables from (docs/security/github-environments.md).
+        type: string
+        required: true
+      vercel_target:
+        description: >-
+          Vercel environment to build/deploy against: "production" (main)
+          or "preview" (dev) — passed to `vercel pull --environment` and
+          `vercel build`/`vercel deploy` (--prod only for "production").
+        type: string
+        required: true
+      smoke_test_origin_var:
+        description: >-
+          Name of the repository variable holding the deployed apps/notify
+          origin for the post-deploy smoke test.
+        type: string
+        required: true
+    secrets:
+      VERCEL_TOKEN:
+        required: false
+      VERCEL_ORG_ID:
+        required: false
+      VERCEL_PROJECT_ID:
+        required: false
+      INNGEST_EVENT_KEY:
+        required: false
+      INNGEST_SIGNING_KEY:
+        required: false
+      ANNOUNCEMENT_WEBHOOK_SECRET:
+        required: false
+      SUPABASE_SERVICE_ROLE_KEY:
+        required: false
+      VAPID_PUBLIC_KEY:
+        required: false
+      VAPID_PRIVATE_KEY:
+        required: false
+  # A direct, standalone trigger for an urgent deploy that doesn't need the
+  # full pipeline.yml graph rebuilt — same job, same environment: gating
+  # below, just reachable without going through the caller.
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment to draw secrets and variables from.
+        type: choice
+        options: [preview, production]
+        required: true
+      vercel_target:
+        description: >-
+          Vercel environment to build/deploy against: "production" (main)
+          or "preview" (dev).
+        type: choice
+        options: [preview, production]
+        required: true
+      smoke_test_origin_var:
+        description: >-
+          Name of the repository variable holding the deployed apps/notify
+          origin for the post-deploy smoke test (e.g.
+          PRODUCTION_NOTIFY_ORIGIN or PREVIEW_NOTIFY_ORIGIN).
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # See the identical comment in deploy-api.yml/deploy-web.yml — set here
+    # so a direct workflow_dispatch run (no caller job to declare it on)
+    # still resolves this environment's secrets/vars and still requires its
+    # protection rules. GitHub's schema forbids `environment:` on a job
+    # that also has `uses:` (a reusable-workflow call), which is why
+    # pipeline.yml's deploy-notify job below does NOT repeat this — putting
+    # it on both is not a belt-and-suspenders redundancy, it is a schema
+    # error that fails the whole workflow file to parse ("Invalid workflow
+    # file", zero jobs shown by `act -l`), exactly as it did for
+    # deploy-web/deploy-api on this branch before that got fixed.
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-workspace
+
+      - run: pnpm --filter notify typecheck
+
+      - name: Check Vercel credentials
+        id: vercel-check
+        # Secrets are read through `env:`, never interpolated as `${{ }}`
+        # into the script body — a `${{ secrets.X }}` inside `run:` is
+        # substituted into the shell script text before execution, which
+        # writes the plaintext value into a script file on the runner and
+        # lets a value containing shell metacharacters alter the command
+        # (see the identical comment in deploy-web.yml). Only emptiness is
+        # tested here — no value is ever echoed. All three are required:
+        # `vercel pull`/`build`/`deploy` need the org and project id to
+        # resolve which Vercel project they're even talking to, not just a
+        # valid token.
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          if [ -n "$VERCEL_TOKEN" ] && [ -n "$VERCEL_ORG_ID" ] && [ -n "$VERCEL_PROJECT_ID" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID not set — skipping deploy. See docs/ci-cd.md."
+          fi
+
+      - name: Install Vercel CLI
+        if: steps.vercel-check.outputs.configured == 'true'
+        run: pnpm add --global vercel@latest
+
+      - name: Resolve deploy flags
+        id: deploy-flags
+        env:
+          VERCEL_TARGET: ${{ inputs.vercel_target }}
+        run: |
+          if [ "$VERCEL_TARGET" = "production" ]; then
+            echo "prod_flag=--prod" >> "$GITHUB_OUTPUT"
+          else
+            echo "prod_flag=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pull Vercel environment configuration
+        if: steps.vercel-check.outputs.configured == 'true'
+        working-directory: apps/notify
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel pull --yes --environment="${{ inputs.vercel_target }}" --token="$VERCEL_TOKEN"
+
+      - name: Build with Vercel CLI
+        if: steps.vercel-check.outputs.configured == 'true'
+        working-directory: apps/notify
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel build ${{ steps.deploy-flags.outputs.prod_flag }} --token="$VERCEL_TOKEN"
+
+      - name: Deploy pre-built output to Vercel
+        id: deploy
+        if: steps.vercel-check.outputs.configured == 'true'
+        working-directory: apps/notify
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          url=$(vercel deploy --prebuilt ${{ steps.deploy-flags.outputs.prod_flag }} --token="$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      # THE STEP PEOPLE FORGET. Vercel serving new code and Inngest knowing
+      # about it are two separate facts — Inngest keeps invoking whatever
+      # function versions it last saw registered until something tells it
+      # to re-sync. A `vercel deploy` alone ships the new bundle and
+      # silently leaves Inngest invoking stale function definitions against
+      # it, which is a real, easy-to-miss failure mode (the deploy is green,
+      # /api/inngest answers, and the *previous* function set keeps running
+      # against the new code, or new event/step shapes it was never built to
+      # handle). A `PUT` to the deployed app's own `/api/inngest` serve
+      # endpoint is what tells Inngest's platform to re-introspect that URL
+      # and pick up the current function set — the same effect the
+      # `inngest-cli deploy` command has, done here with plain curl since it
+      # needs no extra toolchain. Signing is handled by Inngest calling back
+      # into /api/inngest with INNGEST_SIGNING_KEY already configured in the
+      # Vercel project (§ secrets-matrix.md), not by this request itself.
+      - name: Sync Inngest app registration
+        if: steps.vercel-check.outputs.configured == 'true'
+        env:
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          status=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$DEPLOY_URL/api/inngest")
+          echo "PUT $DEPLOY_URL/api/inngest -> $status"
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "::error::Inngest app registration sync failed: PUT /api/inngest returned $status. Vercel has the new code but Inngest may still be invoking stale function definitions."
+            exit 1
+          fi
+
+      # The caller names which repository variable holds this environment's
+      # origin, so production and preview smoke-test themselves rather than
+      # both pointing at production — same reasoning as deploy-api.yml.
+      #
+      # A bare liveness check is explicitly NOT enough here, for the same
+      # reason /health alone isn't enough for apps/api (see the "secrets
+      # uploaded to the wrong Worker" incident recorded in deploy-api.yml/
+      # docs/ci-cd.md): a 200 from /api/inngest only proves the process is
+      # up and the route exists, not that Inngest actually has any function
+      # registered against it. A deploy that shipped without
+      # INNGEST_SIGNING_KEY, or whose Inngest serve handler silently
+      # returned an empty function list, would stay green on a liveness-only
+      # check straight through an entire "announcements never get pushed"
+      # outage. So this asserts the response body is non-empty JSON listing
+      # at least two functions — the delivery function
+      # (`announcement/published`, deliverAnnouncement.ts) and the sweep
+      # function (sweepUndelivered.ts) — by count rather than by exact
+      # function id, since apps/notify's real implementation (the ids it
+      # registers under) lands on a different branch than this one. Tighten
+      # this to assert the exact ids once that implementation is merged.
+      - name: Post-deploy smoke test
+        if: steps.vercel-check.outputs.configured == 'true'
+        env:
+          NOTIFY_ORIGIN: ${{ vars[inputs.smoke_test_origin_var] }}
+          ORIGIN_VAR_NAME: ${{ inputs.smoke_test_origin_var }}
+        run: |
+          if [ -z "$NOTIFY_ORIGIN" ]; then
+            echo "::error::$ORIGIN_VAR_NAME repository variable is not set — cannot smoke test the deploy."
+            exit 1
+          fi
+
+          response=$(curl -s -w '\n%{http_code}' "$NOTIFY_ORIGIN/api/inngest")
+          status=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "GET $NOTIFY_ORIGIN/api/inngest -> $status"
+
+          if [ "$status" != "200" ]; then
+            echo "::error::Post-deploy smoke test failed: /api/inngest returned $status, expected 200."
+            exit 1
+          fi
+
+          function_count=$(echo "$body" | jq -e '[.. | objects | select(has("id"))] | length' 2>/dev/null || echo 0)
+          echo "Registered Inngest functions found in response: $function_count"
+
+          if [ -z "$function_count" ] || [ "$function_count" -lt 2 ]; then
+            echo "::error::Post-deploy smoke test failed: /api/inngest returned 200 but listed $function_count function(s) — expected at least 2 (the delivery function and the sweep function). A 200 with no functions registered means Vercel is serving but Inngest has not picked up this deploy; see the 'Sync Inngest app registration' step comment above."
+            exit 1
+          fi

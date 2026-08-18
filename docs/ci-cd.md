@@ -20,7 +20,8 @@ scheduled cron job.
 
 ```
 context ─┬─ ci ──────────┬─ images ───┬─ deploy-web
-         └─ codeql ──────┴─ ml-image ─┴─ deploy-api
+         └─ codeql ──────┴─ ml-image ─┼─ deploy-api
+                                      ├─ deploy-notify
                                       └─ cve-report (weekly only)
 ```
 
@@ -39,12 +40,17 @@ to the pipeline could never be tested by the pull request making it.
 
 ### What each branch does
 
-| Trigger | Gates | Images | Pages | Worker |
-|---|---|---|---|---|
-| Pull request | ✅ | built + scanned, **not** published | preview (`--branch=<head-ref>`) | — |
-| Push to `dev` | ✅ | published, tagged `sha-<short>` + `dev` | preview (`--branch=dev`) | `--env preview` (`avash-api-preview`) |
-| Push to `main` | ✅ | published, tagged `sha-<short>` + `latest` | production (`--branch=main`) | `--env production` |
-| Weekly schedule | ✅ | built + scanned, not published | — | — |
+| Trigger | Gates | Images | Pages | Worker | Notify (Vercel) |
+|---|---|---|---|---|---|
+| Pull request | ✅ | built + scanned, **not** published | preview (`--branch=<head-ref>`) | — | — |
+| Push to `dev` | ✅ | published, tagged `sha-<short>` + `dev` | preview (`--branch=dev`) | `--env preview` (`avash-api-preview`) | preview (`--environment=preview`) |
+| Push to `main` | ✅ | published, tagged `sha-<short>` + `latest` | production (`--branch=main`) | `--env production` | production (`--environment=production` `--prod`) |
+| Weekly schedule | ✅ | built + scanned, not published | — | — | — |
+
+`apps/notify` (ADR-016) has no Cloudflare Pages/Worker equivalent — it
+ships no container image and is never touched by a pull request, because a
+pull request has no environment of its own for it to deploy into (same
+reasoning as the missing Worker deploy above).
 
 Branch → channel is resolved once, in `pipeline.yml`'s `context` job, and
 passed down as workflow inputs. No downstream job re-derives it from
@@ -67,9 +73,10 @@ build that already passed CI once:
 ```bash
 gh workflow run deploy-web.yml --ref dev -f environment=preview -f pages_branch=dev
 gh workflow run deploy-api.yml --ref dev -f environment=preview -f wrangler_env=preview -f smoke_test_origin_var=PREVIEW_API_ORIGIN
+gh workflow run deploy-notify.yml --ref dev -f environment=preview -f vercel_target=preview -f smoke_test_origin_var=PREVIEW_NOTIFY_ORIGIN
 ```
 
-Both workflows declare `environment: ${{ inputs.environment }}` on their
+All three workflows declare `environment: ${{ inputs.environment }}` on their
 own job — the only place GitHub's schema allows it on a job that
 `pipeline.yml` also calls via `uses:` (declaring it on both is a schema
 error, not just a style choice; see the corrected note in
@@ -77,7 +84,7 @@ error, not just a style choice; see the corrected note in
 declaration is what makes both this direct dispatch and a
 `pipeline.yml`-driven deploy resolve the right environment's
 secrets/vars and require its protection rules. Validate any future edit
-to these three workflows with `act -l -W <file>` before pushing —
+to these four workflows with `act -l -W <file>` before pushing —
 `pipeline.yml` failed silently (zero jobs, "Invalid workflow file") for
 several hours on this branch before that check caught it.
 
@@ -129,6 +136,7 @@ Record it).
 | `docker-image-scan.yml` | called | hadolint + Trivy on the ML image (ADR-011) |
 | `deploy-web.yml` | called | Cloudflare Pages deploy for `apps/web`; target branch passed in as `pages_branch` |
 | `deploy-api.yml` | called | `wrangler deploy` for `apps/api` + post-deploy smoke test (`/health` **and** `/health/db`); environment passed in as `wrangler_env` — given to wrangler-action as *both* `--env` on the command and its `environment:` input, because that input alone is what scopes the secret upload (see below) |
+| `deploy-notify.yml` | called | Vercel deploy for `apps/notify` (`vercel pull` → `vercel build` → `vercel deploy --prebuilt`) + Inngest app registration sync (`PUT /api/inngest`) + post-deploy smoke test asserting `/api/inngest` returns `200` **and** lists at least two registered functions; target passed in as `vercel_target` (ADR-016) |
 | `cron-weather-ingest.yml` | schedule (every 3h), manual | Runs `scripts/jobs/weather-ingest.ts` directly against Supabase (ADR-007) |
 | `cron-batch-predict.yml` | schedule (every 24h), manual | Runs `ml/serving/predict.py` directly against Supabase (ADR-002, ADR-007) |
 | `cron-news-scan.yml` | schedule (every 6h), manual | Runs `scripts/jobs/news-scan.ts` directly against Supabase (ADR-007) |
@@ -210,7 +218,13 @@ lacking a credential it was never given.
 | `TURNSTILE_SECRET_KEY` | secret | `deploy-api.yml` | API deploy |
 | `SUPABASE_URL` | secret | `deploy-api.yml`, `cron-weather-ingest.yml`, `cron-batch-predict.yml`, `cron-news-scan.yml` | API deploy — `apps/api/src/lib/supabaseAdmin.ts` needs it at runtime exactly like the service-role key, a Worker missing this secret fails every request with "supabaseUrl is required"; also weather-ingest cron, the other two cron jobs once implemented |
 | `OPENWEATHERMAP_API_KEY` | secret | `cron-weather-ingest.yml` | Weather-ingest cron — read directly by `scripts/jobs/weather-ingest.ts`, never logged (the key rides in the request query string) |
-| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | secret | `cron-batch-predict.yml` | Web Push delivery from the batch predict job |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | secret | `cron-batch-predict.yml`, `deploy-notify.yml` | Web Push delivery from the batch predict job; also `apps/notify`'s Vercel deploy (ADR-016 — a second home for the same keypair) |
+| `INNGEST_EVENT_KEY` | secret | `deploy-notify.yml` | Authenticates event sends to Inngest from `apps/notify` (the announcement-published trigger and the sweep) |
+| `INNGEST_SIGNING_KEY` | secret | `deploy-notify.yml` | Verifies an inbound Inngest function invocation actually came from Inngest, not a forged request |
+| `ANNOUNCEMENT_WEBHOOK_SECRET` | secret | `deploy-notify.yml` | Shared-secret header `apps/notify`'s Supabase Database Webhook receiver compares in constant time |
+| `VERCEL_TOKEN` | secret | `deploy-notify.yml` | Authenticates `vercel pull` / `vercel build` / `vercel deploy` |
+| `VERCEL_ORG_ID` | secret | `deploy-notify.yml` | Identifies the Vercel org/team `apps/notify` deploys under |
+| `VERCEL_PROJECT_ID` | secret | `deploy-notify.yml` | Identifies the Vercel project `apps/notify` deploys to |
 | `GITHUB_TOKEN` | built-in | `build-images.yml` | Publishing images to GHCR (no manual setup) |
 | `VITE_PUBLIC_API_BASE_URL` | repository **variable** | `deploy-web.yml` | Building `apps/web` for Pages — the deployed Worker's origin |
 | `VITE_PUBLIC_SUPABASE_URL` | repository **variable** | `deploy-web.yml` | Building `apps/web` for Pages |
@@ -219,6 +233,8 @@ lacking a credential it was never given.
 | `VITE_PUBLIC_VAPID_PUBLIC_KEY` | repository **variable** | `deploy-web.yml` | Building `apps/web` for Pages |
 | `PRODUCTION_API_ORIGIN` | repository **variable** | `deploy-api.yml` | Post-deploy smoke test target for `main` |
 | `PREVIEW_API_ORIGIN` | repository **variable** | `deploy-api.yml` | Post-deploy smoke test target for `dev` — the `avash-api-preview` Worker's origin |
+| `PRODUCTION_NOTIFY_ORIGIN` | repository **variable** | `deploy-notify.yml` | Post-deploy smoke test target for `main` — the production `apps/notify` Vercel deployment's origin |
+| `PREVIEW_NOTIFY_ORIGIN` | repository **variable** | `deploy-notify.yml` | Post-deploy smoke test target for `dev` — the preview `apps/notify` Vercel deployment's origin |
 | `PUBLIC_API_BASE_URL` | repository **variable** | `build-images.yml` | Build arg for the *published* web image — see the gap noted below |
 | `CORS_ALLOWED_ORIGINS` | repository **variable**, optional | `deploy-api.yml` | Overrides `apps/api/wrangler.toml`'s fallback via `wrangler deploy --var`; unset means the committed value still deploys (§14, `docs/constants-registry.md`). Same value for `preview` and `production` today, so repository scope — not per-environment — is correct |
 | `CORS_PREVIEW_ORIGIN_SUFFIX` | repository **variable**, optional | `deploy-api.yml` | Same mechanism and scope as above — a bare domain suffix, never a glob (`apps/api/src/config/cors.ts` builds the subdomain wildcard itself) |
@@ -241,6 +257,10 @@ set each one per § Setting these in GitHub, below.
 | *(map tiles)* | Nothing to obtain — the map uses credential-free OpenStreetMap tiles (secrets-matrix.md § 6, ADR-013). Listed here so its absence reads as deliberate, not as an omission |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VITE_PUBLIC_VAPID_PUBLIC_KEY` | secrets-matrix.md § 7 Web Push VAPID keypair |
 | `VITE_PUBLIC_API_BASE_URL`, `PRODUCTION_API_ORIGIN`, `PREVIEW_API_ORIGIN`, `PUBLIC_API_BASE_URL` | secrets-matrix.md § 8 — not a third-party credential, it's your own deployed Worker's origin |
+| `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY` | [Inngest dashboard](https://app.inngest.com) → the app's **Manage → Signing key**/**Event keys** page, one keypair per Inngest environment (preview and production are separate environments — see the deploy-notify job's comment in `pipeline.yml`) |
+| `ANNOUNCEMENT_WEBHOOK_SECRET` | Generate your own (e.g. `openssl rand -hex 32`); it's a shared secret between the Supabase Database Webhook and `apps/notify`'s receiver, not issued by a provider |
+| `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` | [Vercel dashboard](https://vercel.com) → **Account Settings → Tokens** for the token; **Project Settings → General** for the org and project IDs, or `vercel link` locally in `apps/notify` and read `.vercel/project.json` |
+| `PRODUCTION_NOTIFY_ORIGIN`, `PREVIEW_NOTIFY_ORIGIN` | Not a third-party credential — the `apps/notify` Vercel deployment's own origin, read back from the Vercel dashboard once deployed once |
 | `GITHUB_TOKEN` | Built in; GitHub injects it automatically, nothing to obtain |
 
 `VITE_PUBLIC_*` repository variables need no separate provider trip beyond
@@ -345,6 +365,12 @@ gh secret set SUPABASE_URL
 gh secret set OPENWEATHERMAP_API_KEY
 gh secret set VAPID_PUBLIC_KEY
 gh secret set VAPID_PRIVATE_KEY
+gh secret set INNGEST_EVENT_KEY
+gh secret set INNGEST_SIGNING_KEY
+gh secret set ANNOUNCEMENT_WEBHOOK_SECRET
+gh secret set VERCEL_TOKEN
+gh secret set VERCEL_ORG_ID
+gh secret set VERCEL_PROJECT_ID
 
 # Repository variables — these are not secret and are visible to anyone
 # with read access to the repository, matching their VITE_PUBLIC_/deploy-
@@ -357,6 +383,8 @@ gh variable set VITE_PUBLIC_VAPID_PUBLIC_KEY --body "<public-half-of-the-vapid-k
 gh variable set PRODUCTION_API_ORIGIN --body "https://your-api.example.workers.dev"
 gh variable set PREVIEW_API_ORIGIN --body "https://avash-api-preview.<subdomain>.workers.dev"
 gh variable set PUBLIC_API_BASE_URL --body "https://your-api.example.workers.dev"
+gh variable set PRODUCTION_NOTIFY_ORIGIN --body "https://your-notify-app.vercel.app"
+gh variable set PREVIEW_NOTIFY_ORIGIN --body "https://your-notify-app-preview.vercel.app"
 
 # Optional — unset means apps/api/wrangler.toml's committed [vars] value
 # deploys unchanged (docs/constants-registry.md § CORS_ALLOWED_ORIGINS).
@@ -725,3 +753,15 @@ the reverted code.
 consumer to a specific `sha-` tag if rollback matters to it; there is no
 in-repo rollback action for GHCR beyond re-tagging a prior `sha-` image as
 `latest` manually.
+
+**`apps/notify` (Vercel):** every Vercel deployment is immutable and
+independently addressable by its own `*.vercel.app` deployment URL —
+`vercel rollback` (run from `apps/notify`, or via **Vercel dashboard →
+apps/notify → Deployments → find the last known-good deployment → Promote
+to Production**) re-points the production alias at a previous deployment
+without a rebuild, the same instant-rollback shape as Cloudflare Pages
+above. After rolling back, re-run the "Sync Inngest app registration" step
+by hand (`curl -X PUT <rolled-back-deployment-url>/api/inngest`, or
+dispatch `deploy-notify.yml` again once the offending commit is reverted)
+— rolling back the Vercel deployment does not by itself tell Inngest to
+stop invoking the function versions the bad deploy registered.
