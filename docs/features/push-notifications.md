@@ -36,10 +36,45 @@ that writes `risk_predictions` (ADR-002, ADR-007).
   `20260815000012_app_role_and_resource_reads.sql`. Adding a matching
   function for alerts was out of scope for this slice, so the radius
   check runs in Python instead, against `alert_subscriptions.geom`
-  decoded from the WKB hex PostgREST returns for a plain `select`. Same
-  notion of "within a radius," different place it's computed; a later
-  slice can move it into a migration-owned function without changing
-  `push_delivery.py`'s public shape.
+  decoded from the GeoJSON PostgREST returns for a plain `select` —
+  PostGIS registers a `geometry -> json` cast, so a geometry column
+  arrives as a parsed `{"type": "Point", "coordinates": [lon, lat]}`
+  dict, never a WKB hex string. Same notion of "within a radius,"
+  different place it's computed; a later slice can move it into a
+  migration-owned function without changing `push_delivery.py`'s public
+  shape.
+- **The browser half: a service worker plus a control that registers
+  one.** Web Push has no in-page delivery path — the browser wakes a
+  service worker to handle the `push` event whether or not a tab is
+  open — so `apps/web/public/sw.js` is what a push is actually delivered
+  to. It handles `push` (always calling `showNotification`, which
+  `userVisibleOnly: true` requires) and `notificationclick` (focusing an
+  already-open tab rather than opening a duplicate, and only ever
+  navigating to a same-origin path derived in the worker, never a URL
+  taken from the push payload). `apps/web/src/lib/serviceWorker.ts`
+  registers it on demand and waits for activation before
+  `PushManager.subscribe()` is called, and
+  `apps/web/src/features/alerts/PushNotificationToggle.tsx` is the
+  dashboard control that starts the whole thing from a click —
+  `Notification.requestPermission()` outside a user gesture is refused
+  by most browsers, which is why it is never an effect.
+
+  **Both halves are required, and this one was missing.** An
+  `alert_subscriptions` row says WHERE to alert someone; a
+  `push_subscriptions` row says HOW to reach them. Until this existed
+  there was no service worker in the app at all and nothing rendered
+  `usePushSubscription`, so `push_subscriptions` was necessarily empty
+  and every delivery pass matched zero targets no matter how many
+  proximity subscriptions existed.
+- **Not a WebSocket, and not a connection the app holds open.** The push
+  travels from this batch job to the browser vendor's push service
+  (signed with `VAPID_PRIVATE_KEY`) and from there to the service
+  worker; the app may be closed entirely. Nothing in this path is
+  real-time from the app's point of view — the only live-connection
+  feature in this codebase is the blood-inventory ticker's Supabase
+  Realtime channel (ADR-010), which is unrelated. A crossing is
+  therefore delivered on the batch job's cadence, not the moment it
+  happens.
 - **Talks to Supabase directly, never through `apps/api`.** ADR-007: this
   is a background job, not an HTTP endpoint. It authenticates with
   `SUPABASE_SERVICE_ROLE_KEY`, which bypasses RLS — `apps/api`'s
@@ -142,12 +177,33 @@ STRIDE analysis, mirrored into `docs/security/threat-model.md`:
 
 **Manual Test Log:**
 
-Not yet run against a live push service or a real browser subscription —
-this slice's automated coverage is `ml/serving/test_push_delivery.py`
-(proximity matching against fixture rows, 410 cleanup, non-410
-persistence, one bad subscription not aborting the batch, VAPID keys
-never appearing in captured log output) and `ml/serving/test_predict.py`
-(the empty-`risk_predictions` early return, crossing detection). A manual
-end-to-end pass — real subscription, real push service, real 410 after
-unsubscribing — is still open and should happen before this ships to a
-production schedule.
+Automated coverage is `ml/serving/test_push_delivery.py` (proximity
+matching against fixture rows, GeoJSON geometry decoding, 410 cleanup,
+non-410 persistence, one bad subscription not aborting the batch, VAPID
+keys never appearing in captured log output), `ml/serving/test_predict.py`
+(the empty-`risk_predictions` early return, crossing detection), and on
+the browser side `apps/web/src/lib/serviceWorker.test.ts` and
+`apps/web/src/hooks/usePushSubscription.test.ts`.
+
+2026-08-18, first real end-to-end pass — real browser, real push
+service, real VAPID signature, hosted Supabase project:
+
+1. Chrome (a persistent profile, not an incognito context — Chrome
+   refuses the Push API in incognito outright, crbug.com/41124656)
+   loaded the dashboard signed in as a citizen account and clicked
+   "Enable push notifications".
+2. `sw.js` registered and reached `active`, `PushManager.subscribe()`
+   returned an `fcm.googleapis.com` endpoint, and
+   `POST /api/alerts/push-subscription` stored the row.
+3. `deliver_region_alert()` — the same function `batch_predict()` calls,
+   invoked directly with the account's own subscription point as the
+   region centroid — matched one target and reported one push attempt
+   with no failure logged.
+4. `registration.getNotifications()` in the browser returned the
+   delivered notification with the batch job's own title, body, and
+   `tag`, confirming the payload survived the whole path intact.
+
+The test account's `push_subscriptions` row was deleted afterwards,
+since the endpoint belonged to a throwaway browser profile. The 410
+cleanup path is still only covered by its unit test — provoking a real
+`410` needs a subscription to be revoked out-of-band and left to expire.

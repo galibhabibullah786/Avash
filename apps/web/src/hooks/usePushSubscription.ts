@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { z } from 'zod';
 import { pushSubscriptionRegisterSchema } from '@avash/types';
 import { fetchApi } from '../lib/apiClient';
+import { ensureServiceWorkerRegistration } from '../lib/serviceWorker';
 
 export type PushSubscriptionStatus =
   | 'unsupported'
@@ -103,17 +104,42 @@ export function usePushSubscription(accessToken: string | null): UsePushSubscrip
     }
 
     try {
-      const registration = await navigator?.serviceWorker?.getRegistration?.();
+      // Registers `public/sw.js` on demand rather than assuming one is
+      // already there: `getRegistration()` alone resolved to undefined on
+      // every first visit, which is what made this whole path unreachable
+      // — there was no worker, and nothing registered one.
+      const registration = await ensureServiceWorkerRegistration();
       const pushManager = registration?.pushManager;
       if (!pushManager?.subscribe) {
         setStatus('error');
         return;
       }
 
-      const subscription = await pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-      });
+      const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
+
+      // A subscription already bound to a DIFFERENT VAPID key makes
+      // subscribe() reject with InvalidStateError, so it has to go before
+      // a new one can be created. One bound to the SAME key is kept:
+      // re-subscribing would mint a fresh endpoint and orphan the
+      // push_subscriptions row holding the old one.
+      const existing = await pushManager.getSubscription?.();
+      const existingKey = existing?.options?.applicationServerKey;
+      const keyMatches =
+        existingKey instanceof ArrayBuffer &&
+        new Uint8Array(existingKey).length === applicationServerKey.length &&
+        new Uint8Array(existingKey).every((byte, index) => byte === applicationServerKey[index]);
+
+      if (existing && !keyMatches) {
+        await existing.unsubscribe?.();
+      }
+
+      const subscription =
+        existing && keyMatches
+          ? existing
+          : await pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey,
+            });
 
       const keys = subscription?.toJSON?.()?.keys;
       const endpoint = subscription?.endpoint;

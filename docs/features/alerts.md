@@ -24,11 +24,28 @@ audited write in the system, including the ones this feature adds.
 - `POST /api/alerts/subscribe` — authenticated, rate-limited
   (`ALERT_SUBSCRIBE_RATE_LIMIT`, 5/min/user). Validates
   `alertSubscribeSchema` and upserts `alert_subscriptions` keyed on
-  `(user_id, geom)`, so re-subscribing at the same point updates
-  `radius_m`/`active` in place instead of accumulating duplicate rows.
-  A user may hold more than one row — one per distinct point they care
-  about (home, work, a relative's address). Writes an `alert.subscribe`
-  audit entry.
+  `user_id` alone (`alert_subscriptions_user_id_key`), so this is both
+  the create and the update path: posting from a new point MOVES the
+  caller's one geofence rather than adding a second. Writes an
+  `alert.subscribe` audit entry.
+
+  **One subscription per user, deliberately.** The conflict target was
+  originally `(user_id, geom)`, which made the point part of the row's
+  identity — moving your geofence matched no existing row and silently
+  created another active subscription, and a user accumulated one per
+  place they had ever subscribed from with no way to retire any of them.
+  `20260818000020_alert_subscriptions_one_per_user.sql` collapses any
+  such accumulation to the most recent row before adding the constraint.
+- `DELETE /api/alerts/subscribe` — authenticated, same rate limit. Takes
+  no body and no id: the row is resolved from the verified JWT's
+  `user_id`, because the service-role key bypasses RLS and an id taken
+  from the request would let any signed-in caller delete anyone's
+  subscription. A hard delete, not `active = false` — a deactivated row
+  would still occupy the user's one unique slot and make their next
+  subscribe an update of a row they believe they removed. Replies `200`
+  with `{ id: null }` when there was nothing to remove rather than
+  `404`, so an already-unsubscribed caller retrying is not a failure,
+  and writes an `alert.unsubscribe` audit entry either way.
 - `POST /api/alerts/push-subscription` — authenticated, same rate limit.
   Validates `pushSubscriptionRegisterSchema` and upserts
   `push_subscriptions` keyed on the table's unique `endpoint` column, so
@@ -64,6 +81,18 @@ audited write in the system, including the ones this feature adds.
   so role targeting and proximity both apply after the live-rows query
   comes back. Results are paginated with the shared `listQueryFor`/
   `paginatedResponseSchema` contract.
+- **`GET /api/announcements?scope=manage` is the moderator/admin view of
+  the same table.** It returns exactly the rows the caller is allowed to
+  `DELETE` — their own, or every row for an admin, mirroring the delete
+  handler's author-or-admin rule — and it takes no point and applies no
+  role-targeting or proximity filter, because a management list that
+  hides your own announcement the moment you walk out of its radius is
+  not a management list. Expired rows are included for the same reason:
+  their author is the one person who needs to see that they lapsed. It
+  is gated on `reports:moderate` (a `403` otherwise), the same capability
+  that authoring one requires, since the scope deliberately exposes rows
+  the default `nearby` scope would have withheld. `scope` defaults to
+  `nearby`, so the citizen-facing feed is unchanged.
 - `DELETE /api/announcements/:id` — authenticated; author-or-admin is a
   handler-level check, not a middleware one, because it requires reading
   the target row first. A missing id is a generic `404`; a caller who is
@@ -161,3 +190,28 @@ branch reachable without a hosted Supabase project, including the
 author-or-admin delete boundary, the active-announcement cap, the
 role/proximity filtering on the list route, and the audit-detail
 shape on every write. Reviewer sign-off pending.
+
+2026-08-18, subscription-lifecycle and announcements-page pass, run
+against the hosted Supabase project with a real browser (Chrome, real
+sessions, real geolocation):
+
+- A stored subscription is read back on a cold page load and rendered
+  with its own point and radius, and the radius input opens seeded to
+  the stored value.
+- Submitting from a different point left the row count at 1 and moved
+  the stored `geom`/`radius_m` — confirming the conflict-target change,
+  which under the old `(user_id, geom)` target produced a second row.
+- Unsubscribe removed the row, showed its confirmation, and reverted the
+  form to its create state; re-subscribing afterwards succeeded, so no
+  orphaned row blocks the unique slot.
+- `/announcements` renders nothing for a citizen and the compose form is
+  absent from the dashboard for every role (it moved to that page).
+- As an admin: the announcements tile appears, the manage list returns
+  every author's rows without a point, publishing adds a row to the list
+  without a manual reload, and delete confirms first, then removes it
+  from both the list and the table.
+- The compose form's future-expiry check was exercised for real: a
+  UTC-derived `datetime-local` value landed in the past for this
+  machine's `+06:00` offset and was correctly rejected with its own
+  message rather than being sent and failing the DB's
+  `expires_at > created_at` constraint.

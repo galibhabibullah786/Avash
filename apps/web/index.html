@@ -3,6 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- public/manifest.webmanifest existed but nothing referenced it, so
+         the app was never installable — which is what iOS requires before
+         it will deliver a Web Push notification at all. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#0b6e4f" />
+    <link rel="icon" href="/icons/icon-192.png" />
     <title>আভাস - সুরক্ষার আগাম বার্তা</title>
   </head>
   <body>
