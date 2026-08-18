@@ -42,6 +42,10 @@ export const ROLE_ASSIGNMENT_RATE_LIMIT = { perMinute: 10 } as const;
  * limit sits on the mint, not the upload itself (decision G).
  */
 export const UPLOAD_SIGNATURE_RATE_LIMIT = { perMinute: 10 } as const;
+/** `ALERT_SUBSCRIBE_RATE_LIMIT` (§14) — covers both `/api/alerts/subscribe` and `/api/alerts/push-subscription`. */
+export const ALERT_SUBSCRIBE_RATE_LIMIT = { perMinute: 5 } as const;
+/** `ANNOUNCEMENT_CREATE_RATE_LIMIT` (§14). */
+export const ANNOUNCEMENT_CREATE_RATE_LIMIT = { perMinute: 10 } as const;
 
 export type RateLimitWindow = 'minute' | 'day';
 

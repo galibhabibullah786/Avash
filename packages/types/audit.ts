@@ -15,6 +15,11 @@ export const auditActionSchema = z.enum([
   'report.verify',
   'blood.update',
   'upload.sign',
+  'alert.subscribe',
+  'push.subscribe',
+  'announcement.create',
+  'announcement.delete',
+  'auth.signout',
 ]);
 
 export const auditEntityTypeSchema = z.enum([
@@ -22,6 +27,9 @@ export const auditEntityTypeSchema = z.enum([
   'breeding_report',
   'blood_inventory',
   'upload',
+  'alert_subscription',
+  'push_subscription',
+  'announcement',
 ]);
 
 export const auditOutcomeSchema = z.enum(['success', 'failure']);

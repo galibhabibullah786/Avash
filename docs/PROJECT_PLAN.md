@@ -347,6 +347,23 @@ create table push_subscriptions (
   created_at timestamptz default now()
 );
 
+-- Author-broadcast announcements (§13.7 amendment; decision A — NOT
+-- alert_subscriptions with a flag: inverse relationship, different owner,
+-- different RLS)
+create table announcements (
+  id uuid primary key default gen_random_uuid(),
+  author_id uuid references auth.users(id) on delete set null on update cascade,
+  title text not null,
+  body text not null,
+  geom geometry(Point, 4326) not null,
+  radius_m integer not null default 5000 check (radius_m between 500 and 50000),
+  target_roles text[] not null default '{}',   -- empty = every role
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+create index idx_announcements_geom on announcements using gist (geom);
+create index idx_announcements_active on announcements (expires_at desc);
+
 -- News aggregator agent output
 create table news_items (
   id bigint generated always as identity primary key,
@@ -426,6 +443,7 @@ application-level.
 | `alert_subscriptions.user_id → auth.users(id)` | `cascade` | `cascade` | A deleted account's geofences should not keep matching and evaluating |
 | `push_subscriptions.user_id → auth.users(id)` | `cascade` | `cascade` | Same — no point delivering push to a subscription owned by a deleted account |
 | `news_items.region_guess → regions(id)` | `set null` | `cascade` | Column is nullable and advisory (AI-inferred, §5.4) — losing the region guess must not delete ingested news content |
+| `announcements.author_id → auth.users(id)` | `set null` | `cascade` | A published announcement must survive the authoring moderator's account being removed — decision E, the audit trail records the deletion event, not the row's contents |
 
 `on update cascade` is applied uniformly even though every referenced key
 here is a `uuid` primary key that the application never mutates in
@@ -447,6 +465,31 @@ Same RLS shape as `role_assignments`: enabled, one `roles:manage` select
 policy, no insert/update/delete policy — an audit row that can be edited
 is not an audit row, and `apps/api` writes with the service-role key,
 which bypasses RLS.
+
+**§4 amendment — `announcements` (§13.7, roadmap feature 3d).** Migration
+`20260817000017_announcements.sql` adds `announcements`: an author
+broadcasts a `title`/`body` to a geometry + optional role set, with an
+`expires_at`. **Decision A — not folded into `alert_subscriptions`.** That
+table models a user subscribing to an area; this models an author
+broadcasting to one. Inverse relationships, different owners
+(`user_id = auth.uid()` vs. `has_capability('reports:moderate')`),
+different lifetimes — a `kind` discriminator would force one RLS policy to
+be correct for both authorization models, the shape that produces an
+authorization bug. **Decision B — targeting is evaluated at read time, not
+fanned out at write time.** `GET /api/announcements` filters live on
+`expires_at > now()`, role membership, and `ST_DWithin` against the
+caller's point; no per-recipient row is created. Trade-off: no
+"mark as read" without a further join table, deferred until requested.
+**Decision E — deletes are audited as the deletion event, not the row's
+contents.** `announcement.delete` records who deleted which entity and
+when; `auditDetailSchema`'s 12-key scalar cap makes dumping full geometry
+into an admin-readable table neither possible nor desirable for
+location data. The `idx_announcements_active` index is a plain
+`btree (expires_at desc)`, not the partial index a first draft of this
+migration specified (`where expires_at > now()`) — Postgres rejects
+`now()` in a partial-index predicate because it is only `STABLE`, not
+`IMMUTABLE`; the live-rows read path (decision B) still gets a
+range-scan-friendly index, just not a partial one.
 
 ---
 
@@ -540,6 +583,10 @@ All routes mounted in `apps/api/src/index.ts`. Every request passes through `mid
 | `GET /api/admin/users?page=&pageSize=` | admin (`roles:manage`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user | Paged user list via the Supabase Admin API, `ADMIN_USER_PAGE_SIZE` default; malformed rows dropped |
 | `PATCH /api/admin/users/:id/role` | admin (`roles:manage`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user | Writes `app_metadata.role` + an append-only `role_assignments` audit row; 409 on self-demotion |
 | `POST /api/uploads/signature` | authenticated (any role) | cors, headers, auth (JWT), rate-limit | 10/min/user | Signs a direct-to-Cloudinary upload (ADR-015); the Worker never receives the file bytes |
+| `POST /api/announcements` | moderator/admin (`reports:moderate`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user | Creates an `announcements` row; 409 at `ANNOUNCEMENT_MAX_ACTIVE_PER_AUTHOR` |
+| `GET /api/announcements` | authenticated (decision H — not public) | cors, headers, auth (JWT), rate-limit | 10/min/user (reuses `ANNOUNCEMENT_CREATE_RATE_LIMIT`) | Live rows only: `expires_at > now()`, role-targeted, `ST_DWithin` against the caller's point; paginated |
+| `DELETE /api/announcements/:id` | author or admin | cors, headers, auth (JWT), rate-limit | 10/min/user (reuses `ANNOUNCEMENT_CREATE_RATE_LIMIT`) | Deletes an `announcements` row; audited per decision E |
+| `GET /api/admin/audit-log` | admin (`roles:manage`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user (reuses `ROLE_ASSIGNMENT_RATE_LIMIT`, matching `GET /api/admin/users`) | Paginated read of `audit_log`, filterable by `action`/`actorId` |
 
 **§6 amendment — role administration.** The two `/api/admin/users` rows
 above were added by the RBAC slice; this section predates the existence of
@@ -577,6 +624,24 @@ weather rows; the weather and risk-map/risk-detail routes implement the
 middleware chain as written (no Upstash call on these read paths) rather
 than resolve the discrepancy here. It is left for a decision during the
 security-hardening slice (§13, slice 9).
+
+**§6 amendment — announcements and the audit-log read surface (§13.7).**
+`POST /api/announcements`, `GET /api/announcements`, and
+`DELETE /api/announcements/:id` are new. **Decision H —
+`GET /api/announcements` is authenticated, not public.** A role-targeted
+announcement leaks the existence of role-specific operational messaging to
+an anonymous scraper, and the endpoint takes a caller-supplied point;
+anonymous visitors see no announcements. A banner that genuinely must
+reach anonymous users is a different feature with different privacy
+properties. **Decision C — push delivery lives in the batch job, not this
+Worker.** ADR-007 forbids a job-as-endpoint, and `VAPID_PRIVATE_KEY`
+already lives only in `ml/serving/predict.py`; the Worker here manages
+`alert_subscriptions`/`push_subscriptions` rows and `announcements` rows
+only, never sends a push itself, so an announcement surfaces in-app
+immediately but rides the next nightly batch job for push delivery.
+`GET /api/admin/audit-log` is the read surface for `audit_log`
+(§4 amendment above): an audit trail nobody can read is a table, not a
+control.
 
 **No `/api/jobs/*` endpoints exist.** Background jobs (weather ingest, batch predict, news scan) run as GitHub Actions workflows connecting **directly** to Supabase with the service-role key stored as a GH secret — never exposed as an invokable HTTP endpoint, removing an entire class of forged-trigger attack (ADR-007).
 
@@ -873,6 +938,13 @@ Waterfall governs the *project timeline* (mapped below to the original 10-week p
 | `UPLOAD_MAX_BYTES` | 5242880 (5 MiB) | `packages/types/uploads.ts` | client-side pre-check + signed constraint |
 | `UPLOAD_SIGNATURE_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | bounds signature minting per account |
 | `UPLOAD_SIGNATURE_TTL_S` | 600 | `apps/api/src/lib/cloudinarySignature.ts` | how long a returned signature stays valid |
+| `ANNOUNCEMENT_TITLE_MAX_CHARS` | 120 | `packages/types/alerts.ts` | §13.7 announcement title cap (planned) |
+| `ANNOUNCEMENT_BODY_MAX_CHARS` | 1000 | `packages/types/alerts.ts` | §13.7 announcement body cap (planned) |
+| `ANNOUNCEMENT_RADIUS_DEFAULT_M` | 5000 (bounds 500–50,000) | `packages/types/alerts.ts`, `announcements` check constraint | default/ceiling for announcement targeting radius (planned) |
+| `ANNOUNCEMENT_MAX_ACTIVE_PER_AUTHOR` | 20 | `apps/api/src/routes/announcements.ts` | caps how many live announcements one author can hold at once (planned) |
+| `ALERT_SUBSCRIBE_RATE_LIMIT` | 5/min per user | `packages/security/rateLimit.ts` | §6's `POST /api/alerts/subscribe` and `POST /api/alerts/push-subscription` rows (planned) |
+| `ANNOUNCEMENT_CREATE_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | §6's `POST /api/announcements` row (planned) |
+| `AUDIT_LOG_PAGE_SIZE_DEFAULT` | 50 | `apps/api/src/routes/audit-log.ts` | default page size for `GET /api/admin/audit-log` (planned) |
 
 ---
 
