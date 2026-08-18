@@ -13,6 +13,7 @@
     "db:reset": "pnpm --filter @avash/db run db:reset",
     "db:seed": "pnpm --filter @avash/db run db:seed",
     "db:types": "pnpm --filter @avash/db run db:types",
+    "db:push:hosted": "pnpm --filter @avash/db run db:push:hosted",
     "role:grant": "tsx scripts/grant-role.ts",
     "role:list": "tsx scripts/grant-role.ts --list",
     "agent:sync": "node scripts/agent-sync.mjs",
