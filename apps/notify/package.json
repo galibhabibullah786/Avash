@@ -10,10 +10,13 @@
   },
   "dependencies": {
     "@avash/push": "workspace:*",
-    "@avash/types": "workspace:*"
+    "@avash/types": "workspace:*",
+    "@supabase/supabase-js": "2.112.3",
+    "inngest": "4.18.1"
   },
   "devDependencies": {
     "@avash/eslint-config": "workspace:*",
+    "@inngest/test": "1.0.0",
     "@types/node": "^26.1.2",
     "eslint": "^10.8.0",
     "typescript": "^6.0.3"
