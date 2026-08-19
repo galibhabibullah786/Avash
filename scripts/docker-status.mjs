@@ -41,6 +41,14 @@ const SERVICES = [
     urlFor: (host, port) => `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`,
     startCmd: 'pnpm docker:apps:build && pnpm docker:apps',
   },
+  {
+    service: 'notify',
+    label: 'apps/notify (Node)',
+    containerPort: 8788,
+    defaultHostPort: 8788,
+    urlFor: (host, port) => `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}/health`,
+    startCmd: 'pnpm docker:apps:build && pnpm docker:apps',
+  },
 ];
 
 function run(args, { quiet = false } = {}) {

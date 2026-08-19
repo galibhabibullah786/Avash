@@ -40,7 +40,7 @@ only once the constant is actually wired into the code location listed.
 | `POSTGRES_LOCAL_PORT` | 54322 (host) → 5432 (container) | `compose.yaml` | avoids collision with a host-installed Postgres; matches the Supabase CLI convention | implemented |
 | `WEB_IMAGE_BASE` | `nginxinc/nginx-unprivileged:1.27.2-alpine` | `apps/web/Dockerfile` | runtime base for the web image — non-root, listens on 8080 (ADR-012) | implemented |
 | `API_IMAGE_BASE` | `node:20.17.0-alpine3.20` | `apps/api/Dockerfile` (both stages) | build + runtime base for the API image | implemented |
-| `APP_CONTAINER_PORTS` | web 8080, api 8787 (in-container) | `apps/web/docker/default.conf.template`, `apps/api/server/node-server.ts`, `compose.yaml` | fixed in-container ports; host ports overridable via `WEB_PORT`/`API_PORT` | implemented |
+| `APP_CONTAINER_PORTS` | web 8080, api 8787, notify 8788 (in-container) | `apps/web/docker/default.conf.template`, `apps/api/server/node-server.ts`, `apps/notify/server/node-server.ts`, `compose.yaml` | fixed in-container ports; host ports overridable via `WEB_PORT`/`API_PORT`/`NOTIFY_PORT` | implemented |
 | `CONTAINER_REGISTRY` | `ghcr.io/<owner>/avash-web`, `ghcr.io/<owner>/avash-api` | `.github/workflows/build-images.yml` | published image names; `sha-<short>` tags, plus `latest` on `main` | implemented |
 | `WEATHER_CACHE_TTL_S` | `s-maxage=900, swr=1800` | `apps/api/src/routes/weather.ts` | edge cache for weather reads; 15 min against a 3 h ingest cadence never serves a value the source could have refreshed | implemented |
 | `WEATHER_HISTORY_WINDOW_DAYS` | 14 | `apps/api/src/routes/weather.ts` | dashboard history window; matches the 14-day rolling features in §5.1 so the chart shows what the model will consume | implemented |
@@ -77,6 +77,18 @@ only once the constant is actually wired into the code location listed.
 | `UPLOAD_MAX_BYTES` | 5242880 (5 MiB) | `packages/types/uploads.ts` | client-side pre-check + signed constraint | implemented |
 | `UPLOAD_SIGNATURE_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | bounds signature minting per account | implemented |
 | `UPLOAD_SIGNATURE_TTL_S` | 600 | `apps/api/src/lib/cloudinarySignature.ts` | how long a returned signature stays valid | documented — not yet read from this location; `signUpload()` has no expiry check today, only the `timestamp` param Cloudinary itself validates |
+| `ANNOUNCEMENT_TITLE_MAX_CHARS` | 120 | `packages/types/alerts.ts` | §13.7 announcement title cap | implemented |
+| `ANNOUNCEMENT_BODY_MAX_CHARS` | 1000 | `packages/types/alerts.ts` | §13.7 announcement body cap | implemented |
+| `ANNOUNCEMENT_RADIUS_DEFAULT_M` | 5000 (bounds 500–50,000) | `packages/types/alerts.ts`, `announcements` check constraint | default/ceiling for announcement targeting radius | implemented |
+| `ANNOUNCEMENT_MAX_ACTIVE_PER_AUTHOR` | 20 | `apps/api/src/routes/announcements.ts` | caps how many live announcements one author can hold at once | implemented |
+| `ANNOUNCEMENT_PUSH_LEASE_SECONDS` | 300 | `packages/types/alerts.ts` | how long one delivery claim is held before the sweep may reclaim it | documented |
+| `ANNOUNCEMENT_PUSH_SWEEP_CADENCE` | every 5 min | `apps/notify` Inngest cron | safety-net scan for undelivered announcements | documented |
+| `ANNOUNCEMENT_PUSH_CONCURRENCY` | 10 | `packages/push` | simultaneous in-flight sends per delivery run | documented |
+| `ANNOUNCEMENT_PUSH_BATCH_SIZE` | 100 | `packages/push` | targets per Inngest step, keeping each invocation inside the function time limit | documented |
+| `ANNOUNCEMENT_PUSH_MAX_PER_USER_PER_HOUR` | 6 | `packages/push` | anti-spam ceiling per subscriber, applied per-user rather than as a global cadence | documented |
+| `ALERT_SUBSCRIBE_RATE_LIMIT` | 5/min per user | `packages/security/rateLimit.ts` | §6's `POST /api/alerts/subscribe` and `POST /api/alerts/push-subscription` rows | implemented |
+| `ANNOUNCEMENT_CREATE_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | §6's `POST /api/announcements` row | implemented |
+| `AUDIT_LOG_PAGE_SIZE_DEFAULT` | 50 | `apps/api/src/routes/audit-log.ts` | default page size for `GET /api/admin/audit-log` | implemented |
 
 `CORS_ALLOWED_ORIGINS`'s value in `apps/api/wrangler.toml` is
 `https://avash.pages.dev` — the real Cloudflare Pages project domain

@@ -11,6 +11,8 @@
       "@avash/logger/*": ["./packages/logger/*"],
       "@avash/ml-inference": ["./packages/ml-inference/index.ts"],
       "@avash/ml-inference/*": ["./packages/ml-inference/*"],
+      "@avash/push": ["./packages/push/index.ts"],
+      "@avash/push/*": ["./packages/push/*"],
       "@avash/security": ["./packages/security/index.ts"],
       "@avash/security/*": ["./packages/security/*"],
       "@avash/types": ["./packages/types/index.ts"],

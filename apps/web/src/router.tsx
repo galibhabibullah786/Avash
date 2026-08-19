@@ -15,6 +15,7 @@ const Resources = lazy(() => import('./pages/Resources'));
 const Moderation = lazy(() => import('./pages/Moderation'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const AdminUsers = lazy(() => import('./pages/admin/Users'));
+const Announcements = lazy(() => import('./pages/Announcements'));
 
 export const router = createBrowserRouter([
   {
@@ -95,6 +96,17 @@ export const router = createBrowserRouter([
           <ProtectedRoute capability="reports:moderate">
             <Suspense fallback={null}>
               <Moderation />
+            </Suspense>
+          </ProtectedRoute>
+        ),
+        errorElement: <RouteError />,
+      },
+      {
+        path: 'announcements',
+        element: (
+          <ProtectedRoute capability="reports:moderate">
+            <Suspense fallback={null}>
+              <Announcements />
             </Suspense>
           </ProtectedRoute>
         ),

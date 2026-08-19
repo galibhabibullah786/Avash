@@ -48,7 +48,7 @@ now refuses to start without them rather than warning.
 | Variable | Exposure | Consumers | Local file |
 |---|---|---|---|
 | `SUPABASE_URL` | server-only | `apps/api`, GH Actions job scripts, `ml/serving/predict.py` — same value as `VITE_PUBLIC_SUPABASE_URL`, read under this name server-side | `.env` |
-| `SUPABASE_SERVICE_ROLE_KEY` | server-only | `apps/api`, GH Actions job scripts | `apps/api/.dev.vars`, `.env` |
+| `SUPABASE_SERVICE_ROLE_KEY` | server-only | `apps/api`, GH Actions job scripts, **and now `apps/notify`** (ADR-016 — talks to Supabase directly per ADR-007, never through `apps/api`) — a third home for this key; see the note below the table | `apps/api/.dev.vars`, `.env` |
 | `SUPABASE_JWT_SECRET` | server-only | `apps/api` (local JWT verification, ADR-009) | `apps/api/.dev.vars`, `.env` |
 | `VITE_PUBLIC_SUPABASE_URL` | client (`apps/web`) | citizen reads, Realtime subscriptions — real gate is RLS, not secrecy | `apps/web/.env` |
 | `VITE_PUBLIC_SUPABASE_ANON_KEY` | client (`apps/web`) | citizen reads, Realtime subscriptions — real gate is RLS, not secrecy | `apps/web/.env` |
@@ -63,8 +63,14 @@ now refuses to start without them rather than warning.
 | `CLOUDINARY_API_SECRET` | server-only | `apps/api` (`POST /api/uploads/signature`) — the value `signUpload()` hashes into the signature; never logged, never returned in any response | `apps/api/.dev.vars`, `.env` |
 | `VITE_PUBLIC_TURNSTILE_SITE_KEY` | client | widget render only | `apps/web/.env` |
 | `VITE_PUBLIC_VAPID_PUBLIC_KEY` | client (`apps/web`) | Push subscription registration | `apps/web/.env` |
-| `VAPID_PUBLIC_KEY` | server-only | `ml/serving/predict.py` — Web Push signing needs both halves of the keypair; same value as `VITE_PUBLIC_VAPID_PUBLIC_KEY` | `.env` |
-| `VAPID_PRIVATE_KEY` | server-only | `ml/serving/predict.py` (sends push notifications), never in any deployed app | `.env` |
+| `VAPID_PUBLIC_KEY` | server-only | `ml/serving/predict.py` **and** `apps/notify` (ADR-016) — Web Push signing needs both halves of the keypair; same value as `VITE_PUBLIC_VAPID_PUBLIC_KEY` | `.env` |
+| `VAPID_PRIVATE_KEY` | server-only | `ml/serving/predict.py` **and** `apps/notify` (ADR-016) — sends push notifications, never in any deployed app reachable by a browser | `.env` |
+| `INNGEST_EVENT_KEY` | server-only | `apps/notify` — authenticates event sends to Inngest (the announcement-published trigger and the sweep both send through this) | none yet (§ below) |
+| `INNGEST_SIGNING_KEY` | server-only | `apps/notify` — verifies that an inbound Inngest function invocation actually came from Inngest, not a forged request | none yet (§ below) |
+| `ANNOUNCEMENT_WEBHOOK_SECRET` | server-only | `apps/notify`'s Supabase Database Webhook receiver — the shared-secret header compared in constant time; the webhook body itself is untrusted (critique §11, `temp/live-announcement-push.md`) | none yet (§ below) |
+| `VERCEL_TOKEN` | CI/deploy-only, a real secret | `.github/workflows/deploy-notify.yml` — authenticates `vercel pull` / `vercel build` / `vercel deploy` | GitHub Actions secret only |
+| `VERCEL_ORG_ID` | CI/deploy-only | `.github/workflows/deploy-notify.yml` — identifies the Vercel org/team `apps/notify` deploys under | GitHub Actions secret only |
+| `VERCEL_PROJECT_ID` | CI/deploy-only | `.github/workflows/deploy-notify.yml` — identifies the Vercel project `apps/notify` deploys to | GitHub Actions secret only |
 | `DATABASE_URL_LOCAL` | local-only | migration/seed tooling pointed at the `compose.yaml` `db` container (ADR-011) — a disposable localhost database, never a deployed one | `.env` |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT` | local-only | optional overrides for the `db` container's defaults (`postgres` / `postgres` / `avash` / `54322`), read by Compose | `.env` |
 | `DATABASE_URL_HOSTED` | server-only, a real secret | `scripts/seed-db.ts` when passed `--hosted` (§ 9a) — full superuser access to a real Supabase project's Postgres | `.env` |
@@ -74,6 +80,18 @@ name** — both locks above key off the identifier, not off intent, so a
 browser-bound value under a bare name is simply unreadable. That is why
 the VAPID public key is listed twice, under two names for two consumers,
 rather than once under a bare name (`docs/PROJECT_PLAN.md` §7.1 corollary).
+
+**`SUPABASE_SERVICE_ROLE_KEY` now has a third home.** Before ADR-016 it
+lived in exactly two places: GitHub Actions secrets (job scripts) and
+Cloudflare Worker secrets (`apps/api`). `apps/notify` adds a third —
+Vercel's environment variable store — because it talks to Supabase
+directly with the service-role key rather than through `apps/api`
+(ADR-007's rule: jobs/services talk to Supabase directly, never proxy
+through the request-serving Worker). This key bypasses Row Level
+Security entirely in all three places; the rotation procedure below now
+has a third target to update in step 2, and `apps/notify` must never be
+the app that logs it, echoes it in an error response, or leaks it into a
+webhook reply.
 
 **The `local-only` class** is narrower than `server-only`: these values
 address the disposable PostGIS container defined in `compose.yaml`
@@ -371,11 +389,16 @@ repository under any circumstance (R2).
       verified healthy — `docs/security/github-environments.md` § Rotation).
    b. `wrangler secret put` for each Cloudflare Workers environment
       (`preview`, `production`).
-   c. Cloudflare Pages build environment variable, for any `VITE_PUBLIC_*`
+   c. Vercel project environment variables (`preview`, `production`), for
+      `apps/notify` — required for `SUPABASE_SERVICE_ROLE_KEY`,
+      `VAPID_PRIVATE_KEY`/`VAPID_PUBLIC_KEY`, `INNGEST_EVENT_KEY`,
+      `INNGEST_SIGNING_KEY`, and `ANNOUNCEMENT_WEBHOOK_SECRET`.
+   d. Cloudflare Pages build environment variable, for any `VITE_PUBLIC_*`
       value that changed (requires a new deploy to take effect, since it's
       baked into the static bundle at build time).
 3. Trigger a redeploy of `apps/api` (and `apps/web`, if a public var
-   changed) so the new value is actually in use, not just stored.
+   changed, and `apps/notify`, if a Vercel-held value changed) so the new
+   value is actually in use, not just stored.
 4. Revoke/delete the old credential at the source **after** confirming the
    new one is live (health check, or a manual smoke test of the affected
    route).

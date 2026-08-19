@@ -21,7 +21,6 @@ FROM python:3.11-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
@@ -29,21 +28,33 @@ WORKDIR /app
 # libgomp1 is LightGBM's OpenMP runtime — the slim base omits it and
 # `import lightgbm` fails without it. Left unpinned so it tracks Debian's
 # security patches rather than freezing a version (hadolint DL3008).
+# Cache mounts for apt's lists+archives: this layer still re-runs on every
+# build (base-image update, cache bust, etc.), so without them each rerun
+# re-fetches the package index and .deb from the network. The mounts are
+# not part of the final image, so they cannot make the image itself stale.
 # hadolint ignore=DL3008
-RUN apt-get update \
-    && apt-get install --no-install-recommends -y libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update \
+    && apt-get install --no-install-recommends -y libgomp1
 
 # pip's own bundled setuptools/wheel/jaraco.context ship with known CVEs
 # in the base image; upgrade the toolchain itself before it builds
 # anything from requirements.txt. Left unpinned, same rationale as
 # libgomp1 above (hadolint DL3013).
+#
+# PIP_NO_CACHE_DIR is deliberately NOT set: it would disable pip's cache
+# outright, defeating the mount below. Nothing pip caches ends up in the
+# image regardless — /root/.cache/pip is a BuildKit cache mount, not a
+# layer — so there's no size/leak tradeoff being made here.
 # hadolint ignore=DL3013
-RUN python -m pip install --upgrade pip setuptools wheel
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    python -m pip install --upgrade pip setuptools wheel
 
 # Dependencies first: this layer is cached until requirements.txt changes.
 COPY ml/requirements.txt ./ml/requirements.txt
-RUN python -m pip install --requirement ./ml/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    python -m pip install --requirement ./ml/requirements.txt
 
 # Non-root by default. UID 1000 matches the typical host user, so files
 # written into the bind-mounted ./ml and ./packages/ml-inference are owned

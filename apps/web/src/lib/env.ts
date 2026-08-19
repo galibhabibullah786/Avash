@@ -9,6 +9,7 @@ const apiBaseUrl = import.meta.env.VITE_PUBLIC_API_BASE_URL;
 const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY;
 const turnstileSiteKey = import.meta.env.VITE_PUBLIC_TURNSTILE_SITE_KEY;
+const vapidPublicKey = import.meta.env.VITE_PUBLIC_VAPID_PUBLIC_KEY;
 
 function requireVar(name: string, value: string | undefined): string {
   if (!value) {
@@ -24,4 +25,19 @@ export const env = {
   supabaseUrl: requireVar('VITE_PUBLIC_SUPABASE_URL', supabaseUrl),
   supabaseAnonKey: requireVar('VITE_PUBLIC_SUPABASE_ANON_KEY', supabaseAnonKey),
   turnstileSiteKey: requireVar('VITE_PUBLIC_TURNSTILE_SITE_KEY', turnstileSiteKey),
+  /**
+   * Optional, deliberately — unlike the four above, a missing VAPID key
+   * degrades one feature (Web Push registration) rather than breaking the
+   * app, so it must not throw at module load and take every page down
+   * with it. It IS read here rather than at the call site so the whole
+   * client env surface stays in one file and the secrets-boundary lint
+   * rule can see the static `import.meta.env.VITE_PUBLIC_*` access.
+   *
+   * `deploy-web.yml` injects it from the environment's
+   * `VITE_PUBLIC_VAPID_PUBLIC_KEY` variable; if that is unset, the build
+   * succeeds and push registration reports itself as unconfigured
+   * (`usePushSubscription`), which is a named, visible state rather than
+   * a generic failure someone has to reverse-engineer from a console.
+   */
+  vapidPublicKey: vapidPublicKey ?? null,
 };
