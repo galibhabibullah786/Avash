@@ -651,10 +651,10 @@ The webhook is what actually triggers delivery — it is configured **once,
 by hand, in the Supabase dashboard**, not through this repository's CI.
 There is one webhook per environment, and **the production webhook is the
 only one that should exist against a live `announcements` table** — see
-the warning below.
+the warning below (**Database Webhooks** integration must be installed beforehand).
 
-1. In the Supabase dashboard for the target project: **Database →
-   Webhooks → Create a new hook**.
+1. In the Supabase dashboard for the target project: **Integration → Database Webhooks
+    → Webhooks → Create a new hook**.
 2. **Table:** `announcements`. **Events:** `INSERT` only — the trigger
    condition is `AFTER INSERT ON announcements`; `UPDATE`/`DELETE` are not
    wired to this webhook.

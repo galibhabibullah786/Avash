@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { isAdmin } from '@avash/security';
 import { useListQuery } from '../../hooks/useListQuery';
 import { useSession } from '../auth/SessionProvider';
 import { useAnnouncements } from './useAnnouncements';
@@ -10,17 +11,25 @@ const SORTABLE: readonly string[] = [];
 /**
  * The moderator/admin view of announcements they can act on
  * (`GET /api/announcements?scope=manage`): their own rows, or every row
- * for an admin, expired ones included. Unlike `AnnouncementList`, this
- * takes no location — a management list that hides your own announcement
- * because you moved out of its radius would be useless for managing it.
+ * for an admin, expired ones included. The heading and empty/error copy
+ * follow the same admin-vs-author split the server applies, so an admin
+ * reading "All announcements" isn't misled into thinking the list is
+ * scoped to just their own. Unlike `AnnouncementList`, this takes no
+ * location — a management list that hides your own announcement because
+ * you moved out of its radius would be useless for managing it.
  *
  * Deletion asks for confirmation first: it is irreversible, and the row
  * being deleted is one every targeted citizen may already be relying on.
  */
 export function AnnouncementManageList() {
-  const { accessToken } = useSession();
+  const { accessToken, role } = useSession();
   const { query, setPage } = useListQuery(SORTABLE);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+
+  // Mirrors the server's own scoping (`apps/api/src/routes/announcements.ts`):
+  // `scope=manage` returns every row for an admin, only the caller's own
+  // rows otherwise. The heading must say which one the list actually shows.
+  const showsAllAnnouncements = isAdmin(role);
 
   const announcements = useAnnouncements(
     accessToken,
@@ -42,7 +51,7 @@ export function AnnouncementManageList() {
   return (
     <section className="card" data-testid="announcement-manage-list">
       <div className="page__title-row">
-        <h2 className="page__title">Your announcements</h2>
+        <h2 className="page__title">{showsAllAnnouncements ? 'All announcements' : 'Your announcements'}</h2>
         <button
           type="button"
           className="button button--secondary"
@@ -64,11 +73,11 @@ export function AnnouncementManageList() {
         <p data-testid="announcement-manage-loading">Loading…</p>
       ) : announcements?.isError ? (
         <p className="field__error" data-testid="announcement-manage-error">
-          Unable to load your announcements right now.
+          Unable to load {showsAllAnnouncements ? '' : 'your '}announcements right now.
         </p>
       ) : items.length === 0 ? (
         <p className="status-panel__item" data-testid="announcement-manage-empty">
-          You haven't published any announcements yet.
+          {showsAllAnnouncements ? 'No announcements have been published yet.' : "You haven't published any announcements yet."}
         </p>
       ) : (
         <>

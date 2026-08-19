@@ -45,11 +45,13 @@ vi.mock('../../hooks/useListQuery', () => ({
   }),
 }));
 
+let sessionRole: string = 'moderator';
+
 vi.mock('../auth/SessionProvider', () => ({
   useSession: () => ({
     session: null,
     user: { id: 'user-1', email: 'mod@example.com' },
-    role: 'moderator',
+    role: sessionRole,
     accessToken: 'token-1',
     status: 'authenticated',
   }),
@@ -104,6 +106,7 @@ describe('AnnouncementManageList', () => {
       refetch: refetchMock,
     };
     deleteState = { isPending: false, isError: false, error: null };
+    sessionRole = 'moderator';
     refetchMock.mockReset();
     useAnnouncementsMock.mockReset();
     deleteMock.mockReset();
@@ -142,6 +145,20 @@ describe('AnnouncementManageList', () => {
     const el = await render();
     expect(el.querySelector('[data-testid="announcement-manage-empty"]')?.textContent).toBe(
       "You haven't published any announcements yet."
+    );
+  });
+
+  test('titles the list "Your announcements" for a moderator, whose manage scope is author-narrowed', async () => {
+    const el = await render();
+    expect(el.querySelector('.page__title')?.textContent).toBe('Your announcements');
+  });
+
+  test('titles the list "All announcements" for an admin, whose manage scope is unnarrowed server-side', async () => {
+    sessionRole = 'admin';
+    const el = await render();
+    expect(el.querySelector('.page__title')?.textContent).toBe('All announcements');
+    expect(el.querySelector('[data-testid="announcement-manage-empty"]')?.textContent).toBe(
+      'No announcements have been published yet.'
     );
   });
 

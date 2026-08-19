@@ -1,0 +1,6 @@
+# Without this, Vercel's zero-config `api/` detection treats every file
+# under api/ as a route — including *.test.ts, which has no default
+# export and no business being a public HTTP endpoint. Confirmed via
+# `vercel inspect`: before this file existed, the build produced a real,
+# publicly reachable `api/announcement-published.test` function.
+**/*.test.ts

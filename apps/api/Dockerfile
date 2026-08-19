@@ -18,7 +18,17 @@ RUN corepack enable && corepack prepare pnpm@9.1.0 --activate
 
 COPY . .
 
-RUN pnpm install --frozen-lockfile \
+# `COPY . .` before install (rather than a hand-copied list of workspace
+# manifests) is deliberate — see apps/web/Dockerfile's identical comment.
+# The cache mount is what keeps that simple approach cheap: BuildKit
+# persists pnpm's content-addressed package store across builds even
+# though the layer above it is invalidated by every source change, so a
+# rebuild after touching application code reuses already-downloaded
+# packages instead of refetching the whole workspace from the registry.
+# `sharing=locked` serializes access so concurrent builds (web/api/notify
+# built in parallel) don't corrupt the shared store.
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
+    pnpm install --frozen-lockfile \
     && pnpm --filter api build:node
 
 # Fail here, not at `docker run`. An esbuild that exits 0 having written an

@@ -4,16 +4,18 @@
 # easy to get subtly wrong per-machine — a Postgres/PostGIS database that
 # matches Supabase, and the Python runtime for `ml/`.
 #
-# The apps: `web` and `api` services, behind the `apps` profile, land with
-# the app-container-images work — each builds from its own
-# `apps/*/Dockerfile` (ADR-012). They are a portability artifact; production
-# still ships via Cloudflare Pages and `wrangler deploy`, and `pnpm dev`
-# remains the normal way to develop. See `docs/docker.md`.
+# The apps: `web`, `api`, and `notify` services, behind the `apps` profile,
+# land with the app-container-images work — each builds from its own
+# `apps/*/Dockerfile` (ADR-012). `web`/`api` are a portability artifact;
+# production ships via Cloudflare Pages and `wrangler deploy`, and
+# `pnpm dev` remains the normal way to develop. `notify` (ADR-016) is
+# local-testing only — its production deploy target is Vercel + Inngest,
+# never this image. See `docs/docker.md`.
 #
 #   docker compose up -d db                  # start the database
 #   docker compose --profile ml build ml     # build the ML image
 #   docker compose --profile ml run --rm ml python ml/training/train.py
-#   docker compose --profile apps up -d      # the two app images (once they exist)
+#   docker compose --profile apps up -d      # web, api, and notify images
 #
 # Values below interpolate from the repo-root `.env` (Compose loads it
 # automatically). Every one has a local-only default, so the database
@@ -143,6 +145,67 @@ services:
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+    restart: unless-stopped
+
+  # apps/notify — announcement push delivery (ADR-016), on Node through
+  # apps/notify/server/node-server.ts. Production is Vercel + Inngest;
+  # this container is local-testing only, not a deploy target. Talks to
+  # Supabase directly with the service-role key (ADR-007) — never through
+  # the api container.
+  notify:
+    profiles: ["apps"]
+    build:
+      context: .
+      dockerfile: apps/notify/Dockerfile
+    image: avash-notify:local
+    ports:
+      - "127.0.0.1:${NOTIFY_PORT:-8788}:8788"
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      # Shared secret the Supabase Database Webhook must present on every
+      # call (docs/manual-deploy.md). Left unset locally means every
+      # webhook call 401s until you set it — the sweep still delivers.
+      ANNOUNCEMENT_WEBHOOK_SECRET: ${ANNOUNCEMENT_WEBHOOK_SECRET:-}
+      # Inngest's SDK defaults to "cloud mode" and 500s every /api/inngest
+      # call without a signing key. INNGEST_DEV, set to a URL rather than
+      # bare "1", switches it to local dev mode AND points event sends at
+      # the inngest-dev service below by its Compose DNS name — "1" alone
+      # would make the SDK default to http://localhost:8288/, which inside
+      # this container's own network namespace is itself, not a sibling
+      # container. Leave INNGEST_EVENT_KEY/INNGEST_SIGNING_KEY unset to
+      # stay in dev mode; set all three (and unset INNGEST_DEV) to test
+      # against a real Inngest Cloud environment instead.
+      INNGEST_DEV: ${INNGEST_DEV:-http://inngest-dev:8288}
+      INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:-}
+      INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:-}
+    restart: unless-stopped
+
+  # Inngest Dev Server — durable-execution engine for apps/notify's
+  # functions, local-testing only (same status as `notify` itself: no
+  # Inngest account, never a production deploy target). Auto-discovers
+  # notify's /api/inngest endpoint on startup (`-u`) and re-syncs on every
+  # event, so a `notify` rebuild does not require restarting this one.
+  # Depends on `notify` (not the reverse) so its startup autodiscovery
+  # call has something to actually find on the first try.
+  inngest-dev:
+    profiles: ["apps"]
+    image: inngest/inngest:latest
+    command:
+      - inngest
+      - dev
+      - -u
+      - http://notify:8788/api/inngest
+      - --host
+      - "0.0.0.0"
+    ports:
+      # The dev server's own UI + API — inspect runs, replay events, etc.
+      - "127.0.0.1:${INNGEST_DEV_PORT:-8288}:8288"
+    depends_on:
+      notify:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

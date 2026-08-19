@@ -68,3 +68,10 @@ export async function handleAnnouncementPublishedWebhook(request: Request): Prom
 
   return new Response(null, { status: 202 });
 }
+
+// Vercel's Node.js Function runtime invokes the default export of an
+// `api/*.ts` file as its handler — a named export alone (kept above for
+// server/node-server.ts's direct import and for the test file) is never
+// picked up, so without this the route builds but 500s on every real
+// request.
+export default handleAnnouncementPublishedWebhook;

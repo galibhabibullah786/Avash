@@ -40,7 +40,7 @@ only once the constant is actually wired into the code location listed.
 | `POSTGRES_LOCAL_PORT` | 54322 (host) → 5432 (container) | `compose.yaml` | avoids collision with a host-installed Postgres; matches the Supabase CLI convention | implemented |
 | `WEB_IMAGE_BASE` | `nginxinc/nginx-unprivileged:1.27.2-alpine` | `apps/web/Dockerfile` | runtime base for the web image — non-root, listens on 8080 (ADR-012) | implemented |
 | `API_IMAGE_BASE` | `node:20.17.0-alpine3.20` | `apps/api/Dockerfile` (both stages) | build + runtime base for the API image | implemented |
-| `APP_CONTAINER_PORTS` | web 8080, api 8787 (in-container) | `apps/web/docker/default.conf.template`, `apps/api/server/node-server.ts`, `compose.yaml` | fixed in-container ports; host ports overridable via `WEB_PORT`/`API_PORT` | implemented |
+| `APP_CONTAINER_PORTS` | web 8080, api 8787, notify 8788 (in-container) | `apps/web/docker/default.conf.template`, `apps/api/server/node-server.ts`, `apps/notify/server/node-server.ts`, `compose.yaml` | fixed in-container ports; host ports overridable via `WEB_PORT`/`API_PORT`/`NOTIFY_PORT` | implemented |
 | `CONTAINER_REGISTRY` | `ghcr.io/<owner>/avash-web`, `ghcr.io/<owner>/avash-api` | `.github/workflows/build-images.yml` | published image names; `sha-<short>` tags, plus `latest` on `main` | implemented |
 | `WEATHER_CACHE_TTL_S` | `s-maxage=900, swr=1800` | `apps/api/src/routes/weather.ts` | edge cache for weather reads; 15 min against a 3 h ingest cadence never serves a value the source could have refreshed | implemented |
 | `WEATHER_HISTORY_WINDOW_DAYS` | 14 | `apps/api/src/routes/weather.ts` | dashboard history window; matches the 14-day rolling features in §5.1 so the chart shows what the model will consume | implemented |
