@@ -6,6 +6,7 @@ import { ROLE_DASHBOARDS, ROLE_LABELS } from '../features/dashboard/roleDashboar
 import { AlertSubscribeForm } from '../features/alerts/AlertSubscribeForm';
 import { AnnouncementList } from '../features/alerts/AnnouncementList';
 import { PushNotificationToggle } from '../features/alerts/PushNotificationToggle';
+import { InstallAppPrompt } from '../features/alerts/InstallAppPrompt';
 import { listenForServiceWorkerNavigation } from '../lib/serviceWorker';
 import '../features/dashboard/dashboard.css';
 
@@ -79,6 +80,11 @@ export default function Dashboard() {
           lives at /announcements, which IS a tile (moderator/admin only). */}
       <section className="dashboard__section">
         <h2 className="page__title">Proximity alerts</h2>
+        {/* Above the push toggle on purpose: on iOS/iPadOS installing is a
+            PREREQUISITE for push working at all, so offering it after the
+            toggle would put the steps in the wrong order. Renders nothing
+            unless the browser actually offered an install. */}
+        <InstallAppPrompt />
         <PushNotificationToggle />
         <AlertSubscribeForm />
       </section>

@@ -13,41 +13,116 @@
  * browser vendor's push service (signed with the VAPID private key) and
  * from there to this worker; the app itself may be closed entirely.
  *
- * The fetch handler below is deliberately minimal: a navigation that the
- * network cannot serve falls back to `public/offline.html`, and every
- * other request passes through untouched. It is NOT the Workbox
- * precaching strategy docs/PROJECT_PLAN.md §10 describes for the offline
- * ONNX/model-snapshot feature — that is a separate piece of work, and
- * quietly caching every asset here would change what the whole app
- * resolves to. It exists because a browser will not offer to install a
- * PWA without a fetch handler, and on iOS/iPadOS an installed app is the
- * only place Web Push works at all.
+ * BUILT, NOT SERVED RAW. This file lives in `src/`, not `public/`, and is
+ * compiled by vite-plugin-pwa's `injectManifest` strategy
+ * (docs/PROJECT_PLAN.md §1). It is still a CLASSIC worker script with no
+ * `import` statements — the one thing the build adds is
+ * `self.__WB_MANIFEST`, the content-hashed list of every build artifact,
+ * which is the only way a service worker can know what "the current app
+ * shell" consists of. Keep it import-free: `src/lib/sw.test.ts` loads this
+ * source into a `vm` sandbox to exercise the handlers directly, and an ESM
+ * import would end that.
+ *
+ * The fetch handler serves navigations app-shell-first from the precache
+ * and falls back to `public/offline.html`; every non-navigation request
+ * is served cache-first ONLY if it is a precached build asset, and passes
+ * through untouched otherwise. API calls, Supabase requests and tiles are
+ * never cached here — see the fetch handler's own comments.
  */
 
 const OFFLINE_URL = '/offline.html';
-const OFFLINE_CACHE = 'avash-offline-v1';
 
 /**
- * `fetch` + `cache.put`, deliberately not `cache.add`: Chrome rejects
- * `add()` here with `InvalidAccessError: Entry already exists` (observed,
- * not theorised), which left the cache empty and the offline fallback
- * dead while the install still reported success. `put` takes a response
- * this code already holds, so a failure is visible in the status check
- * rather than swallowed by the helper.
+ * Version-scoped by the build. `self.__WB_MANIFEST` changes whenever any
+ * build artifact changes, so hashing it into the cache name means a
+ * deploy lands in a NEW cache and the activate handler below deletes the
+ * old one — rather than a stale asset surviving indefinitely under a
+ * fixed key, which is the classic way a precaching service worker pins
+ * users to a version that no longer exists on the server.
  */
-async function precacheOfflinePage() {
-  const cache = await caches.open(OFFLINE_CACHE);
-  const response = await fetch(OFFLINE_URL, { cache: 'reload' });
-  if (response?.ok) {
-    await cache.put(OFFLINE_URL, response);
+const PRECACHE_ENTRIES = self.__WB_MANIFEST ?? [];
+
+/**
+ * Workbox emits manifest urls RELATIVE to the build base
+ * (`index.html`, `assets/x-hash.js`), while `fetch` events carry absolute
+ * ones and `URL.pathname` is always rooted. Comparing the two directly
+ * matches nothing — every lookup misses, the precache is written but
+ * never read, and the whole thing degrades silently to network-only.
+ * Resolving against the worker's own scope normalizes both sides and
+ * keeps this correct if the app is ever served from a sub-path.
+ */
+function toScopedPath(url) {
+  try {
+    return new URL(url, self.registration?.scope ?? self.location.origin).pathname;
+  } catch {
+    return null;
   }
+}
+
+function precacheCacheName() {
+  const revisions = PRECACHE_ENTRIES.map((entry) => `${entry?.url ?? ''}@${entry?.revision ?? ''}`)
+    .sort()
+    .join('|');
+  // djb2 — a hash, not a security primitive: this only has to change when
+  // the asset list changes, and SubtleCrypto is async and unavailable to
+  // a synchronous module-scope initializer.
+  let hash = 5381;
+  for (let i = 0; i < revisions.length; i += 1) {
+    hash = ((hash << 5) + hash + revisions.charCodeAt(i)) | 0;
+  }
+  return `avash-precache-${(hash >>> 0).toString(36)}`;
+}
+
+const OFFLINE_CACHE = precacheCacheName();
+
+/** Same-origin paths the precache is responsible for, for O(1) fetch-time lookup. */
+const PRECACHED_PATHS = new Set(
+  PRECACHE_ENTRIES.map((entry) => toScopedPath(entry?.url)).filter(Boolean)
+);
+
+/** The SPA app shell — every client-side route resolves to this document. */
+const APP_SHELL_PATH = toScopedPath('index.html') ?? '/index.html';
+
+/**
+ * `fetch` + `cache.put`, deliberately not `cache.add`/`addAll`: Chrome
+ * rejects `add()` here with `InvalidAccessError: Entry already exists`
+ * (observed, not theorised), which left the cache empty and the offline
+ * fallback dead while the install still reported success. `put` takes a
+ * response this code already holds, so a failure is visible rather than
+ * swallowed by the helper.
+ *
+ * `addAll` is additionally wrong for the app shell: it is atomic, so one
+ * asset 404ing during a deploy rollover discards the entire precache and
+ * leaves the worker with nothing. Each entry is put independently and a
+ * failure is tolerated — a partially warm cache degrades to a network
+ * fetch for the missing asset, which is exactly the behaviour that
+ * existed before precaching.
+ */
+async function precacheOne(cache, url) {
+  try {
+    const response = await fetch(url, { cache: 'reload' });
+    if (response?.ok) {
+      await cache.put(url, response);
+    }
+  } catch {
+    // Deliberately swallowed — see the addAll note above.
+  }
+}
+
+async function precacheAppShell() {
+  const cache = await caches.open(OFFLINE_CACHE);
+  // The offline page is not part of __WB_MANIFEST (it is a public/ asset
+  // the app never imports, so nothing in the build graph references it),
+  // but it is the last-resort navigation fallback and must be present.
+  const urls = new Set([OFFLINE_URL, ...PRECACHED_PATHS]);
+  await Promise.all([...urls].map((url) => precacheOne(cache, url)));
 }
 
 // A newly installed worker would otherwise sit in "waiting" until every
 // tab closes, so a subscriber who reloads still runs the old handler.
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    precacheOfflinePage()
+    precacheAppShell()
       .catch(() => undefined)
       .then(() => self.skipWaiting())
   );
@@ -63,15 +138,57 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+/**
+ * Cache-first for precached BUILD ASSETS ONLY (`/assets/*.js`, CSS,
+ * icons) — everything in `__WB_MANIFEST` is content-hashed, so a cache
+ * hit can never be stale: a changed file is a different URL. This is what
+ * makes the installed app open instantly and work offline.
+ *
+ * Everything else — `/api/*`, Supabase, OSM tiles, anything
+ * cross-origin — is deliberately NOT handled. Returning a cached API
+ * response would show a user stale outbreak risk data, which for this
+ * application is worse than showing them an error.
+ */
+function isPrecachedAsset(request) {
+  if (request?.method !== 'GET') return false;
+  let url;
+  try {
+    url = new URL(request.url);
+  } catch {
+    return false;
+  }
+  if (url.origin !== self.location.origin) return false;
+  return PRECACHED_PATHS.has(url.pathname);
+}
+
 self.addEventListener('fetch', (event) => {
-  // Navigations only. API calls, Supabase requests and static assets are
+  const request = event?.request;
+
+  if (isPrecachedAsset(request)) {
+    event.respondWith(
+      caches.match(request).then((cached) => cached ?? fetch(request))
+    );
+    return;
+  }
+
+  // Navigations. API calls, Supabase requests and third-party assets are
   // left entirely alone — an offline page served in place of a failed
   // fetch() would be far worse than the failure itself.
-  if (event.request?.mode !== 'navigate') {
+  if (request?.mode !== 'navigate') {
     return;
   }
   event.respondWith(
-    fetch(event.request).catch(async () => {
+    fetch(request).catch(async () => {
+      // App-shell fallback FIRST. This is a client-rendered SPA: every
+      // route is served by the same index.html, so a precached index.html
+      // can render the real application offline (the router and the
+      // React Query cache take over from there). Falling straight to
+      // offline.html would show a dead-end page for a deep link the app
+      // is perfectly capable of rendering.
+      const shell = await caches.match(APP_SHELL_PATH);
+      if (shell) {
+        return shell;
+      }
       const cached = await caches.match(OFFLINE_URL);
       // Always a real Response, never Response.error(): the browser
       // renders its own network-error page for a rejected navigation,

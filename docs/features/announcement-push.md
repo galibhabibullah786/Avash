@@ -59,13 +59,13 @@ delivery only.
   browser: `announcementPushPayloadSchema` (`packages/types/alerts.ts`)
   carries `announcementId`, and the intent is for the service worker to
   use it as the notification's `tag` (the way
-  `apps/web/public/sw.js` already tags every risk-crossing push
+  `apps/web/src/sw.js` already tags every risk-crossing push
   `'avash-risk-alert'` so repeats collapse instead of stacking — see
   `docs/features/push-notifications.md`). A second `showNotification()`
   call with the same `tag` replaces the first rather than adding a
   second banner, so a subscriber who receives the same announcement twice
   sees one notification, not two. (Wiring `announcementId` through as
-  that tag is `apps/web/public/sw.js` work, out of this slice's owned
+  that tag is `apps/web/src/sw.js` work, out of this slice's owned
   paths — noted here so the at-least-once guarantee above is not read as
   "the user might see duplicates.")
 - **`announcement_push_targets` and the bug it closes.** The old
@@ -109,9 +109,35 @@ delivery only.
   `packages/push`, and fixing it (e.g. shipping the install prompt flow
   needed for the iOS case) is not this slice's job — only documenting it
   plainly is.
+- **The Database Webhook is a MIGRATION, not a dashboard setting.**
+  `20260819000024_announcement_published_webhook.sql` declares the
+  `after insert on announcements` trigger and the `security definer`
+  function behind it, which reads the apps/notify origin and the shared
+  secret from `vault.decrypted_secrets` and calls `net.http_post`
+  (`pg_net`). This was a real outage, not a precaution: every other part
+  of this path shipped while the trigger itself existed only as a
+  dashboard step nobody had performed, so `announcements` carried zero
+  triggers and publishing from the UI pushed nothing — delivery happened
+  only when someone invoked it by hand. Declaring it as a migration makes
+  the fast path exist wherever the migrations run, including a fresh
+  `pnpm docker:supabase` stack.
+
+  Two Vault secrets must be seeded per environment before the fast path
+  works; the trigger logs a warning and defers to the sweep when either
+  is absent, rather than failing the moderator's insert:
+
+  ```sql
+  select vault.create_secret('https://<notify-host>', 'notify_origin');
+  select vault.create_secret('<ANNOUNCEMENT_WEBHOOK_SECRET>', 'announcement_webhook_secret');
+  ```
+
+  The secret is read at call time rather than baked into the trigger
+  definition — Supabase's own webhook UI writes the target URL and auth
+  header as literal trigger arguments, where the secret is readable from
+  `pg_trigger` by anyone who can read the catalogs.
 - **Data flow, end to end:** `POST /api/announcements` inserts a row
-  (unchanged, `apps/api`, see `docs/features/alerts.md`) → Supabase fires
-  the Database Webhook → `apps/notify/api/announcement-published.ts`
+  (unchanged, `apps/api`, see `docs/features/alerts.md`) → the trigger
+  above fires the Database Webhook → `apps/notify/api/announcement-published.ts`
   constant-time-compares a shared-secret header, validates the body with
   `announcementWebhookBodySchema`, and trusts only `record.id` from the
   payload — everything else about the announcement is re-read from the
@@ -138,6 +164,8 @@ delivery only.
 | `ANNOUNCEMENT_PUSH_LEASE_SECONDS` | 300 | `packages/types/alerts.ts` | how long a delivery claim (`push_claimed_at`) is held before the sweep may reclaim it |
 | `ANNOUNCEMENT_PUSH_SWEEP_CADENCE` | every 5 min | `apps/notify` Inngest cron | safety-net scan cadence for undelivered announcements |
 | `ANNOUNCEMENT_PUSH_CONCURRENCY` | 10 | `packages/push` | simultaneous in-flight sends per delivery run |
+| `ANNOUNCEMENT_PUSH_RUN_CONCURRENCY` | 5 | `packages/types/alerts.ts` | simultaneous Inngest function RUNS — a different quantity from the row above, capped by the Inngest plan rather than by delivery tuning |
+| `INNGEST_PLAN_CONCURRENCY_LIMIT` | 5 | `packages/types/alerts.ts` | the Inngest account's concurrent-run ceiling; a function declaring more makes Inngest reject the entire app registration |
 | `ANNOUNCEMENT_PUSH_BATCH_SIZE` | 100 | `packages/push` | targets per Inngest step, keeping each invocation inside the function time limit |
 | `ANNOUNCEMENT_PUSH_MAX_PER_USER_PER_HOUR` | 6 | `packages/push` | anti-spam ceiling per subscriber, applied per-user, not as a global cadence |
 | the announcement radius ceiling | 50,000 m | `announcement_push_targets` RPC (`least(a.radius_m, 50000)`), mirroring `announcements.radius_m`'s check constraint | defense in depth against a stored value outside the constraint's bounds |
@@ -193,17 +221,20 @@ STRIDE analysis, intended for `docs/security/threat-model.md`:
    preference column and checking it in both delivery paths (Python and
    `packages/push`) is future work.
 
-**A warning for whoever adds `vite-plugin-pwa`
-(`docs/PROJECT_PLAN.md`, planned but not yet added):** it **must** be
-configured in `injectManifest` mode, using the existing hand-written
-`apps/web/public/sw.js` as the source file. It must **never** be
-configured in `generateSW` mode. `generateSW` generates its own service
-worker from scratch and would silently overwrite `sw.js`'s `push` and
-`notificationclick` handlers at build time — everything this document and
+**`vite-plugin-pwa` is now configured, in `injectManifest` mode** — see
+`apps/web/vite.config.ts`. It **must never** be switched to `generateSW`.
+`generateSW` builds its own service worker from scratch and would
+silently overwrite `sw.js`'s `push` and `notificationclick` handlers at
+build time — everything this document and
 `docs/features/push-notifications.md` describe. The resulting failure
-mode ("push stopped working after we added offline caching") would have
-no obvious connection to a PWA plugin config choice made for an unrelated
-reason, and would be genuinely painful to root-cause without this note.
+mode ("push stopped working after we added offline caching") has no
+obvious connection to a PWA plugin config choice made for an unrelated
+reason, which is why the constraint is recorded here as well as in the
+config.
+
+`apps/web/e2e/pwa.spec.ts` asserts the injected precache manifest is
+actually present in the built worker, so a config regression that quietly
+disabled `injectManifest` fails a test rather than shipping.
 
 **Manual Test Log:**
 

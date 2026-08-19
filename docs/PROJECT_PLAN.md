@@ -949,6 +949,8 @@ Waterfall governs the *project timeline* (mapped below to the original 10-week p
 | `ANNOUNCEMENT_PUSH_LEASE_SECONDS` | 300 | `packages/types/alerts.ts` | how long one delivery claim is held before the sweep may reclaim it |
 | `ANNOUNCEMENT_PUSH_SWEEP_CADENCE` | every 5 min | `apps/notify` Inngest cron | safety-net scan for undelivered announcements |
 | `ANNOUNCEMENT_PUSH_CONCURRENCY` | 10 | `packages/push` | simultaneous in-flight sends per delivery run |
+| `ANNOUNCEMENT_PUSH_RUN_CONCURRENCY` | 5 | `packages/types/alerts.ts`, `apps/notify` Inngest function config | simultaneous Inngest function RUNS — distinct from the in-flight-sends number above, and bounded by the Inngest plan |
+| `INNGEST_PLAN_CONCURRENCY_LIMIT` | 5 | `packages/types/alerts.ts` | the Inngest account's concurrent-run ceiling; declaring more makes Inngest reject the whole app registration |
 | `ANNOUNCEMENT_PUSH_BATCH_SIZE` | 100 | `packages/push` | targets per Inngest step, keeping each invocation inside the function time limit |
 | `ANNOUNCEMENT_PUSH_MAX_PER_USER_PER_HOUR` | 6 | `packages/push` | anti-spam ceiling per subscriber (applied per-user rather than as a global cadence) |
 

@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc --noEmit",
     "build:node": "esbuild server/node-server.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist-node/server.cjs",
+    "build:vercel": "node scripts/build-vercel.mjs",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit"
   },

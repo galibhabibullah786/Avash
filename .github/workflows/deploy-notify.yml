@@ -135,9 +135,15 @@ jobs:
             echo "::notice::VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID not set — skipping deploy. See docs/ci-cd.md."
           fi
 
+      # Pinned, not `@latest`. The deploy contract this workflow depends
+      # on (the Build Output API layout written by
+      # apps/notify/scripts/build-vercel.mjs, and `deploy --prebuilt`'s
+      # treatment of it) is a CLI-version-dependent interface, and a
+      # floating `@latest` turns any CLI release into an unannounced
+      # change to a production deploy path. Bump deliberately.
       - name: Install Vercel CLI
         if: steps.vercel-check.outputs.configured == 'true'
-        run: pnpm add --global vercel@latest
+        run: pnpm add --global vercel@59.1.4
 
       - name: Resolve deploy flags
         id: deploy-flags
@@ -159,14 +165,25 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: vercel pull --yes --environment="${{ inputs.vercel_target }}" --token="$VERCEL_TOKEN"
 
-      - name: Build with Vercel CLI
+      # NOT `vercel build`. Vercel's zero-config `api/` detection
+      # transpiles each api/*.ts and then relies on its own node_modules
+      # tracing to ship the dependencies — tracing that does not follow
+      # this repo's pnpm layout, where first-party deps are `workspace:*`
+      # symlinks into packages/ and third-party ones live in the
+      # root-hoisted store. That produced two separate failures on this
+      # workflow: `vercel deploy --prebuilt` refusing to upload at all
+      # ("File does not exist: apps/notify/node_modules/@avash/types"),
+      # and, when it did upload, a function that crashed on first
+      # invocation with ERR_MODULE_NOT_FOUND for `inngest` — so
+      # /api/inngest returned FUNCTION_INVOCATION_FAILED and Inngest could
+      # neither register nor invoke anything.
+      #
+      # build-vercel.mjs esbuilds each function into a self-contained
+      # bundle in the Build Output API layout, leaving Vercel no
+      # resolution to get wrong. See its header comment for the detail.
+      - name: Build the Vercel deployment bundle
         if: steps.vercel-check.outputs.configured == 'true'
-        working-directory: apps/notify
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: vercel build ${{ steps.deploy-flags.outputs.prod_flag }} --token="$VERCEL_TOKEN"
+        run: pnpm --filter notify build:vercel
 
       - name: Deploy pre-built output to Vercel
         id: deploy
@@ -195,38 +212,71 @@ jobs:
       # needs no extra toolchain. Signing is handled by Inngest calling back
       # into /api/inngest with INNGEST_SIGNING_KEY already configured in the
       # Vercel project (§ secrets-matrix.md), not by this request itself.
+      #
+      # This PUT is also THE deploy's real correctness check, which is why
+      # its response body is inspected rather than only its status. Inngest
+      # validates the whole function set at registration time and rejects
+      # the app as a unit: a single function declaring more concurrency
+      # than the account's plan allows answers
+      #   400 {"message":"The function 'announcement-push-delivery' has
+      #        higher concurrency limits (10) than your plan limit of 5",
+      #        "modified":false}
+      # and NOTHING registers — not the delivery function, not the sweep.
+      # That is a silent outage with a green deploy, and it is exactly what
+      # was happening (see ANNOUNCEMENT_PUSH_RUN_CONCURRENCY in
+      # packages/types/alerts.ts). `modified` is reported for visibility,
+      # not asserted on: a redeploy whose function definitions are
+      # byte-identical legitimately answers `modified: false`.
       - name: Sync Inngest app registration
         if: steps.vercel-check.outputs.configured == 'true'
         env:
           DEPLOY_URL: ${{ steps.deploy.outputs.url }}
         run: |
-          status=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$DEPLOY_URL/api/inngest")
+          response=$(curl -s -w '\n%{http_code}' -X PUT "$DEPLOY_URL/api/inngest")
+          status=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
           echo "PUT $DEPLOY_URL/api/inngest -> $status"
+          echo "$body"
+
           if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-            echo "::error::Inngest app registration sync failed: PUT /api/inngest returned $status. Vercel has the new code but Inngest may still be invoking stale function definitions."
+            echo "::error::Inngest app registration failed: PUT /api/inngest returned $status — $(echo "$body" | jq -r '.message? // "no message in response body"' 2>/dev/null). No function in the app is registered, so no announcement will be delivered, regardless of the deploy looking green. Vercel is serving the new code but Inngest is not invoking it."
             exit 1
           fi
+
+          echo "Inngest reported modified=$(echo "$body" | jq -r '.modified? // "unknown"' 2>/dev/null)"
 
       # The caller names which repository variable holds this environment's
       # origin, so production and preview smoke-test themselves rather than
       # both pointing at production — same reasoning as deploy-api.yml.
       #
-      # A bare liveness check is explicitly NOT enough here, for the same
-      # reason /health alone isn't enough for apps/api (see the "secrets
-      # uploaded to the wrong Worker" incident recorded in deploy-api.yml/
-      # docs/ci-cd.md): a 200 from /api/inngest only proves the process is
-      # up and the route exists, not that Inngest actually has any function
-      # registered against it. A deploy that shipped without
-      # INNGEST_SIGNING_KEY, or whose Inngest serve handler silently
-      # returned an empty function list, would stay green on a liveness-only
-      # check straight through an entire "announcements never get pushed"
-      # outage. So this asserts the response body is non-empty JSON listing
-      # at least two functions — the delivery function
-      # (`announcement/published`, deliverAnnouncement.ts) and the sweep
-      # function (sweepUndelivered.ts) — by count rather than by exact
-      # function id, since apps/notify's real implementation (the ids it
-      # registers under) lands on a different branch than this one. Tighten
-      # this to assert the exact ids once that implementation is merged.
+      # This step used to `GET /api/inngest`, require 200, and count
+      # objects carrying an `id` in the body. Every one of those three
+      # assumptions was wrong about what the endpoint actually returns,
+      # and the step could not have passed against a healthy deploy:
+      #
+      #   - In CLOUD mode the SDK requires a signed introspection request,
+      #     so an unsigned GET answers `401 {"message":"Unauthorized"}`,
+      #     never 200. (The 200 the step was written against is what the
+      #     endpoint returns in DEV mode — which is what the local Docker
+      #     stack runs, and why this looked fine there.)
+      #   - Even in dev mode the introspection body is
+      #     `{"function_count":2,"has_signing_key":true,...}` — a count,
+      #     with no per-function objects and no `id` keys anywhere. The
+      #     jq filter would have found 0 and failed the step on a
+      #     perfectly healthy deploy.
+      #
+      # Whether Inngest actually holds the current function set is not
+      # knowable from this endpoint at all; it is exactly what the PUT in
+      # the previous step establishes, and that step now asserts it. What
+      # is left for this one is the thing the PUT cannot prove: that the
+      # ORIGIN the Supabase Database Webhook and Inngest will call in
+      # steady state — the stable alias, not the one-off deployment URL
+      # the PUT used — serves this function rather than 404ing or dying on
+      # boot. `x-inngest-sdk-handled` is the discriminator: the SDK sets it
+      # on its own responses, including the 401, so its presence proves the
+      # bundle loaded and the serve handler ran. A missing route (404) or a
+      # bundle that failed to load (FUNCTION_INVOCATION_FAILED, which is
+      # how the pre-esbuild deploy failed) has no such header.
       - name: Post-deploy smoke test
         if: steps.vercel-check.outputs.configured == 'true'
         env:
@@ -238,20 +288,32 @@ jobs:
             exit 1
           fi
 
-          response=$(curl -s -w '\n%{http_code}' "$NOTIFY_ORIGIN/api/inngest")
-          status=$(echo "$response" | tail -n1)
-          body=$(echo "$response" | sed '$d')
+          headers=$(curl -s -D - -o /dev/null "$NOTIFY_ORIGIN/api/inngest")
+          status=$(echo "$headers" | head -n1)
           echo "GET $NOTIFY_ORIGIN/api/inngest -> $status"
 
-          if [ "$status" != "200" ]; then
-            echo "::error::Post-deploy smoke test failed: /api/inngest returned $status, expected 200."
+          if ! echo "$headers" | grep -qi '^x-inngest-sdk-handled:'; then
+            echo "$headers"
+            echo "::error::Post-deploy smoke test failed: $NOTIFY_ORIGIN/api/inngest did not answer with an x-inngest-sdk-handled header, so the Inngest serve handler is not running there. A 404 means the route is missing; a 500/FUNCTION_INVOCATION_FAILED means the function bundle failed to load; a 3xx to vercel.com/sso-api means Vercel Deployment Protection is enabled on this environment and neither Inngest nor Supabase can reach it either (docs/ci-cd.md)."
             exit 1
           fi
 
-          function_count=$(echo "$body" | jq -e '[.. | objects | select(has("id"))] | length' 2>/dev/null || echo 0)
-          echo "Registered Inngest functions found in response: $function_count"
+          # The other half of the deploy is the Database Webhook receiver,
+          # and it is the half that carries the fast path — if it is
+          # missing, announcements still eventually go out via the sweep,
+          # which is precisely the kind of degradation that hides for
+          # weeks. An unauthenticated POST is the safest possible probe of
+          # it: the handler compares the shared secret before it reads the
+          # body or touches Inngest, so a 401 proves the route exists, the
+          # bundle loaded, and ANNOUNCEMENT_WEBHOOK_SECRET is configured,
+          # while sending nothing and enqueueing nothing. A 404 means the
+          # function is missing; a 202 would mean the endpoint accepts
+          # unauthenticated delivery requests from anyone, which is a
+          # security failure, not a passing smoke test.
+          webhook_status=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$NOTIFY_ORIGIN/api/announcement-published")
+          echo "POST $NOTIFY_ORIGIN/api/announcement-published (unauthenticated) -> $webhook_status"
 
-          if [ -z "$function_count" ] || [ "$function_count" -lt 2 ]; then
-            echo "::error::Post-deploy smoke test failed: /api/inngest returned 200 but listed $function_count function(s) — expected at least 2 (the delivery function and the sweep function). A 200 with no functions registered means Vercel is serving but Inngest has not picked up this deploy; see the 'Sync Inngest app registration' step comment above."
+          if [ "$webhook_status" != "401" ]; then
+            echo "::error::Post-deploy smoke test failed: unauthenticated POST /api/announcement-published returned $webhook_status, expected 401. 404 means the webhook receiver did not deploy and the fast path is gone (announcements would only go out on the next sweep). 202 means the endpoint is accepting unauthenticated delivery requests — treat that as an incident, not a flake."
             exit 1
           fi

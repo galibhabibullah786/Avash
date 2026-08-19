@@ -2,7 +2,7 @@
 export const SERVICE_WORKER_URL = '/sw.js';
 
 /**
- * Registers `public/sw.js` if it isn't already, and resolves only once a
+ * Registers `src/sw.js` if it isn't already, and resolves only once a
  * worker is actually ACTIVE for this origin.
  *
  * `PushManager.subscribe()` needs an active worker, and a freshly
