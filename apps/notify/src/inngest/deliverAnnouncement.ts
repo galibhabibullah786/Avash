@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { deliverAnnouncement } from '@avash/push';
-import { ANNOUNCEMENT_PUSH_CONCURRENCY, type AnnouncementPushResult } from '@avash/types';
+import { ANNOUNCEMENT_PUSH_RUN_CONCURRENCY, type AnnouncementPushResult } from '@avash/types';
 import { inngest } from './client';
 
 /**
@@ -99,13 +99,20 @@ export const deliverAnnouncementFn = inngest.createFunction(
     // as the authoritative guard; this is a cheaper first line of
     // defense that avoids even starting the second run).
     idempotency: 'event.data.id',
-    // ANNOUNCEMENT_PUSH_CONCURRENCY (10) bounds simultaneous FUNCTION
-    // RUNS. This is deliberately the same number `packages/push`'s own
-    // mapWithConcurrency already uses to bound in-flight HTTP sends
-    // *within* one run — reusing it here keeps the whole app's total
-    // concurrent send volume in the same order of magnitude that a
-    // single run was already designed for, instead of letting N
-    // concurrently-published announcements each open 10 more.
+    // ANNOUNCEMENT_PUSH_RUN_CONCURRENCY (5) bounds simultaneous FUNCTION
+    // RUNS. This used to reuse ANNOUNCEMENT_PUSH_CONCURRENCY (10) — the
+    // in-flight-sends-per-run number from `packages/push`'s
+    // mapWithConcurrency — on the reasoning that one number kept the
+    // app's total concurrent send volume in a familiar order of
+    // magnitude. That was wrong for a reason that has nothing to do with
+    // push: Inngest validates declared concurrency against the account's
+    // plan at REGISTRATION time, and 10 exceeds the plan's limit of 5, so
+    // `PUT /api/inngest` returned 400 and NOTHING in the app registered —
+    // not this function, not the sweep. The deploy stayed green and every
+    // announcement silently went undelivered. The two quantities are now
+    // separate constants because they answer to different authorities:
+    // one to how much fan-out a single run should attempt, the other to
+    // what the Inngest plan permits.
     //
     // ANNOUNCEMENT_PUSH_MAX_PER_USER_PER_HOUR (6) is deliberately NOT
     // wired into `throttle` here. Inngest's `throttle`/`concurrency` keys
@@ -120,7 +127,7 @@ export const deliverAnnouncementFn = inngest.createFunction(
     // keyed by user_id inside the delivery pass itself (e.g. a
     // `push_deliveries` log table), which this slice's migrations don't
     // include — recorded here as a known gap rather than faked.
-    concurrency: { limit: ANNOUNCEMENT_PUSH_CONCURRENCY },
+    concurrency: { limit: ANNOUNCEMENT_PUSH_RUN_CONCURRENCY },
     triggers: { event: 'announcement/published' },
   },
   async ({ event, step }) => {

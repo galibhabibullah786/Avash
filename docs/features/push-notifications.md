@@ -58,7 +58,7 @@ that writes `risk_predictions` (ADR-002, ADR-007).
 - **The browser half: a service worker plus a control that registers
   one.** Web Push has no in-page delivery path — the browser wakes a
   service worker to handle the `push` event whether or not a tab is
-  open — so `apps/web/public/sw.js` is what a push is actually delivered
+  open — so `apps/web/src/sw.js` is what a push is actually delivered
   to. It is registered at app boot (`main.tsx`), not on the toggle
   click: a browser that granted permission on an earlier visit needs an
   active worker before the dashboard can ask whether a subscription

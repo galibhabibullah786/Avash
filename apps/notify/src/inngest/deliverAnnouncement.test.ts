@@ -1,5 +1,5 @@
 import { InngestTestEngine } from '@inngest/test';
-import { ANNOUNCEMENT_PUSH_CONCURRENCY } from '@avash/types';
+import { ANNOUNCEMENT_PUSH_RUN_CONCURRENCY, INNGEST_PLAN_CONCURRENCY_LIMIT } from '@avash/types';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deliverAnnouncementFn, handleAnnouncementPublished } from './deliverAnnouncement';
 
@@ -61,8 +61,18 @@ describe('deliverAnnouncementFn', () => {
     expect(deliverAnnouncementFn.opts.idempotency).toBe('event.data.id');
   });
 
-  it('bounds concurrent runs at ANNOUNCEMENT_PUSH_CONCURRENCY', () => {
-    expect(deliverAnnouncementFn.opts.concurrency).toEqual({ limit: ANNOUNCEMENT_PUSH_CONCURRENCY });
+  it('bounds concurrent runs at ANNOUNCEMENT_PUSH_RUN_CONCURRENCY', () => {
+    expect(deliverAnnouncementFn.opts.concurrency).toEqual({ limit: ANNOUNCEMENT_PUSH_RUN_CONCURRENCY });
+  });
+
+  // Regression guard for a silent, deploy-green outage: Inngest rejects
+  // the WHOLE app registration (`PUT /api/inngest` -> 400, `modified:
+  // false`) when any function declares more concurrency than the plan
+  // allows, so no function registers and no announcement is ever
+  // delivered. Asserting the declared limit against the plan ceiling
+  // catches a raise here that is not accompanied by a plan upgrade.
+  it('declares no more run concurrency than the Inngest plan allows', () => {
+    expect(ANNOUNCEMENT_PUSH_RUN_CONCURRENCY).toBeLessThanOrEqual(INNGEST_PLAN_CONCURRENCY_LIMIT);
   });
 
   it('triggers on the announcement/published event', () => {

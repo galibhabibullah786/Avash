@@ -233,7 +233,7 @@ export function usePushSubscription(accessToken: string | null): UsePushSubscrip
     }
 
     try {
-      // Registers `public/sw.js` on demand rather than assuming one is
+      // Registers `src/sw.js` on demand rather than assuming one is
       // already there. `main.tsx` also registers it at boot, so this is
       // usually a no-op that resolves the existing registration.
       const registration = await ensureServiceWorkerRegistration();

@@ -52,6 +52,57 @@ ships no container image and is never touched by a pull request, because a
 pull request has no environment of its own for it to deploy into (same
 reasoning as the missing Worker deploy above).
 
+#### `apps/notify` deploys PREBUILT, and why
+
+The workflow does **not** run `vercel build`. Vercel's zero-config `api/`
+detection transpiles each `api/*.ts` and then relies on its own
+node_modules tracing to ship the dependencies — tracing that does not
+follow this repo's pnpm layout, where first-party deps are `workspace:*`
+symlinks into `packages/` and third-party ones live in the root-hoisted
+store. That produced two separate failures:
+
+- `vercel deploy --prebuilt` refused to upload at all:
+  `Error: Please ensure project dependencies have been installed: File
+  does not exist: "apps/notify/node_modules/@avash/types"`.
+- When it did upload, the deployed function crashed on first invocation
+  with `ERR_MODULE_NOT_FOUND: Cannot find package 'inngest' imported from
+  /var/task/api/inngest.js` — nothing had been traced in, so
+  `/api/inngest` returned `FUNCTION_INVOCATION_FAILED` and Inngest could
+  neither register nor invoke anything.
+
+`apps/notify/scripts/build-vercel.mjs` esbuilds each function into a
+self-contained bundle in the Build Output API v3 layout, leaving Vercel
+no resolution to get wrong — the same technique `apps/notify/Dockerfile`
+already used for the container. A build **on** Vercel (git integration,
+or `vercel deploy` without `--prebuilt`) cannot work for the same reason
+and fails fast with a pointer, via `buildCommand` in
+`apps/notify/vercel.json`.
+
+Three things gate a working deploy that a green workflow run alone does
+not prove, and all three have bitten this project:
+
+1. **Inngest plan limits are enforced at registration, app-wide.** A
+   function declaring more concurrency than the account allows makes
+   `PUT /api/inngest` answer `400 {"message":"The function ... has higher
+   concurrency limits (10) than your plan limit of 5","modified":false}`
+   and **no** function registers — not the one at fault, not the sweep.
+   See `ANNOUNCEMENT_PUSH_RUN_CONCURRENCY`.
+2. **Vercel Deployment Protection blocks the machines that matter.** With
+   protection on, deployment URLs `302` to `vercel.com/sso-api`. Inngest
+   cannot register or invoke functions and Supabase's Database Webhook
+   cannot deliver — both fail silently from the app's point of view. The
+   environment `apps/notify` serves must be reachable unauthenticated.
+3. **Runtime env vars live on the Vercel project, not in this repo.** The
+   GitHub secrets below authenticate the *deploy*; `SUPABASE_URL`,
+   `SUPABASE_SERVICE_ROLE_KEY`, `VAPID_*`, `ANNOUNCEMENT_WEBHOOK_SECRET`
+   and `INNGEST_*` must also be set on the Vercel project itself or every
+   delivery fails closed at runtime.
+
+A cloud-mode `GET /api/inngest` returns `401`, not `200` — the SDK
+requires a signed introspection request. Do not "fix" a smoke test by
+asserting `200` there; that only passes against the local dev-mode
+container.
+
 Branch → channel is resolved once, in `pipeline.yml`'s `context` job, and
 passed down as workflow inputs. No downstream job re-derives it from
 `github.ref`.
@@ -136,7 +187,7 @@ Record it).
 | `docker-image-scan.yml` | called | hadolint + Trivy on the ML image (ADR-011) |
 | `deploy-web.yml` | called | Cloudflare Pages deploy for `apps/web`; target branch passed in as `pages_branch` |
 | `deploy-api.yml` | called | `wrangler deploy` for `apps/api` + post-deploy smoke test (`/health` **and** `/health/db`); environment passed in as `wrangler_env` — given to wrangler-action as *both* `--env` on the command and its `environment:` input, because that input alone is what scopes the secret upload (see below) |
-| `deploy-notify.yml` | called | Vercel deploy for `apps/notify` (`vercel pull` → `vercel build` → `vercel deploy --prebuilt`) + Inngest app registration sync (`PUT /api/inngest`) + post-deploy smoke test asserting `/api/inngest` returns `200` **and** lists at least two registered functions; target passed in as `vercel_target` (ADR-016) |
+| `deploy-notify.yml` | called | Vercel deploy for `apps/notify` (`vercel pull` → `pnpm --filter notify build:vercel` → `vercel deploy --prebuilt`) + Inngest app registration sync (`PUT /api/inngest`, whose response body is the deploy's real correctness gate) + post-deploy smoke test asserting the stable origin serves both functions; target passed in as `vercel_target` (ADR-016) |
 | `cron-weather-ingest.yml` | schedule (every 3h), manual | Runs `scripts/jobs/weather-ingest.ts` directly against Supabase (ADR-007) |
 | `cron-batch-predict.yml` | schedule (every 24h), manual | Runs `ml/serving/predict.py` directly against Supabase (ADR-002, ADR-007) |
 | `cron-news-scan.yml` | schedule (every 6h), manual | Runs `scripts/jobs/news-scan.ts` directly against Supabase (ADR-007) |

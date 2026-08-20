@@ -63,15 +63,42 @@ export const ANNOUNCEMENT_PUSH_LEASE_SECONDS = 300;
 export const ANNOUNCEMENT_PUSH_SWEEP_CADENCE = '*/5 * * * *';
 /** `ANNOUNCEMENT_PUSH_CONCURRENCY` (§14) — simultaneous in-flight sends per delivery run. */
 export const ANNOUNCEMENT_PUSH_CONCURRENCY = 10;
+/**
+ * `INNGEST_PLAN_CONCURRENCY_LIMIT` (§14) — the concurrent-run ceiling the
+ * project's Inngest account actually permits. Not a tuning knob: it
+ * mirrors an external plan limit, and exists as a named constant so the
+ * function config below can be checked against it in a test instead of
+ * the mismatch surfacing as a rejected app registration in production.
+ */
+export const INNGEST_PLAN_CONCURRENCY_LIMIT = 5;
+/**
+ * `ANNOUNCEMENT_PUSH_RUN_CONCURRENCY` (§14) — simultaneous Inngest
+ * function RUNS, which is a different quantity from
+ * `ANNOUNCEMENT_PUSH_CONCURRENCY` above (in-flight HTTP sends *within*
+ * one run) and must not be collapsed back into it.
+ *
+ * The value is dictated by the Inngest plan, not by anything about push
+ * delivery: registering a function that declares a higher limit than the
+ * account allows makes Inngest reject the ENTIRE app registration, not
+ * just clamp the one function. `PUT /api/inngest` answers
+ * `400 {"message":"The function 'announcement-push-delivery' has higher
+ * concurrency limits (10) than your plan limit of 5","modified":false}`
+ * and no function in the app registers at all — so every announcement
+ * silently goes undelivered while the deploy itself looks green. Raise
+ * this only in the same change that raises the Inngest plan.
+ */
+export const ANNOUNCEMENT_PUSH_RUN_CONCURRENCY = 5;
 /** `ANNOUNCEMENT_PUSH_BATCH_SIZE` (§14) — targets per Inngest step, keeping each invocation inside the function time limit. */
 export const ANNOUNCEMENT_PUSH_BATCH_SIZE = 100;
 /** `ANNOUNCEMENT_PUSH_MAX_PER_USER_PER_HOUR` (§14) — anti-spam ceiling per subscriber, applied per-user rather than as a global cadence. */
 export const ANNOUNCEMENT_PUSH_MAX_PER_USER_PER_HOUR = 6;
 
 /**
- * What `packages/push` sends and `apps/web/public/sw.js` receives.
- * NOTE: sw.js cannot import this file (it is a raw public/ asset, not a
- * bundled module). Any change here must be mirrored into readPayload() in
+ * What `packages/push` sends and `apps/web/src/sw.js` receives.
+ * NOTE: sw.js cannot import this file. It is compiled by
+ * vite-plugin-pwa's `injectManifest`, but is deliberately kept
+ * import-free so `apps/web/src/lib/sw.test.ts` can load its source into a
+ * `vm` sandbox. Any change here must be mirrored into readPayload() in
  * the same commit.
  */
 export const announcementPushPayloadSchema = z.object({

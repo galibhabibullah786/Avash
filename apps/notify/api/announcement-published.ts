@@ -1,4 +1,5 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { serveEndpoint } from 'inngest/node';
 import { announcementWebhookBodySchema } from '@avash/types';
 import { inngest } from '../src/inngest/client';
 
@@ -69,9 +70,17 @@ export async function handleAnnouncementPublishedWebhook(request: Request): Prom
   return new Response(null, { status: 202 });
 }
 
-// Vercel's Node.js Function runtime invokes the default export of an
-// `api/*.ts` file as its handler — a named export alone (kept above for
+// Vercel's Node.js Function runtime invokes the default export of this
+// file as its handler — a named export alone (kept above for
 // server/node-server.ts's direct import and for the test file) is never
 // picked up, so without this the route builds but 500s on every real
 // request.
-export default handleAnnouncementPublishedWebhook;
+//
+// `serveEndpoint` adapts the Web-standard `(Request) => Response` handler
+// above into the Node-style `(req, res)` signature the Vercel launcher is
+// configured for in scripts/build-vercel.mjs (`shouldAddHelpers`). It is
+// the same adapter server/node-server.ts uses for the container, so both
+// runtimes reach `handleAnnouncementPublishedWebhook` through an
+// identical path rather than relying on Vercel to sniff which of the two
+// calling conventions an exported function wants.
+export default serveEndpoint(handleAnnouncementPublishedWebhook);

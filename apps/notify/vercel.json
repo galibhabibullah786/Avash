@@ -1,4 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "outputDirectory": "public"
+  "framework": null,
+  "buildCommand": "node -e \"console.error('apps/notify deploys PREBUILT only - see apps/notify/scripts/build-vercel.mjs'); process.exit(1)\""
 }

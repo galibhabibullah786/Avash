@@ -47,6 +47,12 @@ export default [
       '**/.turbo/**',
       '**/coverage/**',
       '**/.wrangler/**',
+      // Vercel's build output for apps/notify — esbuild bundles every
+      // dependency into one megafile there, so linting it reports
+      // hundreds of violations from third-party code that nobody in this
+      // repo can fix. Same category as dist/ and dist-node/ above:
+      // generated, not authored.
+      '**/.vercel/**',
     ],
   },
 ];
