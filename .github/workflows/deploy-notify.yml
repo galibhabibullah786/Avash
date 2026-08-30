@@ -103,7 +103,7 @@ jobs:
     # deploy-web/deploy-api on this branch before that got fixed.
     environment: ${{ inputs.environment }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
