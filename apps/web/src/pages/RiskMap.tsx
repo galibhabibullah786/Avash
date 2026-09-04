@@ -3,9 +3,10 @@ import { RISK_MAP_DEFAULT_HORIZON_WEEKS } from '@avash/types';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { useLeafletMap } from '../features/map/useLeafletMap';
 import { useRiskMap } from '../features/risk/useRiskMap';
+import { useDistrictRisk } from '../features/risk/useDistrictRisk';
 import { useRegionRisk } from '../features/risk/useRegionRisk';
 import { useRiskMapLayer } from '../features/risk/useRiskMapLayer';
-import { RISK_LEVEL_BAND_STYLES, RISK_LEVEL_ORDER } from '../features/risk/riskLevelBands';
+import { RISK_LEVEL_BAND_STYLES } from '../features/risk/riskLevelBands';
 
 const HORIZON_OPTIONS: Array<2 | 4> = [2, 4];
 
@@ -13,14 +14,31 @@ export default function RiskMap() {
   const isOnline = useOnlineStatus();
   const [horizonWeeks, setHorizonWeeks] = useState<2 | 4>(RISK_MAP_DEFAULT_HORIZON_WEEKS);
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
+  const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useLeafletMap(containerRef);
 
   const riskMap = useRiskMap(horizonWeeks);
+  const districtRisk = useDistrictRisk(selectedDistrict);
   const regionRisk = useRegionRisk(selectedRegionId, horizonWeeks);
 
-  useRiskMapLayer(mapRef, riskMap.data, setSelectedRegionId);
+  useRiskMapLayer(
+    mapRef,
+    riskMap.data,
+    (regionId, district) => {
+      setSelectedRegionId(regionId);
+      setSelectedDistrict(district);
+    },
+    districtRisk.data,
+    selectedDistrict && districtRisk.isLoading
+      ? 'loading'
+      : selectedDistrict && districtRisk.isError
+        ? 'error'
+        : districtRisk.data
+          ? 'success'
+          : 'idle',
+  );
 
   const features = riskMap.data?.features ?? [];
 
@@ -28,10 +46,8 @@ export default function RiskMap() {
     <main className="page page--wide">
       <h1 className="page__title">Risk Map</h1>
 
-      {/* Removed once real predictions ship — see docs/PROJECT_PLAN.md ML pipeline slice. */}
       <p className="riskmap__provenance-banner" role="status" data-testid="risk-provenance-banner">
-        Risk scores shown are placeholder values. Live model predictions arrive with the
-        prediction pipeline.
+        Latest model snapshot: July 19, 2026. Select a district for its probability breakdown.
       </p>
 
       <div className="riskmap__controls" data-testid="risk-horizon-toggle">
@@ -81,10 +97,13 @@ export default function RiskMap() {
         <aside className="riskmap__legend" aria-label="Risk level legend" data-testid="risk-legend">
           <h2 className="riskmap__legend-title">Legend</h2>
           <ul className="riskmap__legend-list">
-            {RISK_LEVEL_ORDER.map((level) => {
-              const band = RISK_LEVEL_BAND_STYLES[level];
+            {[
+              { label: 'Low Risk', fillColor: RISK_LEVEL_BAND_STYLES.low.fillColor, weight: RISK_LEVEL_BAND_STYLES.low.weight, dashArray: RISK_LEVEL_BAND_STYLES.low.dashArray },
+              { label: 'Medium Risk', fillColor: RISK_LEVEL_BAND_STYLES.moderate.fillColor, weight: RISK_LEVEL_BAND_STYLES.moderate.weight, dashArray: RISK_LEVEL_BAND_STYLES.moderate.dashArray },
+              { label: 'High Risk', fillColor: RISK_LEVEL_BAND_STYLES.severe.fillColor, weight: RISK_LEVEL_BAND_STYLES.severe.weight, dashArray: RISK_LEVEL_BAND_STYLES.severe.dashArray },
+            ].map((band) => {
               return (
-                <li key={level} className="riskmap__legend-item">
+                <li key={band.label} className="riskmap__legend-item">
                   <span
                     className="riskmap__legend-swatch"
                     style={{
@@ -94,9 +113,7 @@ export default function RiskMap() {
                     }}
                     aria-hidden="true"
                   />
-                  <span className="riskmap__legend-text">
-                    {band.label} ({band.range})
-                  </span>
+                  <span className="riskmap__legend-text">{band.label}</span>
                 </li>
               );
             })}

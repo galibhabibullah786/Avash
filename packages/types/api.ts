@@ -140,6 +140,20 @@ export type WeatherObservationDto = z.infer<typeof weatherObservationDtoSchema>;
 export type LatestWeatherResponse = z.infer<typeof latestWeatherResponseSchema>;
 export type WeatherHistoryResponse = z.infer<typeof weatherHistoryResponseSchema>;
 export type RiskMapResponse = z.infer<typeof riskMapResponseSchema>;
+
+export const riskSummaryRecordSchema = z.object({
+  district: z.string(),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  risk: z.enum(['Low', 'Medium', 'High']),
+  risk_score: z.number().min(0).max(1),
+  low_risk_probability: z.number().min(0).max(1),
+  medium_risk_probability: z.number().min(0).max(1),
+  high_risk_probability: z.number().min(0).max(1),
+  prediction_date: z.string(),
+});
+
+export type RiskSummaryRecord = z.infer<typeof riskSummaryRecordSchema>;
 export type RiskDetailResponse = z.infer<typeof riskDetailResponseSchema>;
 
 // ── Auth / role shared primitives ──────────────────────────────────────────

@@ -7,6 +7,7 @@ import {
   horizonWeeksSchema,
   RISK_MAP_DEFAULT_HORIZON_WEEKS,
   STUB_MODEL_VERSION,
+  riskSummaryRecordSchema,
 } from '@avash/types';
 import { buildGenericErrorBody, logger } from '@avash/logger';
 import { parseBbox, type Bbox } from '@avash/geo';
@@ -14,6 +15,7 @@ import { createSupabaseAdmin } from '../lib/supabaseAdmin';
 import { toWeatherObservationDto } from '../lib/weatherDto';
 import { toNumberOrNull } from '../lib/numeric';
 import type { AppEnv } from '../types';
+import riskSummaryData from '../../data/risk_summary.json';
 
 /** `RISK_MAP_CACHE_TTL_S` (§14) — edge cache for risk-map reads. */
 const RISK_MAP_CACHE_TTL_S = 'public, max-age=0, s-maxage=300, stale-while-revalidate=600';
@@ -66,6 +68,38 @@ function parseTopFactors(raw: unknown): z.infer<typeof riskFactorSchema>[] {
  */
 export const riskMap = new Hono<AppEnv>().get('/', async (c) => {
   const requestId = c.get('requestId');
+  const districtRaw = c.req.query('district');
+  if (districtRaw !== undefined) {
+    const district = districtRaw.trim();
+    if (district.length === 0) {
+      return c.json(buildGenericErrorBody(requestId), 400);
+    }
+
+    const record = (riskSummaryData as unknown[]).find(
+      (entry) =>
+        typeof entry === 'object' &&
+        entry !== null &&
+        'district' in entry &&
+        typeof entry.district === 'string' &&
+        entry.district.toLowerCase() === district.toLowerCase(),
+    );
+    if (record === undefined) {
+      return c.json(buildGenericErrorBody(requestId), 404);
+    }
+
+    try {
+      const body = riskSummaryRecordSchema.parse(record);
+      c.header('Cache-Control', RISK_MAP_CACHE_TTL_S);
+      return c.json(body, 200);
+    } catch (error) {
+      logger.error('risk-map: invalid bundled risk summary record', {
+        requestId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return c.json(buildGenericErrorBody(requestId), 503);
+    }
+  }
+
   const horizon = parseHorizon(c.req.query('horizon'));
   if (!horizon.ok) {
     return c.json(buildGenericErrorBody(requestId), 400);
