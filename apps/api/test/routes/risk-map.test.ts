@@ -87,6 +87,21 @@ describe('GET /risk-map', () => {
     expect(url?.searchParams.has('max_lon')).toBe(false);
   });
 
+  test('district snapshot: returns the generated risk summary record', async () => {
+    const res = await riskMapApp().request('/?district=Dhaka', {}, fakeBindings());
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      district: 'Dhaka',
+      risk: 'Low',
+      prediction_date: '2026-07-19',
+    });
+  });
+
+  test('unknown district snapshot: returns a generic 404', async () => {
+    const res = await riskMapApp().request('/?district=NotARealDistrict', {}, fakeBindings());
+    expect(res.status).toBe(404);
+  });
+
   test('a null generated_at on a row never surfaces as the literal string "null"', async () => {
     const rowWithNullGeneratedAt = { ...geojsonRowOlder, generated_at: null };
     const fake = createFakeSupabase([

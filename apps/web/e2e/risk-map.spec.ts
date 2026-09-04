@@ -5,11 +5,7 @@ import { test, expect } from '@playwright/test';
  * contract (`packages/types/api.ts` — riskMapResponseSchema,
  * riskDetailResponseSchema) and against the OSM tile host
  * (`MAP_TILE_URL_TEMPLATE`, §14), never a live `apps/api` or a real tile
- * fetch. Written against the contract, not the current page —
- * `apps/web/src/pages/RiskMap.tsx` is a placeholder
- * (`<div>Risk Map</div>`) as of this writing, so every test below is
- * expected red until the real page lands and wires up the data-testid
- * contract this suite assumes. Leaflet's default vector-layer rendering
+ * fetch. Written against the contract and Leaflet's default vector-layer rendering
  * (`.leaflet-interactive` SVG paths for a GeoJSON layer) is relied on for
  * "region polygons render" and "clicking a region" since the task
  * requires Leaflet directly, not `react-leaflet` — that class name is
@@ -83,6 +79,18 @@ const RISK_DETAIL_PAYLOAD = {
   requestId: '00000000-0000-0000-0000-000000000011',
 };
 
+const DISTRICT_RISK_PAYLOAD = {
+  district: 'Dhaka',
+  latitude: 23.8103,
+  longitude: 90.4125,
+  risk: 'Low' as const,
+  risk_score: 0.63,
+  low_risk_probability: 0.63,
+  medium_risk_probability: 0.22,
+  high_risk_probability: 0.15,
+  prediction_date: '2026-07-19',
+};
+
 // 1x1 transparent PNG — a valid, minimal tile image body.
 const TILE_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
@@ -91,6 +99,9 @@ test.describe('risk map', () => {
   async function stubApi(page: import('@playwright/test').Page) {
     await page.route(RISK_MAP_URL_PATTERN, (route) => {
       const url = new URL(route.request().url());
+      if (url.searchParams.has('district')) {
+        return route.fulfill({ json: DISTRICT_RISK_PAYLOAD });
+      }
       const horizon = url.searchParams.get('horizon') === '4' ? 4 : 2;
       return route.fulfill({ json: riskMapPayload(horizon) });
     });
@@ -124,13 +135,13 @@ test.describe('risk map', () => {
     await expect(page.locator('.leaflet-interactive').first()).toBeVisible();
   });
 
-  test('the legend lists all four risk bands', async ({ page }) => {
+  test('the legend lists the three risk bands', async ({ page }) => {
     await stubApi(page);
     await page.goto('/risk');
 
     const legend = page.getByTestId('risk-legend');
     await expect(legend).toBeVisible();
-    for (const band of ['low', 'moderate', 'high', 'severe']) {
+    for (const band of ['Low Risk', 'Medium Risk', 'High Risk']) {
       await expect(legend.getByText(band, { exact: false })).toBeVisible();
     }
   });
@@ -169,12 +180,29 @@ test.describe('risk map', () => {
     await expect(panel).toContainText('Dhaka');
   });
 
-  test('the provenance banner stating predictions are stubbed is visible', async ({ page }) => {
+  test('clicking a region opens the probability popup', async ({ page }) => {
+    await stubApi(page);
+    await page.goto('/risk');
+
+    await page.locator('.leaflet-interactive').first().click();
+
+    const popup = page.locator('.leaflet-popup-content').filter({
+      hasText: 'Low Risk Probability:',
+    });
+    await expect(popup).toHaveCount(1);
+    await expect(popup).toBeVisible();
+    await expect(popup).toContainText('Low Risk Probability: 63%');
+    await expect(popup).toContainText('Medium Risk Probability: 22%');
+    await expect(popup).toContainText('High Risk Probability: 15%');
+    await expect(popup).toContainText('Prediction Date: 2026-07-19');
+  });
+
+  test('the model snapshot banner is visible', async ({ page }) => {
     await stubApi(page);
     await page.goto('/risk');
 
     const banner = page.getByTestId('risk-provenance-banner');
     await expect(banner).toBeVisible();
-    await expect(banner).toContainText(/stub|placeholder/i);
+    await expect(banner).toContainText(/latest model snapshot/i);
   });
 });

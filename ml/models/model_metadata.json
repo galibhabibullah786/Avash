@@ -1,0 +1,24 @@
+{
+  "best_model_name": "RandomForestClassifier_balanced",
+  "metrics": {
+    "Accuracy": 0.8065171726943582,
+    "Precision_macro": 0.7192744502276291,
+    "Recall_macro": 0.7565024793057926,
+    "F1_macro": 0.7348548558833029,
+    "High_Risk_Recall": 0.8130414409999002,
+    "Std": 0.0035272112786196423
+  },
+  "timestamp": "2026-09-04T11:22:20.734003+00:00",
+  "feature_list": [
+    "Temperature_C",
+    "Humidity_percent",
+    "Precipitation_mm",
+    "Surface_Pressure_kPa",
+    "Wind_Speed_ms",
+    "Latitude",
+    "Longitude",
+    "month",
+    "year",
+    "day_of_year"
+  ]
+}

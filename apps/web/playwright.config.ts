@@ -12,9 +12,19 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: 'pnpm preview -- --port 4173',
+    command: 'corepack pnpm build && corepack pnpm preview -- --port 4173',
     url: 'http://localhost:4173',
     reuseExistingServer: !process.env.CI,
+    env: {
+      ...process.env,
+      VITE_PUBLIC_API_BASE_URL: process.env.VITE_PUBLIC_API_BASE_URL ?? 'http://localhost:8787',
+      VITE_PUBLIC_SUPABASE_URL:
+        process.env.VITE_PUBLIC_SUPABASE_URL ?? 'https://playwright.supabase.test',
+      VITE_PUBLIC_SUPABASE_ANON_KEY:
+        process.env.VITE_PUBLIC_SUPABASE_ANON_KEY ?? 'playwright-test-anon-key',
+      VITE_PUBLIC_TURNSTILE_SITE_KEY:
+        process.env.VITE_PUBLIC_TURNSTILE_SITE_KEY ?? 'playwright-test-site-key',
+    },
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
