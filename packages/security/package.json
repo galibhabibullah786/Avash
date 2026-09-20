@@ -4,6 +4,6 @@
   "main": "index.ts",
   "dependencies": {
     "@avash/types": "workspace:*",
-    "@upstash/redis": "^1.35.5"
+    "@upstash/redis": "^1.38.4"
   }
 }

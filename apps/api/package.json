@@ -18,22 +18,22 @@
     "@avash/security": "workspace:*",
     "@avash/types": "workspace:*",
     "@hono/node-server": "^2.0.12",
-    "@supabase/supabase-js": "^2.112.3",
-    "@upstash/redis": "^1.35.5",
-    "hono": "^4.5.11",
-    "jose": "^6.2.8",
-    "zod": "^4.4.3"
+    "@supabase/supabase-js": "^2.116.0",
+    "@upstash/redis": "^1.38.4",
+    "hono": "^4.13.8",
+    "jose": "^6.2.12",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@avash/eslint-config": "workspace:*",
-    "@cloudflare/vitest-pool-workers": "^0.10.15",
-    "@cloudflare/workers-types": "^5.20260804.1",
-    "@playwright/test": "^1.46.1",
-    "@types/node": "^26.1.2",
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20260917.1",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.1",
     "esbuild": "^0.28.1",
-    "eslint": "^10.8.0",
-    "typescript": "^6.0.3",
-    "vitest": "^3.2.4",
-    "wrangler": "^4.118.0"
+    "eslint": "^10.10.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1",
+    "wrangler": "^4.134.0"
   }
 }

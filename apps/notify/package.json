@@ -13,15 +13,15 @@
   "dependencies": {
     "@avash/push": "workspace:*",
     "@avash/types": "workspace:*",
-    "@supabase/supabase-js": "2.112.3",
-    "inngest": "4.18.1"
+    "@supabase/supabase-js": "2.116.0",
+    "inngest": "4.20.0"
   },
   "devDependencies": {
     "@avash/eslint-config": "workspace:*",
     "@inngest/test": "1.0.0",
-    "@types/node": "^26.1.2",
+    "@types/node": "^26.6.1",
     "esbuild": "^0.28.1",
-    "eslint": "^10.8.0",
-    "typescript": "^6.0.3"
+    "eslint": "^10.10.0",
+    "typescript": "^7.0.2"
   }
 }
