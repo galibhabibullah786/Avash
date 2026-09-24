@@ -19,26 +19,26 @@
 
 # Data handling
 # numpy 2.5.x requires Python >=3.12; the image is pinned to 3.11 (see header).
-numpy==2.4.6
-pandas==3.0.5
+numpy==2.5.3
+pandas==3.0.6
 
 # Model + training (§5.2)
-scikit-learn==1.9.0
+scikit-learn==1.9.1
 lightgbm==4.7.0
 
 # ONNX export + inference (§5.3, ADR-002)
-onnx==1.22.0
-onnxruntime==1.28.0
+onnx==1.23.0
+onnxruntime==1.30.0
 skl2onnx==1.20.0
 onnxmltools==1.16.0
 
 # Explainability (model card, §5.2)
 # 0.52.0 requires Python >=3.12; the image is pinned to 3.11 (see header).
-shap==0.51.0
+shap==0.52.0
 
 # Batch serving — writes predictions directly to Supabase (ADR-007, R7)
 supabase==2.31.0
-python-dotenv==1.2.2
+python-dotenv==1.2.3
 
 # Web Push delivery from ml/serving/predict.py (VAPID keypair, §7.1)
-pywebpush==2.3.0
+pywebpush==2.5.0
