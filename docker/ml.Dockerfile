@@ -14,7 +14,7 @@
 #   docker compose --profile ml build ml
 #   docker compose --profile ml run --rm ml python ml/training/train.py
 
-FROM python:3.11-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 # ML_PYTHON_IMAGE, docs/PROJECT_PLAN.md §14. Bump in lockstep with the
 # `python-version` of the cron workflows.
