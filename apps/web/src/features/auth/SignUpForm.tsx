@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { supabase } from '../../lib/supabaseClient';
+import { SubmitButton } from '../../components/SubmitButton';
+import { PasswordInput } from '../../components/PasswordInput';
 
 type SignUpStatus = 'idle' | 'submitting' | 'success' | 'error';
 
@@ -45,40 +47,43 @@ export function SignUpForm() {
     );
   }
 
+  const pending = status === 'submitting';
+
   return (
     <form className="form" onSubmit={handleSubmit} noValidate aria-label="Sign up">
-      <div className="field">
-        <label className="field__label" htmlFor="signup-email">
-          Email
-        </label>
-        <input
-          id="signup-email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          value={email}
-          onChange={(changeEvent) => setEmail(changeEvent.target.value)}
-        />
-      </div>
-      <div className="field">
-        <label className="field__label" htmlFor="signup-password">
-          Password
-        </label>
-        <input
-          id="signup-password"
-          name="password"
-          type="password"
-          autoComplete="new-password"
-          minLength={8}
-          required
-          value={password}
-          onChange={(changeEvent) => setPassword(changeEvent.target.value)}
-        />
-      </div>
-      <button className="button" type="submit" disabled={status === 'submitting'}>
-        {status === 'submitting' ? 'Creating account…' : 'Sign up'}
-      </button>
+      <fieldset className="form__fieldset" disabled={pending}>
+        <div className="field">
+          <label className="field__label" htmlFor="signup-email">
+            Email
+          </label>
+          <input
+            id="signup-email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(changeEvent) => setEmail(changeEvent.target.value)}
+          />
+        </div>
+        <div className="field">
+          <label className="field__label" htmlFor="signup-password">
+            Password
+          </label>
+          <PasswordInput
+            id="signup-password"
+            name="password"
+            autoComplete="new-password"
+            minLength={8}
+            required
+            value={password}
+            onChange={(changeEvent) => setPassword(changeEvent.target.value)}
+          />
+        </div>
+      </fieldset>
+      <SubmitButton pending={pending} pendingLabel="Creating account…">
+        Sign up
+      </SubmitButton>
       <div className={error ? 'alert alert--error' : undefined} role="alert" aria-live="assertive">
         {error ?? ''}
       </div>

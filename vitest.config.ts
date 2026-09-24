@@ -16,7 +16,7 @@ export default defineConfig({
       // works the same way regardless of which runtime a project runs in.
       provider: 'istanbul',
       reporter: ['text', 'html', 'json-summary'],
-      include: ['packages/**/*.ts', 'apps/api/src/**/*.ts'],
+      include: ['packages/**/*.ts', 'apps/api/src/**/*.ts', 'apps/notify/src/**/*.ts', 'apps/notify/api/**/*.ts'],
       exclude: [
         '**/*.test.ts',
         '**/*.spec.ts',
@@ -52,6 +52,13 @@ export default defineConfig({
           name: 'web',
           environment: 'jsdom',
           include: ['apps/web/src/**/*.test.ts?(x)'],
+        },
+      },
+      {
+        test: {
+          name: 'notify',
+          environment: 'node',
+          include: ['apps/notify/src/**/*.test.ts', 'apps/notify/api/**/*.test.ts'],
         },
       },
     ],

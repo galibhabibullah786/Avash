@@ -22,7 +22,7 @@ scaffold with `pnpm install && pnpm dev` and no daemon installed.
 
 | Path                                       | Purpose                                                                                             |
 | ------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| `compose.yaml`                             | `db` (PostGIS, default profile), `ml` (batch runtime, `ml` profile), `web` + `api` (`apps` profile) |
+| `compose.yaml`                             | `db` (PostGIS, default profile), `ml` (batch runtime, `ml` profile), `web` + `api` + `notify` (`apps` profile) |
 | `packages/db/supabase/config.toml`         | The containerized local Supabase stack (ADR-014) — PostgREST + GoTrue + Realtime, the target when running the app |
 | `scripts/supabase-local.mjs`               | `pnpm docker:supabase*` — drives that stack through the repo's pinned CLI, from the repo root |
 | `docker/ml.Dockerfile`                     | Python 3.11 image for `ml/` — training, evaluation, ONNX export, batch inference                    |
@@ -32,7 +32,8 @@ scaffold with `pnpm install && pnpm dev` and no daemon installed.
 | `.devcontainer/devcontainer.json`          | Optional preinstalled toolchain (Node 20 + pnpm 9 + Python 3.11 + Docker CLI)                       |
 | `apps/web/Dockerfile` + `apps/web/docker/` | Multi-stage build → nginx-unprivileged serving `dist/` on 8080 (ADR-012)                            |
 | `apps/api/Dockerfile` + `apps/api/server/` | Multi-stage build → Node running the same Hono app via `@hono/node-server` on 8787 (ADR-012)        |
-| `.github/workflows/build-images.yml`       | Builds both app images on every PR, scans them, publishes to GHCR on `main`                         |
+| `apps/notify/Dockerfile` + `apps/notify/server/` | Multi-stage build → Node running the announcement-push delivery service on 8788, local-testing only (ADR-012, ADR-016) — production deploys to Vercel + Inngest instead, never this image |
+| `.github/workflows/build-images.yml`       | Builds `web` + `api` on every PR, scans them, publishes to GHCR on `main` — `notify` is not part of this pipeline, see its own section below |
 | `scripts/docker-status.mjs`                | Prints each service's real exposed URL when up, or the exact command to start it when it isn't — see § Checking what's running |
 
 See "Verification status" at the bottom for exactly what has been run on
@@ -269,14 +270,44 @@ does, since it writes directly to Supabase (ADR-007).
 ## The app images
 
 ```bash
-pnpm docker:apps:build   # build avash-web:local and avash-api:local
-pnpm docker:apps         # run both (detached)
-pnpm docker:apps:logs    # follow both
+pnpm docker:apps:build   # build avash-web:local, avash-api:local, avash-notify:local
+pnpm docker:apps         # run all three (detached)
+pnpm docker:apps:logs    # follow all three
 pnpm docker:apps:down    # stop and remove them
 ```
 
-Then `http://localhost:8080` (web) and `http://localhost:8787/health`
-(api). Both publish to `127.0.0.1` only, and both run as non-root.
+Then `http://localhost:8080` (web), `http://localhost:8787/health` (api),
+and `http://localhost:8788/health` (notify). All three publish to
+`127.0.0.1` only, and all three run as non-root.
+
+### Dependency caching and forcing a clean install
+
+Each app's `Dockerfile` runs `pnpm install --frozen-lockfile` behind a
+BuildKit cache mount (`RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked`),
+so a rebuild after touching application source reuses already-downloaded
+packages instead of re-fetching the whole workspace from the registry — a
+full `pnpm install` on a source-only change drops from several minutes to
+roughly twenty seconds. `docker/ml.Dockerfile` does the same for `apt` and
+`pip`. `--frozen-lockfile` means the cache can only ever serve package
+versions that already match `pnpm-lock.yaml`; it cannot silently drift a
+build onto different versions than the lockfile specifies.
+
+The cache mount is **not** part of the image and is **not** cleared by
+`docker build --no-cache` — that flag only busts the layer cache, forcing
+the `RUN` steps to re-execute, and the install step will still resolve
+packages from the mounted store where possible. To force a genuinely
+clean install (fetch every package fresh from the registry, e.g. to rule
+out a corrupted local cache), clear the cache mount explicitly first:
+
+```bash
+docker builder prune --filter type=exec.cachemount
+DOCKER_BUILDKIT=1 docker build --no-cache -f apps/notify/Dockerfile -t avash-notify:local .
+```
+
+`docker builder prune -a` (or `docker system prune -a`) also clears it,
+but drops all other build cache besides — layers for every image, not
+just this one — so prefer the filtered form above unless a full reset is
+actually what's needed.
 
 ## Checking what's running
 
@@ -290,13 +321,14 @@ starting or stopping anything:
 
   db   RUNNING (healthy)  postgresql://postgres:postgres@127.0.0.1:54322/avash
                           shell: pnpm docker:db:psql
-  api  RUNNING (healthy)  http://127.0.0.1:8787/health
-  web  NOT RUNNING        start: pnpm docker:apps:build && pnpm docker:apps
+  api     RUNNING (healthy)  http://127.0.0.1:8787/health
+  web     NOT RUNNING        start: pnpm docker:apps:build && pnpm docker:apps
+  notify  RUNNING (healthy)  http://127.0.0.1:8788/health
 
   ml    built (avash-ml:local)   run: pnpm docker:ml <command>, e.g.
                                  pnpm docker:ml python ml/training/train.py
 
-2 of 3 services up. 1 not running — run the "start:" command(s) above.
+3 of 4 services up. 1 not running — run the "start:" command(s) above.
 ```
 
 The URL for each running service is read from `docker compose ps`'s actual
@@ -309,10 +341,10 @@ just created and is doing exactly what it should is wrong. Implementation:
 `scripts/docker-status.mjs`.
 
 Each app owns its own `Dockerfile` and is built independently — there is
-no combined image, and neither depends on the other at build time. Both
+no combined image, and none depends on another at build time. All three
 build with the **repository root as context** (`-f apps/web/Dockerfile .`),
-because both need workspace packages (`@avash/types`, `@avash/logger`)
-that live outside the app directory.
+because each needs workspace packages (`@avash/types`, `@avash/push`,
+`@avash/logger`) that live outside the app directory.
 
 ### `apps/web` — nginx serving the Vite build
 
@@ -386,6 +418,52 @@ add a route:
   and say so in the route's feature doc. Never leave it to be discovered
   by whoever self-hosts.
 
+### `apps/notify` — Node serving the announcement-push delivery service
+
+**This image is local-testing only.** Production deploys `apps/notify` to
+Vercel + Inngest (`.github/workflows/deploy-notify.yml`, ADR-016), never
+a container — there is no `notify` row in `build-images.yml` or
+`docs/ci-cd.md`'s published-images list, and none should be added. This
+Dockerfile exists purely so the webhook receiver and the Inngest
+functions can be exercised end to end against the local Supabase stack
+without a Vercel account or an Inngest Cloud account.
+
+The image runs `apps/notify/server/node-server.ts`, a thin adapter — the
+same pattern as `apps/api/server/node-server.ts` — that routes three
+paths over one `http.Server`: `POST /api/announcement-published` (the
+webhook receiver, via Inngest's `serveEndpoint()` bridge from a Web API
+`Request`/`Response` handler to a Node `http.RequestListener`),
+`/api/inngest` (Inngest's own `serve()` handler — function registration
+and invocation), and `GET /health` (the container health check). esbuild
+bundles it to one file, same as `apps/api`'s build.
+
+Secrets arrive as **runtime** environment variables, never build args —
+`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `VAPID_PUBLIC_KEY`,
+`VAPID_PRIVATE_KEY`, `ANNOUNCEMENT_WEBHOOK_SECRET`. `compose.yaml`
+additionally defaults `INNGEST_DEV=1` — without it, the Inngest SDK
+defaults to "cloud mode" and `/api/inngest` 500s on every call with no
+`INNGEST_SIGNING_KEY` set; dev mode skips that authentication entirely,
+enough to exercise the webhook and the delivery pass against the local
+Supabase stack with no Inngest account. Set `INNGEST_EVENT_KEY` +
+`INNGEST_SIGNING_KEY` and unset `INNGEST_DEV` to test against a real
+Inngest Cloud environment instead. A missing required var logs a
+structured warning at startup rather than refusing to start — every
+delivery then fails closed inside `packages/push` (a webhook `401` or a
+`deliverAnnouncement` throw), the same "runs, but every write path is
+dead" tradeoff `apps/api/server/node-server.ts` accepts for its own
+optional-at-startup secrets.
+
+To actually see a delivery: publish an announcement against the api
+container or `wrangler dev`, then `POST` to
+`http://localhost:8788/api/announcement-published` with the
+`x-announcement-webhook-secret` header set to your local
+`ANNOUNCEMENT_WEBHOOK_SECRET` and a body of
+`{"type":"INSERT","table":"announcements","record":{"id":"<uuid>"}}` —
+this is what the Supabase Database Webhook sends in production; there is
+no local Supabase-CLI equivalent that fires it automatically, so
+exercising the receiver locally means sending that request by hand (or
+scripting it) rather than relying on the CLI stack to trigger it.
+
 ### Published images
 
 `build-images.yml` publishes on merge to `main`:
@@ -417,13 +495,20 @@ The CI/CD pipeline work wires the same images into GitHub Actions:
   `postgis/postgis:15-3.4` declared as a job `services:` entry with a
   `pg_isready` health check, so CI verifies migrations against a real
   spatial database with no hosted dependency and no credentials.
-- **hadolint** — every Dockerfile (`docker/ml.Dockerfile`,
-  `apps/web/Dockerfile`, `apps/api/Dockerfile`) is linted on any PR that
-  touches it.
-- **Trivy** — every built image is scanned; high/critical vulnerabilities
-  fail the job, matching the §11 rule already applied to CodeQL findings.
-- **`build-images.yml`** — builds both app images on every PR, publishes
+- **hadolint** — `docker/ml.Dockerfile`, `apps/web/Dockerfile`, and
+  `apps/api/Dockerfile` are linted on any PR that touches them
+  (`build-images.yml`, `docker-image-scan.yml`).
+- **Trivy** — every image built by those two workflows is scanned;
+  high/critical vulnerabilities fail the job, matching the §11 rule
+  already applied to CodeQL findings.
+- **`build-images.yml`** — builds `web` and `api` on every PR, publishes
   them to GHCR on `main`.
+- **`apps/notify/Dockerfile` has neither yet.** It is deliberately
+  outside `build-images.yml` (its deploy target is Vercel, not a
+  container, per ADR-016), and nothing else lints or scans it — a real
+  gap for a Dockerfile that is still a genuine attack surface on
+  whoever's machine runs it, even unpublished. Until it's wired in, run
+  `hadolint apps/notify/Dockerfile` by hand before changing it.
 - **The API dual-runtime run** — `apps/api`'s Playwright contract suite
   executes twice, against `wrangler dev` and against the running API
   container.
@@ -443,14 +528,15 @@ run. This document owns the local story.
 | `POSTGRES_LOCAL_PORT` | `54322` (host), `5432` (container)          | `compose.yaml`                                         | Avoids collision with a host Postgres; matches the Supabase CLI convention |
 | `WEB_IMAGE_BASE`      | `nginxinc/nginx-unprivileged:1.27.2-alpine` | `apps/web/Dockerfile`                                  | Runtime base for the web image — non-root, listens on 8080                 |
 | `API_IMAGE_BASE`      | `node:20.17.0-alpine3.20`                   | `apps/api/Dockerfile` (both stages)                    | Build + runtime base for the API image                                     |
-| `APP_CONTAINER_PORTS` | web `8080`, api `8787`                      | nginx conf, `node-server.ts`, `compose.yaml`           | Fixed in-container ports; host ports override via `WEB_PORT` / `API_PORT`  |
-| `CONTAINER_REGISTRY`  | `ghcr.io/<owner>/avash-{web,api}`           | `.github/workflows/build-images.yml`                   | Published image names                                                      |
+| `APP_CONTAINER_PORTS` | web `8080`, api `8787`, notify `8788`       | nginx conf, `node-server.ts` (api + notify), `compose.yaml` | Fixed in-container ports; host ports override via `WEB_PORT` / `API_PORT` / `NOTIFY_PORT` |
+| `CONTAINER_REGISTRY`  | `ghcr.io/<owner>/avash-{web,api}`           | `.github/workflows/build-images.yml`                   | Published image names — `notify` is deliberately absent, see § The app images |
 
 All seven are registered in `docs/PROJECT_PLAN.md` §14 and
 `docs/constants-registry.md` — changing one means changing it there in the
-same PR (R9). `APP_CONTAINER_PORTS` earns its row: 8080 and 8787 appear in
-the nginx server block, the Node entry's `PORT` default, `compose.yaml`,
-both `HEALTHCHECK` lines, and the CSP the web image serves.
+same PR (R9). `APP_CONTAINER_PORTS` earns its row: 8080, 8787, and 8788
+appear in the nginx server block / both Node entries' `PORT` defaults,
+`compose.yaml`, every `HEALTHCHECK` line, and the CSP the web image
+serves.
 
 ## Security considerations
 
@@ -468,16 +554,17 @@ both `HEALTHCHECK` lines, and the CSP the web image serves.
   live in `.env` / `apps/api/.dev.vars` / GitHub Actions secrets and never
   appear in `compose.yaml`.
 - **Every image runs as a non-root user** — `avash` (UID 1000) in the ML
-  image, `node` (UID 1000) in the API image, and UID 101 in the
-  nginx-unprivileged base. For the ML image this also keeps bind-mounted
-  output owned by the developer rather than root.
+  image, `node` (UID 1000) in both the API and notify images, and UID 101
+  in the nginx-unprivileged base. For the ML image this also keeps
+  bind-mounted output owned by the developer rather than root.
 - **Nothing secret enters an app image.** `apps/web` accepts only
   `VITE_PUBLIC_*` build args — public by definition, and build args are
   permanently readable in image history, so this is a hard rule, not a
-  convention. `apps/api` reads every secret from the runtime environment;
-  no secret is a build arg, and none is `COPY`ed in. The CI bundle-scan
-  gate (§7.1) applies to the `dist/` inside the web image exactly as it
-  does to a Pages build, since it is the same build output.
+  convention. `apps/api` and `apps/notify` read every secret from the
+  runtime environment; no secret is a build arg, and none is `COPY`ed in.
+  The CI bundle-scan gate (§7.1) applies to the `dist/` inside the web
+  image exactly as it does to a Pages build, since it is the same build
+  output.
 - **Published images are a public artifact.** `ghcr.io/<owner>/avash-*` is
   pullable by anyone the package visibility allows — treat every layer as
   published, and assume anything committed to the repo is inside it.
@@ -510,6 +597,13 @@ an empty data volume. `pnpm docker:db:nuke && pnpm docker:db`.
 **`import lightgbm` fails with a libgomp error** — the image layer that
 installs `libgomp1` was skipped or the image is stale. Rebuild with
 `docker compose --profile ml build --no-cache ml`.
+
+**A rebuild after a `pnpm-lock.yaml` change still looks like it's reusing
+stale packages** — `docker build --no-cache` does not clear the pnpm store
+cache mount described under [Dependency caching and forcing a clean
+install](#dependency-caching-and-forcing-a-clean-install); it only busts
+the layer cache. Run `docker builder prune --filter type=exec.cachemount`
+first, then rebuild.
 
 **The web container serves a blank page with a console error about
 `VITE_PUBLIC_API_BASE_URL`** — the image was built without the build arg.

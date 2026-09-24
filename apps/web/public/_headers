@@ -16,10 +16,25 @@
 # iframe it renders into (apps/web/src/features/reports/TurnstileWidget.tsx)
 # -- like the Worker origin, the Supabase project ref must be hand-kept in
 # sync with VITE_PUBLIC_SUPABASE_URL if the project ever changes.
+# worker-src and manifest-src are named explicitly rather than left to
+# fall back through child-src/script-src to default-src. Both resolve to
+# 'self' either way today, but the fallback chain for worker-src differs
+# between browsers and a later tightening of script-src (e.g. adding a
+# nonce, which makes 'self' stop applying to workers) would silently
+# unregister the service worker and take Web Push down with it — the
+# push handler lives in /sw.js, so this is load-bearing, not cosmetic.
 /*
-  Content-Security-Policy: default-src 'self'; connect-src 'self' https://avash-api-production.galibhabibullah786.workers.dev https://kdklmbqkczkaakgswlix.supabase.co wss://kdklmbqkczkaakgswlix.supabase.co; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://tile.openstreetmap.org;
+  Content-Security-Policy: default-src 'self'; connect-src 'self' https://avash-api-production.galibhabibullah786.workers.dev https://kdklmbqkczkaakgswlix.supabase.co wss://kdklmbqkczkaakgswlix.supabase.co; script-src 'self' https://challenges.cloudflare.com; worker-src 'self'; manifest-src 'self'; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://tile.openstreetmap.org;
   Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: geolocation=(self), notifications=(self)
+
+# The service worker script is the one unhashed, long-lived file whose
+# staleness is self-perpetuating: browsers revalidate it on their own
+# schedule, and a cached copy keeps serving the OLD push handler to
+# everyone already subscribed. Vite fingerprints every other asset, so
+# this exemption applies to exactly one file.
+/sw.js
+  Cache-Control: no-cache

@@ -42,3 +42,8 @@ python-dotenv==1.2.2
 
 # Web Push delivery from ml/serving/predict.py (VAPID keypair, §7.1)
 pywebpush==2.3.0
+
+# Test runner for ml/**/test_*.py (docs/standards/testing.md — pure
+# function / no-server logic, the same split Vitest owns on the Node
+# side). Not installed by the cron workflow; local/dev only.
+pytest==8.3.4

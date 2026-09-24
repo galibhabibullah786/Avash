@@ -1,0 +1,16 @@
+{
+  "name": "@avash/push",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "types": "index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@avash/types": "workspace:*",
+    "@supabase/supabase-js": "^2.112.3",
+    "web-push-neo": "0.1.2"
+  }
+}

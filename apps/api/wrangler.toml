@@ -20,6 +20,9 @@ enabled = true
 #   UPSTASH_REDIS_REST_URL
 #   UPSTASH_REDIS_REST_TOKEN
 #   TURNSTILE_SECRET_KEY
+#   CLOUDINARY_CLOUD_NAME
+#   CLOUDINARY_API_KEY
+#   CLOUDINARY_API_SECRET
 #
 # CORS_ALLOWED_ORIGINS / CORS_PREVIEW_ORIGIN_SUFFIX (§14, docs/constants-registry.md)
 # are deploy-time config, not secrets — they're the public Cloudflare

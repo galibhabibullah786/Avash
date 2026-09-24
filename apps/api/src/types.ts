@@ -14,6 +14,10 @@ export interface Bindings {
   CORS_ALLOWED_ORIGINS: string;
   /** Bare domain suffix PR-preview origins must end in, e.g. "avash.pages.dev" (no scheme, no leading dot). */
   CORS_PREVIEW_ORIGIN_SUFFIX: string;
+  /** Server-only (R2) — signs direct-to-Cloudinary uploads (ADR-015). Never referenced under apps/web. */
+  CLOUDINARY_CLOUD_NAME: string;
+  CLOUDINARY_API_KEY: string;
+  CLOUDINARY_API_SECRET: string;
 }
 
 export interface AuthenticatedUser {

@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSignIn } from './useSignIn';
+import { SubmitButton } from '../../components/SubmitButton';
+import { PasswordInput } from '../../components/PasswordInput';
 
 interface LocationState {
   from?: string;
@@ -22,39 +24,42 @@ export function SignInForm() {
     }
   }
 
+  const pending = status === 'submitting';
+
   return (
     <form className="form" onSubmit={handleSubmit} noValidate aria-label="Sign in">
-      <div className="field">
-        <label className="field__label" htmlFor="signin-email">
-          Email
-        </label>
-        <input
-          id="signin-email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-        />
-      </div>
-      <div className="field">
-        <label className="field__label" htmlFor="signin-password">
-          Password
-        </label>
-        <input
-          id="signin-password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          required
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-        />
-      </div>
-      <button className="button" type="submit" disabled={status === 'submitting'}>
-        {status === 'submitting' ? 'Signing in…' : 'Sign in'}
-      </button>
+      <fieldset className="form__fieldset" disabled={pending}>
+        <div className="field">
+          <label className="field__label" htmlFor="signin-email">
+            Email
+          </label>
+          <input
+            id="signin-email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </div>
+        <div className="field">
+          <label className="field__label" htmlFor="signin-password">
+            Password
+          </label>
+          <PasswordInput
+            id="signin-password"
+            name="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </div>
+      </fieldset>
+      <SubmitButton pending={pending} pendingLabel="Signing in…">
+        Sign in
+      </SubmitButton>
       <div className={error ? 'alert alert--error' : undefined} role="alert" aria-live="assertive">
         {error ?? ''}
       </div>

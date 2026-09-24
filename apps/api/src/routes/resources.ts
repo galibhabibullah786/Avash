@@ -8,10 +8,11 @@ import {
 } from '@avash/types';
 import { buildGenericErrorBody, logger } from '@avash/logger';
 import { parseBbox } from '@avash/geo';
-import { BLOOD_UPDATE_RATE_LIMIT, type RateLimitRedisLike } from '@avash/security';
+import { BLOOD_UPDATE_RATE_LIMIT, buildAuditEntry, writeAuditEntry, type RateLimitRedisLike } from '@avash/security';
 import { auth } from '../middleware/auth';
 import { rateLimit } from '../middleware/rate-limit';
 import { createSupabaseAdmin } from '../lib/supabaseAdmin';
+import { createAuditSink } from '../lib/auditSink';
 import { toHospitalDto, toBloodAvailabilityDto } from '../lib/resourceDto';
 import { toNumberOrNull } from '../lib/numeric';
 import type { AppEnv, Bindings } from '../types';
@@ -219,6 +220,35 @@ export function createResources(options?: CreateResourcesOptions) {
           const updatedRow = (updatedRows ?? [])[0] as Record<string, unknown> | undefined;
           if (!updatedRow) {
             return c.json(buildGenericErrorBody(requestId), 404);
+          }
+
+          // Best-effort, isolated (see admin-users.ts's PATCH handler for
+          // why this can't share the outer try/catch): the write already
+          // took effect above.
+          try {
+            const sink = createAuditSink(supabase);
+            const entry = buildAuditEntry({
+              action: 'blood.update',
+              entityType: 'blood_inventory',
+              entityId: id,
+              actorId: user.id,
+              actorRole: user.role,
+              outcome: 'success',
+              requestId,
+              detail: {
+                unitsAvailable: parsed.data.unitsAvailable,
+                plateletUnits: parsed.data.plateletUnits,
+              },
+            });
+            const { error: auditLogError } = await writeAuditEntry(sink, entry);
+            if (auditLogError) {
+              logger.error('resources/blood PATCH: updated but audit_log write failed', { requestId });
+            }
+          } catch (auditThrown) {
+            logger.error('resources/blood PATCH: updated but audit_log write threw', {
+              requestId,
+              message: auditThrown instanceof Error ? auditThrown.message : String(auditThrown),
+            });
           }
 
           const { data: hospRows, error: hospError } = await supabase

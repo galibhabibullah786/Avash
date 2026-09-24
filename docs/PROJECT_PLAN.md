@@ -128,6 +128,7 @@
 | ADR-011 | **Docker for local infrastructure and ML reproducibility** — a PostGIS database, the Python ML runtime, and CI service containers. *(The "apps are never containerized" clause is superseded by ADR-012; everything else stands)* | Schema/RLS/spatial work needs a real PostGIS instance, and ONNX export is dependency-version-sensitive — both are worth a pinned container |
 | ADR-012 | **Both apps ship container images**, built and published per app — `apps/web` on nginx serving the Vite build, `apps/api` on Node via `@hono/node-server`. Cloudflare Pages/Workers stays the primary deploy target | Images make the project portable, handover-ready, and self-hostable without a Cloudflare account or a local toolchain, and leave a SHA-tagged artifact per merge. The cost — `apps/api` now runs on both workerd and Node — is paid explicitly: CI runs `apps/api`'s Playwright suite against **both** runtimes, so a divergence is a red build, not a surprise for whoever self-hosts |
 | ADR-013 | **Leaflet with OpenStreetMap raster tiles, no map credential** — the basemap comes from `tile.openstreetmap.org`; region polygons and markers are drawn from our own `apps/api` GeoJSON on top of it | Splits "map library" from "tile provider," which §7.1 had previously conflated. Leaflet renders our dynamic layers without a WebGL dependency on low-end hardware, and OSM tiles remove `VITE_PUBLIC_MAPBOX_TOKEN` — along with its account, scoping procedure, and rotation path — from the project entirely. The tile source is one registry constant plus one CSP `img-src` entry, so moving to a keyed or self-hosted provider under real traffic is a swap, not a rewrite |
+| ADR-016 | **A third deployable app, `apps/notify`** (Vercel + Inngest), for live announcement push | Announcement delivery is neither a per-request browser call nor a fixed-cadence batch job — it needs durable retries and per-subscriber fan-out triggered by a database write. All delivery logic lives in `packages/push` (no Vercel/Inngest imports), so `apps/notify` stays a thin, re-hostable adapter and the vendor bet is a deployment detail, not a structural commitment |
 
 New decisions get a new file in `docs/adr/`, numbered sequentially, never edited retroactively (superseded ADRs are marked, not deleted).
 
@@ -347,6 +348,23 @@ create table push_subscriptions (
   created_at timestamptz default now()
 );
 
+-- Author-broadcast announcements (§13.7 amendment; decision A — NOT
+-- alert_subscriptions with a flag: inverse relationship, different owner,
+-- different RLS)
+create table announcements (
+  id uuid primary key default gen_random_uuid(),
+  author_id uuid references auth.users(id) on delete set null on update cascade,
+  title text not null,
+  body text not null,
+  geom geometry(Point, 4326) not null,
+  radius_m integer not null default 5000 check (radius_m between 500 and 50000),
+  target_roles text[] not null default '{}',   -- empty = every role
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+create index idx_announcements_geom on announcements using gist (geom);
+create index idx_announcements_active on announcements (expires_at desc);
+
 -- News aggregator agent output
 create table news_items (
   id bigint generated always as identity primary key,
@@ -426,12 +444,53 @@ application-level.
 | `alert_subscriptions.user_id → auth.users(id)` | `cascade` | `cascade` | A deleted account's geofences should not keep matching and evaluating |
 | `push_subscriptions.user_id → auth.users(id)` | `cascade` | `cascade` | Same — no point delivering push to a subscription owned by a deleted account |
 | `news_items.region_guess → regions(id)` | `set null` | `cascade` | Column is nullable and advisory (AI-inferred, §5.4) — losing the region guess must not delete ingested news content |
+| `announcements.author_id → auth.users(id)` | `set null` | `cascade` | A published announcement must survive the authoring moderator's account being removed — decision E, the audit trail records the deletion event, not the row's contents |
 
 `on update cascade` is applied uniformly even though every referenced key
 here is a `uuid` primary key that the application never mutates in
 practice — it costs nothing at runtime and removes a class of
 "why did this update fail" surprises if a key value is ever legitimately
 reassigned (e.g. a manual data-repair `update`).
+
+**§4 amendment — `audit_log`, a generic append-only trail.** Migration
+`20260817000015_audit_log.sql` adds `audit_log`: `action`, `entityType`,
+`entityId`, `actorId`/`actorRole`, `outcome`, `requestId`, and a
+scalar-only `detail jsonb` capped at `AUDIT_DETAIL_MAX_KEYS` keys
+(`packages/types/audit.ts`). It does **not** absorb `role_assignments`
+(§7 RBAC): `role_assignments` has typed columns and two check constraints
+that a generalized `detail jsonb` row would trade away for uniformity, so
+the two tables coexist — `role_assignments` for role grants specifically,
+`audit_log` for every other write path (`report.submit`, `report.verify`,
+`blood.update`, `upload.sign`, plus `role.assign` mirrored into both).
+Same RLS shape as `role_assignments`: enabled, one `roles:manage` select
+policy, no insert/update/delete policy — an audit row that can be edited
+is not an audit row, and `apps/api` writes with the service-role key,
+which bypasses RLS.
+
+**§4 amendment — `announcements` (§13.7, roadmap feature 3d).** Migration
+`20260817000017_announcements.sql` adds `announcements`: an author
+broadcasts a `title`/`body` to a geometry + optional role set, with an
+`expires_at`. **Decision A — not folded into `alert_subscriptions`.** That
+table models a user subscribing to an area; this models an author
+broadcasting to one. Inverse relationships, different owners
+(`user_id = auth.uid()` vs. `has_capability('reports:moderate')`),
+different lifetimes — a `kind` discriminator would force one RLS policy to
+be correct for both authorization models, the shape that produces an
+authorization bug. **Decision B — targeting is evaluated at read time, not
+fanned out at write time.** `GET /api/announcements` filters live on
+`expires_at > now()`, role membership, and `ST_DWithin` against the
+caller's point; no per-recipient row is created. Trade-off: no
+"mark as read" without a further join table, deferred until requested.
+**Decision E — deletes are audited as the deletion event, not the row's
+contents.** `announcement.delete` records who deleted which entity and
+when; `auditDetailSchema`'s 12-key scalar cap makes dumping full geometry
+into an admin-readable table neither possible nor desirable for
+location data. The `idx_announcements_active` index is a plain
+`btree (expires_at desc)`, not the partial index a first draft of this
+migration specified (`where expires_at > now()`) — Postgres rejects
+`now()` in a partial-index predicate because it is only `STABLE`, not
+`IMMUTABLE`; the live-rows read path (decision B) still gets a
+range-scan-friendly index, just not a partial one.
 
 ---
 
@@ -522,8 +581,13 @@ All routes mounted in `apps/api/src/index.ts`. Every request passes through `mid
 | `POST /api/symptom-check` | public | cors, headers, rate-limit, quota-guard | 10/min/IP, 50/day/IP | Gemini structuring → deterministic rule engine, no PII persisted |
 | `POST /api/alerts/subscribe` | authenticated | cors, headers, auth (JWT), rate-limit | 5/min/user | Upsert `alert_subscriptions` |
 | `POST /api/alerts/push-subscription` | authenticated | cors, headers, auth (JWT) | 5/min/user | Registers browser Push subscription (`push_subscriptions`) |
-| `GET /api/admin/users?page=` | admin (`roles:manage`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user | Paged user list via the Supabase Admin API, 50/page; malformed rows dropped |
+| `GET /api/admin/users?page=&pageSize=` | admin (`roles:manage`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user | Paged user list via the Supabase Admin API, `ADMIN_USER_PAGE_SIZE` default; malformed rows dropped |
 | `PATCH /api/admin/users/:id/role` | admin (`roles:manage`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user | Writes `app_metadata.role` + an append-only `role_assignments` audit row; 409 on self-demotion |
+| `POST /api/uploads/signature` | authenticated (any role) | cors, headers, auth (JWT), rate-limit | 10/min/user | Signs a direct-to-Cloudinary upload (ADR-015); the Worker never receives the file bytes |
+| `POST /api/announcements` | moderator/admin (`reports:moderate`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user | Creates an `announcements` row; 409 at `ANNOUNCEMENT_MAX_ACTIVE_PER_AUTHOR` |
+| `GET /api/announcements` | authenticated (decision H — not public) | cors, headers, auth (JWT), rate-limit | 10/min/user (reuses `ANNOUNCEMENT_CREATE_RATE_LIMIT`) | Live rows only: `expires_at > now()`, role-targeted, `ST_DWithin` against the caller's point; paginated |
+| `DELETE /api/announcements/:id` | author or admin | cors, headers, auth (JWT), rate-limit | 10/min/user (reuses `ANNOUNCEMENT_CREATE_RATE_LIMIT`) | Deletes an `announcements` row; audited per decision E |
+| `GET /api/admin/audit-log` | admin (`roles:manage`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user (reuses `ROLE_ASSIGNMENT_RATE_LIMIT`, matching `GET /api/admin/users`) | Paginated read of `audit_log`, filterable by `action`/`actorId` |
 
 **§6 amendment — role administration.** The two `/api/admin/users` rows
 above were added by the RBAC slice; this section predates the existence of
@@ -543,6 +607,16 @@ from the `latest` payload, which already carries `regionCode` and
 `regionName`, so a separate regions endpoint would be a second source of
 truth for the same list.
 
+**§6 amendment — signed uploads and the shared list-query contract.**
+`POST /api/uploads/signature` is the one genuinely new endpoint of the
+platform-foundation slice; see ADR-015 for why the client never uploads
+through the Worker. `GET /api/admin/users` now accepts the shared
+`page`/`pageSize`/`dir`/`q` query parameters (`packages/types/pagination.ts`,
+`listQueryFor([])`) but still cannot filter, sort, or count — the Supabase
+Admin API's `listUsers` takes only `page`/`perPage` and returns no total,
+which is why the shared page-meta shape carries `total: number | null`
+rather than requiring one.
+
 **Open item — rate-limit column disagreement (flagged, not resolved).**
 Every public `GET` row above lists `60/min/IP` in the Rate Limit column
 while its Middleware Chain column reads only `cors, headers` — no
@@ -551,6 +625,24 @@ weather rows; the weather and risk-map/risk-detail routes implement the
 middleware chain as written (no Upstash call on these read paths) rather
 than resolve the discrepancy here. It is left for a decision during the
 security-hardening slice (§13, slice 9).
+
+**§6 amendment — announcements and the audit-log read surface (§13.7).**
+`POST /api/announcements`, `GET /api/announcements`, and
+`DELETE /api/announcements/:id` are new. **Decision H —
+`GET /api/announcements` is authenticated, not public.** A role-targeted
+announcement leaks the existence of role-specific operational messaging to
+an anonymous scraper, and the endpoint takes a caller-supplied point;
+anonymous visitors see no announcements. A banner that genuinely must
+reach anonymous users is a different feature with different privacy
+properties. **Decision C — push delivery lives in the batch job, not this
+Worker.** ADR-007 forbids a job-as-endpoint, and `VAPID_PRIVATE_KEY`
+already lives only in `ml/serving/predict.py`; the Worker here manages
+`alert_subscriptions`/`push_subscriptions` rows and `announcements` rows
+only, never sends a push itself, so an announcement surfaces in-app
+immediately but rides the next nightly batch job for push delivery.
+`GET /api/admin/audit-log` is the read surface for `audit_log`
+(§4 amendment above): an audit trail nobody can read is a table, not a
+control.
 
 **No `/api/jobs/*` endpoints exist.** Background jobs (weather ingest, batch predict, news scan) run as GitHub Actions workflows connecting **directly** to Supabase with the service-role key stored as a GH secret — never exposed as an invokable HTTP endpoint, removing an entire class of forged-trigger attack (ADR-007).
 
@@ -588,6 +680,7 @@ slice 9) to revisit with real numbers rather than rediscovering it.
 | `OPENWEATHERMAP_API_KEY` | server-only | `scripts/jobs/weather-ingest.ts` |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | server-only | `apps/api` rate limiter |
 | `TURNSTILE_SECRET_KEY` | server-only | `apps/api` (server-side verification call) |
+| `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | server-only | `apps/api/src/lib/cloudinarySignature.ts` — signs direct-to-Cloudinary uploads (ADR-015); `apps/web` learns the cloud name from the signature response, never from a `VITE_PUBLIC_*` var |
 | `VITE_PUBLIC_TURNSTILE_SITE_KEY` | client | widget render only |
 | `VITE_PUBLIC_VAPID_PUBLIC_KEY` | client (`apps/web`) | Push subscription registration |
 | `VAPID_PUBLIC_KEY` | server-only | `ml/serving/predict.py` (Web Push signing needs both halves of the keypair); same value as `VITE_PUBLIC_VAPID_PUBLIC_KEY` |
@@ -600,6 +693,12 @@ Rule: any variable without the `VITE_PUBLIC_` prefix must never be imported into
 **Corollary — a client-consumed variable must carry the prefix in its own name.** A value that legitimately needs to reach the browser cannot be named without `VITE_PUBLIC_` and still be readable: the ESLint rule rejects the source-level access *and* Vite declines to inline it. This is why the VAPID public key appears twice above under two names — `VITE_PUBLIC_VAPID_PUBLIC_KEY` for the browser's subscription call, `VAPID_PUBLIC_KEY` for the Python signing path — rather than once under a bare name that neither lock would let the client read.
 
 **No map credential appears above, deliberately.** The risk map renders with Leaflet over OpenStreetMap raster tiles, which require no account or token (ADR-013). The tile URL, attribution, and max zoom are §14 registry constants, not environment variables — they are neither secret nor environment-specific. `VITE_PUBLIC_MAPBOX_TOKEN` was removed from this table, and from every consumer of it, by ADR-013.
+
+**§7.1 amendment — the three `CLOUDINARY_*` rows.** Added by the
+platform-foundation slice, all server-only, all consumed exclusively by
+`apps/api/src/lib/cloudinarySignature.ts`. See ADR-015 for why signing
+happens server-side while the upload itself goes straight from the
+browser to Cloudinary, and for the exact signed-parameter set.
 
 **Local development files.** Each of the three runtime contexts loads its own gitignored file, with a committed `*.example` template as the tracked inventory:
 
@@ -808,7 +907,7 @@ Waterfall governs the *project timeline* (mapped below to the original 10-week p
 | `POSTGRES_LOCAL_PORT` | 54322 (host) → 5432 (container) | `compose.yaml` | avoids collision with a host-installed Postgres; matches the Supabase CLI convention |
 | `WEB_IMAGE_BASE` | `nginxinc/nginx-unprivileged:1.27.2-alpine` | `apps/web/Dockerfile` | runtime base for the web image — non-root, listens on 8080 (ADR-012) |
 | `API_IMAGE_BASE` | `node:20.17.0-alpine3.20` | `apps/api/Dockerfile` (both stages) | build + runtime base for the API image; Node 20 matches the Worker's `nodejs_compat` baseline |
-| `APP_CONTAINER_PORTS` | web 8080, api 8787 (in-container) | `apps/web/docker/default.conf.template`, `apps/api/server/node-server.ts`, `compose.yaml` | fixed in-container ports; host ports are overridable via `WEB_PORT`/`API_PORT` |
+| `APP_CONTAINER_PORTS` | web 8080, api 8787, notify 8788 (in-container) | `apps/web/docker/default.conf.template`, `apps/api/server/node-server.ts`, `apps/notify/server/node-server.ts`, `compose.yaml` | fixed in-container ports; host ports are overridable via `WEB_PORT`/`API_PORT`/`NOTIFY_PORT` |
 | `CONTAINER_REGISTRY` | `ghcr.io/<owner>/avash-web`, `ghcr.io/<owner>/avash-api` | `.github/workflows/build-images.yml` | published image names; tagged `sha-<short>`, plus `latest` on `main` |
 | `WEATHER_CACHE_TTL_S` | `s-maxage=900, swr=1800` | `apps/api/src/routes/weather.ts` | edge cache for weather reads; 15 min against a 3 h ingest cadence never serves a value the source could have refreshed |
 | `WEATHER_HISTORY_WINDOW_DAYS` | 14 | `apps/api/src/routes/weather.ts` | dashboard history window; matches the 14-day rolling features in §5.1 so the chart shows what the model will consume |
@@ -832,6 +931,28 @@ Waterfall governs the *project timeline* (mapped below to the original 10-week p
 | `RESOURCE_SEARCH_RADIUS_DEFAULT_M` | 5000 (bounds 500–50,000) | `packages/types/api.ts`, `blood_within_radius()` | default/ceiling for the `ST_DWithin` blood search |
 | `HOSPITAL_RESULT_LIMIT` | 200 | `apps/api/src/routes/resources.ts` | caps a bbox or radius result set before it becomes a payload problem |
 | `RESOURCES_CACHE_TTL_S` | `s-maxage=60, swr=120` | `apps/api/src/routes/resources.ts` | short edge cache for the initial paint; live updates arrive via Realtime (ADR-010), so a long TTL would fight the ticker |
+| `ADMIN_USER_PAGE_SIZE` | 50 | `apps/api/src/routes/admin-users.ts` | default page size for the admin user list |
+| `AUDIT_DETAIL_MAX_KEYS` | 12 | `packages/types/audit.ts` | caps the audit `detail` map — a flat, key-capped scalar map makes it awkward to dump a whole request body into an append-only, admin-readable table |
+| `LIST_PAGE_SIZE_DEFAULT` | 25 | `packages/types/pagination.ts` | page size when `?pageSize=` is absent |
+| `LIST_PAGE_SIZE_MAX` | 100 | `packages/types/pagination.ts` | ceiling on any client-requested page size |
+| `LIST_SEARCH_MAX_CHARS` | 120 | `packages/types/pagination.ts` | bounds the `?q=` filter term |
+| `UPLOAD_MAX_BYTES` | 5242880 (5 MiB) | `packages/types/uploads.ts` | client-side pre-check + signed constraint |
+| `UPLOAD_SIGNATURE_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | bounds signature minting per account |
+| `UPLOAD_SIGNATURE_TTL_S` | 600 | `apps/api/src/lib/cloudinarySignature.ts` | how long a returned signature stays valid |
+| `ANNOUNCEMENT_TITLE_MAX_CHARS` | 120 | `packages/types/alerts.ts` | §13.7 announcement title cap |
+| `ANNOUNCEMENT_BODY_MAX_CHARS` | 1000 | `packages/types/alerts.ts` | §13.7 announcement body cap |
+| `ANNOUNCEMENT_RADIUS_DEFAULT_M` | 5000 (bounds 500–50,000) | `packages/types/alerts.ts`, `announcements` check constraint | default/ceiling for announcement targeting radius |
+| `ANNOUNCEMENT_MAX_ACTIVE_PER_AUTHOR` | 20 | `apps/api/src/routes/announcements.ts` | caps how many live announcements one author can hold at once |
+| `ALERT_SUBSCRIBE_RATE_LIMIT` | 5/min per user | `packages/security/rateLimit.ts` | §6's `POST /api/alerts/subscribe` and `POST /api/alerts/push-subscription` rows |
+| `ANNOUNCEMENT_CREATE_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | §6's `POST /api/announcements` row |
+| `AUDIT_LOG_PAGE_SIZE_DEFAULT` | 50 | `apps/api/src/routes/audit-log.ts` | default page size for `GET /api/admin/audit-log` |
+| `ANNOUNCEMENT_PUSH_LEASE_SECONDS` | 300 | `packages/types/alerts.ts` | how long one delivery claim is held before the sweep may reclaim it |
+| `ANNOUNCEMENT_PUSH_SWEEP_CADENCE` | every 5 min | `apps/notify` Inngest cron | safety-net scan for undelivered announcements |
+| `ANNOUNCEMENT_PUSH_CONCURRENCY` | 10 | `packages/push` | simultaneous in-flight sends per delivery run |
+| `ANNOUNCEMENT_PUSH_RUN_CONCURRENCY` | 5 | `packages/types/alerts.ts`, `apps/notify` Inngest function config | simultaneous Inngest function RUNS — distinct from the in-flight-sends number above, and bounded by the Inngest plan |
+| `INNGEST_PLAN_CONCURRENCY_LIMIT` | 5 | `packages/types/alerts.ts` | the Inngest account's concurrent-run ceiling; declaring more makes Inngest reject the whole app registration |
+| `ANNOUNCEMENT_PUSH_BATCH_SIZE` | 100 | `packages/push` | targets per Inngest step, keeping each invocation inside the function time limit |
+| `ANNOUNCEMENT_PUSH_MAX_PER_USER_PER_HOUR` | 6 | `packages/push` | anti-spam ceiling per subscriber (applied per-user rather than as a global cadence) |
 
 ---
 

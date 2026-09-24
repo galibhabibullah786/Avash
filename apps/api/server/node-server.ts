@@ -54,8 +54,12 @@ const REQUIRED_VARS = [
  * accepted, just flagged for manual review — both are designed fallbacks,
  * not failures. The startup log names it so an operator learns it here
  * rather than wondering why AI assist never appears.
+ *
+ * `CLOUDINARY_*` absent means `POST /api/uploads/signature` fails closed
+ * (ADR-015) — it has no caller in this slice, so a container without them
+ * still serves every other route.
  */
-const OPTIONAL_VARS = ['GEMINI_API_KEY'] as const;
+const OPTIONAL_VARS = ['GEMINI_API_KEY', 'CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'] as const;
 
 function readBindings(): Bindings {
   const missing = REQUIRED_VARS.filter((name) => !process.env[name]);
@@ -89,6 +93,9 @@ function readBindings(): Bindings {
     ENVIRONMENT: process.env.ENVIRONMENT ?? 'development',
     CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS ?? '',
     CORS_PREVIEW_ORIGIN_SUFFIX: process.env.CORS_PREVIEW_ORIGIN_SUFFIX ?? '',
+    CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME ?? '',
+    CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY ?? '',
+    CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET ?? '',
   };
 }
 

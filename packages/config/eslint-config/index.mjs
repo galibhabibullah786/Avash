@@ -32,7 +32,10 @@ export default [
   {
     rules: {
       'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': 'error',
+      // argsIgnorePattern: an unimplemented stub's parameters are unused by
+      // definition (e.g. `throw new Error('not implemented')`) but still
+      // need to be named to declare the eventual contract shape.
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
   noNonPublicEnvUnderWeb,
@@ -44,6 +47,12 @@ export default [
       '**/.turbo/**',
       '**/coverage/**',
       '**/.wrangler/**',
+      // Vercel's build output for apps/notify — esbuild bundles every
+      // dependency into one megafile there, so linting it reports
+      // hundreds of violations from third-party code that nobody in this
+      // repo can fix. Same category as dist/ and dist-node/ above:
+      // generated, not authored.
+      '**/.vercel/**',
     ],
   },
 ];

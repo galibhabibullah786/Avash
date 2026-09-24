@@ -1,1 +1,11 @@
+# SPA rewrite: every path that is not a real file renders index.html so
+# React Router owns routing (docs/PROJECT_PLAN.md §11).
+#
+# This does NOT shadow /sw.js or /manifest.webmanifest. Cloudflare Pages
+# matches static assets in the build output BEFORE consulting this file,
+# so a request for an existing file is served as that file — the rewrite
+# only ever fires for paths with no asset behind them. Worth stating
+# because the failure it would cause is silent and total: a service
+# worker served as text/html is rejected by every browser with a MIME
+# type error, and Web Push depends entirely on that registration.
 /*  /index.html  200

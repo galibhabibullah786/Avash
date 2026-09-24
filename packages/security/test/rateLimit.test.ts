@@ -1,5 +1,11 @@
 import { describe, test, expect } from 'vitest';
-import { checkRateLimit, rateLimitKey, type RateLimitRedisLike } from '../rateLimit';
+import { checkRateLimit, rateLimitKey, UPLOAD_SIGNATURE_RATE_LIMIT, type RateLimitRedisLike } from '../rateLimit';
+
+describe('UPLOAD_SIGNATURE_RATE_LIMIT', () => {
+  test('bounds signature minting to 10/min per user (§14)', () => {
+    expect(UPLOAD_SIGNATURE_RATE_LIMIT).toEqual({ perMinute: 10 });
+  });
+});
 
 /** In-memory sorted set, enough of Upstash's surface for the sliding window. */
 function createFakeRedis(): RateLimitRedisLike & { size(key: string): number } {

@@ -1,5 +1,12 @@
 import type { MiddlewareHandler } from 'hono';
-import { Redis } from '@upstash/redis';
+// The Cloudflare-specific entry point, not the package root: the default
+// (Node.js) build hardcodes `cache: "no-store"` on every fetch() call,
+// and workerd's fetch implementation doesn't support the Fetch API
+// `cache` option at all — every request throws
+// "The 'cache' field on 'RequestInitializerDict' is not implemented.",
+// which checkRateLimit's catch swallows into a fail-closed 429 on every
+// single rate-limited write. The `/cloudflare` build omits that field.
+import { Redis } from '@upstash/redis/cloudflare';
 import { buildGenericErrorBody, logger } from '@avash/logger';
 import { checkRateLimit, type RateLimitWindow, type RateLimitRedisLike } from '@avash/security';
 import type { AppEnv, Bindings } from '../types';

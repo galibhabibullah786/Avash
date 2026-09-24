@@ -17,7 +17,7 @@ export const corsMiddleware = (): MiddlewareHandler<AppEnv> => async (c, next) =
       return c.body(null, 403);
     }
     c.header('Access-Control-Allow-Origin', origin as string);
-    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     c.header('Vary', 'Origin');
     return c.body(null, 204);

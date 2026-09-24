@@ -1,0 +1,1 @@
+apps/notify serves no static assets — this directory exists only so Vercel's build has an output directory to find (see apps/notify/vercel.json#outputDirectory). Every real route is a Serverless Function under apps/notify/api.

@@ -82,6 +82,45 @@ Rules that follow from that split:
   that adds the tile layer; a dev server serves no CSP, so a missing
   entry passes locally and blocks the basemap in production.
 
+## Form conventions
+
+New forms are built from `apps/web/src/components/SubmitButton.tsx`,
+`PasswordInput.tsx`, and `Spinner.tsx`
+(`docs/features/platform-primitives.md` has the full contract), not
+hand-rolled `disabled={…}` + ternary-label buttons or a manual
+`type="password"` toggle — `grep -rn 'type="submit"'` /
+`grep -rn 'type="password"'` under `apps/web/src` should only ever match
+inside those two component files.
+
+**"Disable every field while submitting" is a `<fieldset disabled={pending}>`
+wrapping the form's fields, never `disabled` threaded through each input
+by hand.** A fieldset is one attribute that structurally cannot miss a
+field a later edit adds inside it; a per-input `disabled` prop is a
+second thing every new field has to remember.
+
+## Table conventions
+
+`useListQuery` (`apps/web/src/hooks/useListQuery.ts`) backs
+`page`/`pageSize`/`sort`/`dir`/`q` with `useSearchParams`, so a sorted,
+filtered table stays linkable and survives the back button. It parses
+the URL through `listQuerySchema`/`listQueryFor(...)`
+(`packages/types/pagination.ts`) and falls back to the schema's defaults
+on anything malformed — URL search params are attacker/user-controlled
+(optional-chaining checklist item 10, below), so a bad value degrades to
+"first page, default sort," never a thrown error.
+
+`DataTable` (`apps/web/src/components/DataTable.tsx`) takes a column
+descriptor list (`key`, `header`, `sortable`, `render`) and a `PageMeta`
+(`docs/features/platform-primitives.md`), and is the only place this
+project renders a paginated list — whether the data came from `apps/api`
+or a direct PostgREST read, `DataTable` sees the same `PageMeta` shape
+and cannot tell the two transports apart. Sortable column headers are
+buttons carrying `aria-sort`, never a plain `<th>` click handler with no
+accessible state. The footer's range label reads "showing 26–50" when
+`page.total` is `null` and "showing 26–50 of 312" when it isn't
+(decision A, `docs/features/platform-primitives.md`) — never fabricate a
+total to fill in the gap.
+
 ## Optional-chaining checklist (R4)
 
 Every one of the following access points **must** use optional chaining

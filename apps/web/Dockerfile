@@ -18,10 +18,18 @@ RUN corepack enable && corepack prepare pnpm@9.1.0 --activate
 
 # The whole workspace in one COPY. Deliberately simple: a hand-maintained
 # list of per-package manifests caches better, but breaks silently the
-# moment a package is added. Correctness beats a warm layer here.
+# moment a package is added. Correctness beats a warm layer here — the
+# cache mount below is what keeps this simple approach cheap: BuildKit
+# persists pnpm's content-addressed package store across builds even
+# though this layer is invalidated by every source change, so a rebuild
+# after touching application code reuses already-downloaded packages
+# instead of refetching the whole workspace from the registry.
+# `sharing=locked` serializes access so concurrent builds (web/api/notify
+# built in parallel) don't corrupt the shared store.
 COPY . .
 
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
+    pnpm install --frozen-lockfile
 
 # VITE_PUBLIC_* ONLY. Build args are readable in image history forever;
 # every value here is public by definition (§7.1). A server-only secret

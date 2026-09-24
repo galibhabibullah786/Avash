@@ -298,6 +298,54 @@ cascade`; `assigned_by → auth.users(id)` `on delete set null on update
 cascade` — deliberately **not** cascade, so an audit row survives the
 granting admin's account being deleted (§4.3).
 
+## `announcements`
+
+Author-broadcast messages, added after the original §4 schema
+(`20260817000017_announcements.sql`). **Not** `alert_subscriptions` with a
+flag: `alert_subscriptions` is a user subscribing to an area; this is a
+moderator/admin author broadcasting to one. Inverse relationship, inverse
+ownership, separate RLS from the proximity-alert tables above — and
+separate from the batch-predict push path in
+`docs/features/push-notifications.md`, which only ever fires on a region
+crossing into `high`/`severe` risk, never on an announcement.
+
+| Column | Type | Constraints | Meaning |
+|---|---|---|---|
+| `id` | `uuid` | PK, default `gen_random_uuid()` | Row id |
+| `author_id` | `uuid` | FK → `auth.users(id)` on delete set null | Moderator/admin who created it |
+| `title` | `text` | not null, `check` (1–120 chars) | Headline |
+| `body` | `text` | not null, `check` (1–1000 chars) | Message content |
+| `geom` | `geometry(Point, 4326)` | not null | Broadcast origin point |
+| `radius_m` | `integer` | not null, default `5000`, `check (radius_m between 500 and 50000)` | Broadcast radius — wider bounds than `alert_subscriptions.radius_m` since an author is targeting a known area, not an individual watch-point |
+| `target_roles` | `text[]` | not null, default `'{}'` | Empty = every role; non-empty = only these roles see it |
+| `expires_at` | `timestamptz` | not null, `check (expires_at > created_at)` | When the announcement stops being live |
+| `created_at` | `timestamptz` | not null, default `now()` | Creation time |
+
+**Indexes:** `idx_announcements_geom` — GiST on `geom`, for the same
+reason every geometry column gets one (§4.2). `idx_announcements_active`
+— plain index on `expires_at desc`, **not** a partial index: Postgres
+requires an `IMMUTABLE` predicate for a partial index and `now()` is only
+`STABLE`, so `where expires_at > now()` is rejected at `create index`
+time. The plain index still serves the live-rows read path via a range
+scan.
+
+**Foreign keys:** `author_id → auth.users(id)` `on delete set null on
+update cascade` — see §4.3.
+
+**RLS:** enabled. Authors with the `reports:moderate` capability get
+unrestricted `all`; every authenticated reader gets `select` filtered to
+`expires_at > now()` **and** role-targeted (`target_roles` empty, or the
+caller's JWT role is in it). Proximity is **not** part of the policy — a
+Postgres RLS predicate cannot see the caller's location, so the
+`ST_DWithin` narrowing happens in the `apps/api` query itself
+(`GET /api/announcements`), not at the row-security layer. Targeting is
+read-time, not write-time fan-out: creating an announcement writes exactly
+one row regardless of how many users are in range or match `target_roles`;
+every matching reader's `GET /api/announcements` call re-evaluates
+proximity and role against that same row on every request, rather than a
+job pre-computing and duplicating it per recipient the way
+`push_subscriptions` deliveries do.
+
 ---
 
 ## 4.1 Row Level Security (representative policies)
@@ -315,6 +363,8 @@ Full detail and every operation for every table lives in
 | `alert_subscriptions`, `push_subscriptions` | all | `user_id = auth.uid()` only |
 | `risk_predictions`, `hospitals` (select) | select | public (`anon`) |
 | `role_assignments` | select | `public.has_capability('roles:manage')`; no update or delete policy at all |
+| `announcements` | all (author) | `public.has_capability('reports:moderate')` |
+| `announcements` | select (reader) | `expires_at > now()` and role-targeted (`target_roles` empty or caller's role in it); proximity filtered in the query, not the policy |
 
 RLS is **on** for every table by default; a table without RLS enabled must
 have an ADR justifying it. `public.has_capability()` is the SQL mirror of

@@ -96,6 +96,22 @@ pending reports read directly from Supabase and lets a moderator mark one
   session sees a real, RLS-shaped empty/error result reading the queue —
   not a fake "no reports" state — and the verify buttons are disabled
   outright whenever `useSession().accessToken` is absent.
+- **The queue is now paginated, filtered, and sorted — still entirely
+  through PostgREST, never `apps/api`.** The direct-Supabase-read
+  rationale above still holds and is now load-bearing for *how* paging
+  works, not just *whether* it does: `usePendingReports.ts` adds
+  `.range(from, to)` and `{ count: 'exact' }` to the same query, plus a
+  `status` filter and `created_at`/`status` sorting. It maps the result
+  into the shared `PageMeta` shape (`docs/features/platform-primitives.md`)
+  by hand, since there is no Hono route here to run `parseListQuery`/
+  `buildPageMeta` for it — a page 3 request at size 25 becomes
+  `.range(50, 74)`. PostgREST's `count` is nullable (a failed count plan
+  returns `null`, not `0`), and it is optional-chained straight into
+  `pageMeta.total` rather than coerced — `DataTable`'s footer treats "0
+  reports" and "count unknown" as different states, and the two transports
+  in this project (this one, and `apps/api`'s Hono-side `parseListQuery`)
+  produce the identical `PageMeta` shape from different sources, which is
+  the entire point of the shared contract.
 - **Report form** (`apps/web/src/pages/Report.tsx`): description textarea
   capped at `REPORT_DESCRIPTION_MAX_CHARS` (1000, §14) with a live
   counter; a location field backed by

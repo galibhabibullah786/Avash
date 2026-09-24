@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { can, type Capability } from '@avash/security';
 import { useSession } from '../features/auth/SessionProvider';
+import { SignOutButton } from '../features/auth/SignOutButton';
 
 // Every page currently routed (router.tsx). Add a link here when a new
 // page is wired into the router so navigation stays complete without
@@ -57,10 +58,12 @@ export const Header = () => {
           ))}
         </ul>
         <div className="navbar__auth">
-          {!isAuthenticated && (
+          {!isAuthenticated ? (
             <NavLink to="/login" className="navbar__link">
               Sign in
             </NavLink>
+          ) : (
+            <SignOutButton />
           )}
         </div>
       </nav>
