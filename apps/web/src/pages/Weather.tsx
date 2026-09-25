@@ -1,124 +1,227 @@
-import { useMemo, useState } from 'react';
-import { useOnlineStatus } from '../hooks/useOnlineStatus';
-import { useLatestWeather } from '../features/weather/useLatestWeather';
-import { useWeatherHistory } from '../features/weather/useWeatherHistory';
-import { Sparkline } from '../features/weather/Sparkline';
+import { useMemo, useState } from "react";
+import { useOnlineStatus } from "../hooks/useOnlineStatus";
+import { useLatestWeather } from "../features/weather/useLatestWeather";
+import { useWeatherHistory } from "../features/weather/useWeatherHistory";
+import { Sparkline } from "../features/weather/Sparkline";
 
-function formatStat(value: number | null | undefined, unit: string): string {
-  return typeof value === 'number' ? `${value.toFixed(1)}${unit}` : '—';
+const HISTORY_WINDOW_DAYS = 7;
+
+function weatherIcon(precipitationMm: number | null | undefined): string {
+  if (precipitationMm === null || precipitationMm === undefined) return "☼";
+  if (precipitationMm >= 10) return "☂";
+  if (precipitationMm > 0) return "☁";
+  return "☼";
+}
+
+function formatDay(observedAt: string, index: number): string {
+  if (index === 0) return "Today";
+  const parsed = new Date(observedAt);
+  if (Number.isNaN(parsed.getTime())) return observedAt;
+  return parsed.toLocaleDateString(undefined, { weekday: "short" });
+}
+
+function average(values: number[]): number | null {
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
 export default function Weather() {
   const isOnline = useOnlineStatus();
   const latest = useLatestWeather();
-  const [selectedRegionCode, setSelectedRegionCode] = useState<string | null>(null);
 
   const observations = latest.data?.observations ?? [];
-  const sortedRegions = useMemo(
-    () =>
-      [...observations].sort((a, b) => (a?.regionName ?? '').localeCompare(b?.regionName ?? '')),
-    [observations],
+
+  const locations = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const observation of observations) {
+      if (!seen.has(observation.regionCode)) {
+        seen.set(observation.regionCode, observation.regionName);
+      }
+    }
+    return Array.from(seen.entries());
+  }, [observations]);
+
+  const [selectedRegionCode, setSelectedRegionCode] = useState<string | null>(
+    null,
   );
+  const activeRegionCode = selectedRegionCode ?? locations[0]?.[0] ?? null;
+  const activeRegionName =
+    locations.find(([code]) => code === activeRegionCode)?.[1] ?? "—";
 
-  const activeRegionCode = selectedRegionCode ?? sortedRegions[0]?.regionCode ?? null;
-  const activeObservation = observations.find((o) => o?.regionCode === activeRegionCode) ?? null;
+  const current = observations.find(
+    (observation) => observation.regionCode === activeRegionCode,
+  );
+  const history = useWeatherHistory(activeRegionCode, HISTORY_WINDOW_DAYS);
+  const points = history.data?.points ?? [];
 
-  const history = useWeatherHistory(activeRegionCode);
-  const historyPoints = history.data?.points ?? [];
-  const sparklinePoints = historyPoints.map((point, index) => ({
+  const sparklinePoints = points.map((point, index) => ({
     x: index,
     y: point?.tempMeanC ?? null,
   }));
 
-  const lastObservedLabel = activeObservation?.observedAt
-    ? new Date(activeObservation.observedAt).toLocaleString()
-    : '—';
+  const temps = points
+    .map((point) => point.tempMeanC)
+    .filter((value): value is number => value !== null);
+  const avgTemp = average(temps);
+  const totalRainfall = points.reduce(
+    (sum, point) => sum + (point.precipitationMm ?? 0),
+    0,
+  );
+  const avgHumidity = average(
+    points
+      .map((point) => point.humidityPct)
+      .filter((value): value is number => value !== null),
+  );
 
   return (
-    <main className="page">
-      <h1 className="page__title">Weather</h1>
-      <p className="page__description">
-        Latest weather observations feeding the dengue risk model.
-      </p>
-
-      {!isOnline ? (
-        <p className="status-panel__item" data-testid="status-offline">
-          You are offline
-        </p>
-      ) : latest.isLoading ? (
-        <p className="status-panel__item" data-testid="status-loading">
-          <span className="status-panel__skeleton" aria-hidden="true" />
-        </p>
-      ) : latest.isError ? (
-        <p className="status-panel__item" data-testid="weather-error">
-          API: unavailable right now. Please try again later.
-        </p>
-      ) : sortedRegions.length === 0 ? (
-        <p className="status-panel__item" data-testid="status-empty">
-          No observations yet — the ingest job has not run.
-        </p>
-      ) : (
-        <section className="weather" data-testid="status-success">
-          <div className="weather__region-picker">
-            <label htmlFor="weather-region-select" className="weather__label">
-              Region
-            </label>
+    <main className="inner-page">
+      <div className="inner-page__intro">
+        <div>
+          <p className="eyebrow">Local conditions</p>
+          <h1>Weather insight</h1>
+          <p className="inner-lede">
+            Weather patterns help us understand where dengue risk may rise next.
+          </p>
+        </div>
+        {locations.length > 0 ? (
+          <label className="location-select">
+            Your location
             <select
-              id="weather-region-select"
-              data-testid="weather-region-select"
-              className="weather__select"
-              value={activeRegionCode ?? ''}
-              onChange={(event) => setSelectedRegionCode(event?.target?.value ?? null)}
+              value={activeRegionCode ?? ""}
+              onChange={(event) => setSelectedRegionCode(event.target.value)}
             >
-              {sortedRegions.map((region) => (
-                <option key={region.regionCode} value={region.regionCode}>
-                  {region.regionName}
+              {locations.map(([code, name]) => (
+                <option key={code} value={code}>
+                  {name}
                 </option>
               ))}
             </select>
+          </label>
+        ) : null}
+      </div>
+
+      {!isOnline ? (
+        <p className="alert alert--error" role="alert">
+          You are offline
+        </p>
+      ) : latest.isError ? (
+        <p className="alert alert--error" role="alert">
+          Unable to load weather data right now. Please try again.
+        </p>
+      ) : null}
+
+      {latest.isLoading ? (
+        <p className="checker-time">Loading weather data…</p>
+      ) : null}
+
+      {current ? (
+        <section className="weather-current">
+          <div className="weather-now">
+            <span className="weather-sun">
+              {weatherIcon(current.precipitationMm)}
+            </span>
+            <div>
+              <small>Today in {activeRegionName}</small>
+              <strong>
+                {current.tempMeanC !== null
+                  ? `${Math.round(current.tempMeanC)}°`
+                  : "—"}
+              </strong>
+              <span>{current.source ?? "Latest observation"}</span>
+            </div>
           </div>
-
-          <div className="weather__tiles">
-            <div className="weather__tile">
-              <span className="weather__tile-label">Mean temp</span>
-              <span className="weather__tile-value" data-testid="weather-observed-temp">
-                {formatStat(activeObservation?.tempMeanC ?? null, '°C')}
-              </span>
+          {[
+            [
+              "Humidity",
+              current.humidityPct !== null
+                ? `${Math.round(current.humidityPct)}%`
+                : "—",
+              "Current",
+            ],
+            [
+              "Rainfall",
+              current.precipitationMm !== null
+                ? `${current.precipitationMm} mm`
+                : "—",
+              "Last observation",
+            ],
+            [
+              "Temp range",
+              current.tempMinC !== null && current.tempMaxC !== null
+                ? `${Math.round(current.tempMinC)}°–${Math.round(current.tempMaxC)}°`
+                : "—",
+              "Min · Max",
+            ],
+          ].map(([label, value, note]) => (
+            <div className="weather-stat" key={label}>
+              <span>{label}</span>
+              <strong>{value}</strong>
+              <small>{note}</small>
             </div>
-            <div className="weather__tile">
-              <span className="weather__tile-label">Min temp</span>
-              <span className="weather__tile-value">
-                {formatStat(activeObservation?.tempMinC ?? null, '°C')}
-              </span>
-            </div>
-            <div className="weather__tile">
-              <span className="weather__tile-label">Max temp</span>
-              <span className="weather__tile-value">
-                {formatStat(activeObservation?.tempMaxC ?? null, '°C')}
-              </span>
-            </div>
-            <div className="weather__tile">
-              <span className="weather__tile-label">Humidity</span>
-              <span className="weather__tile-value">
-                {formatStat(activeObservation?.humidityPct ?? null, '%')}
-              </span>
-            </div>
-            <div className="weather__tile">
-              <span className="weather__tile-label">Precipitation</span>
-              <span className="weather__tile-value">
-                {formatStat(activeObservation?.precipitationMm ?? null, 'mm')}
-              </span>
-            </div>
-          </div>
-
-          <p className="weather__meta">
-            Last observed: {lastObservedLabel} &middot; Source:{' '}
-            {activeObservation?.source ?? 'unknown'}
-          </p>
-
-          <Sparkline points={sparklinePoints} label="14-day mean temperature" />
+          ))}
         </section>
-      )}
+      ) : null}
+
+      <section className="weather-grid">
+        <div className="chart-panel">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Past {HISTORY_WINDOW_DAYS} days</p>
+              <h2>Recent temperature trend</h2>
+            </div>
+            <span className="chart-range">
+              {activeRegionName} · Updated today
+            </span>
+          </div>
+          <div className="weather-chart">
+            <div className="weather-days">
+              {points.map((point, index) => (
+                <div key={point.observedAt}>
+                  <b>{formatDay(point.observedAt, index)}</b>
+                  <span>{weatherIcon(point.precipitationMm)}</span>
+                  <strong>
+                    {point.tempMeanC !== null
+                      ? `${Math.round(point.tempMeanC)}°`
+                      : "—"}
+                  </strong>
+                  <small>
+                    {point.precipitationMm !== null
+                      ? `${point.precipitationMm} mm`
+                      : "—"}
+                  </small>
+                </div>
+              ))}
+            </div>
+            <Sparkline
+              points={sparklinePoints}
+              label={`${HISTORY_WINDOW_DAYS}-day mean temperature`}
+            />
+          </div>
+        </div>
+        <aside className="suitability">
+          <p className="eyebrow">Weekly summary</p>
+          <h3>{activeRegionName}</h3>
+          <p>
+            Averages over the last {HISTORY_WINDOW_DAYS} days of observations.
+          </p>
+          {[
+            [
+              "Average temperature",
+              avgTemp !== null ? `${avgTemp.toFixed(1)}°C` : "—",
+            ],
+            ["Total rainfall", `${totalRainfall.toFixed(0)} mm`],
+            [
+              "Average humidity",
+              avgHumidity !== null ? `${avgHumidity.toFixed(0)}%` : "—",
+            ],
+          ].map(([label, value]) => (
+            <div className="weather-stat" key={label}>
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </div>
+          ))}
+        </aside>
+      </section>
     </main>
   );
 }

@@ -6,6 +6,7 @@ export interface SubmitBreedingReportInput {
   lat: number;
   lng: number;
   description?: string;
+  photoUrl?: string;
   turnstileToken: string;
   /** Attached only when the submitter is signed in; the route works fully anonymously without it. */
   accessToken?: string | null;

@@ -239,9 +239,17 @@ export type SymptomCheckRequest = z.infer<typeof symptomCheckRequestSchema>;
 export type TriageOutcome = z.infer<typeof triageOutcomeSchema>;
 export type SymptomCheckResponse = z.infer<typeof symptomCheckResponseSchema>;
 
-// ── Breeding-site reports (§13 slice 5) ────────────────────────────────────
+// ── Breeding-site reports ────────────────────────────────────
 
 export const REPORT_DESCRIPTION_MAX_CHARS = 1000;
+export const REPORT_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+export const REPORT_PHOTO_ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+export const REPORT_PHOTO_STORAGE_BUCKET = 'breeding-report-photos';
+
+export const photoUploadResponseSchema = z.object({
+  photoUrl: z.string().url(),
+});
+export type PhotoUploadResponse = z.infer<typeof photoUploadResponseSchema>;
 
 /**
  * Above this `AiValidation.spamLikelihood`, a report is flagged for

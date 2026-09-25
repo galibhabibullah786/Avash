@@ -6,3 +6,19 @@
   gap: var(--space-2);
   margin-bottom: var(--space-3);
 }
+
+.field input {
+  background-color: white;
+  color: black;
+}
+
+.password-input {
+  width: 100%;
+  position: relative;
+}
+
+.password-input__toggle {
+  position: absolute;
+  right: 0;
+  top: calc(50% - 10px);
+}
