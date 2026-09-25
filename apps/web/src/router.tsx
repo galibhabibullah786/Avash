@@ -2,15 +2,16 @@ import { lazy, Suspense } from 'react';
 import { createBrowserRouter } from 'react-router-dom';
 import Home from './pages/Home';
 import NotFound from './pages/NotFound';
-import Weather from './pages/Weather';
 import { Layout } from './components/Layout';
 import { RouteError } from './components/RouteError';
 import { ProtectedRoute } from './features/auth/ProtectedRoute';
 
-const RiskMap = lazy(() => import('./pages/RiskMap'));
 const Login = lazy(() => import('./pages/Login'));
+const Weather = lazy(() => import('./pages/Weather'));
+const RiskMap = lazy(() => import('./pages/RiskMap'));
 const SymptomChecker = lazy(() => import('./pages/SymptomChecker'));
 const Report = lazy(() => import('./pages/Report'));
+const Prevention = lazy(() => import('./pages/Prevention'));
 const Resources = lazy(() => import('./pages/Resources'));
 const Moderation = lazy(() => import('./pages/Moderation'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -29,7 +30,11 @@ export const router = createBrowserRouter([
       },
       {
         path: 'weather',
-        element: <Weather />,
+        element: (
+          <Suspense fallback={null}>
+            <Weather />
+          </Suspense>
+        ),
         errorElement: <RouteError />,
       },
       {
@@ -64,6 +69,15 @@ export const router = createBrowserRouter([
         element: (
           <Suspense fallback={null}>
             <Report />
+          </Suspense>
+        ),
+        errorElement: <RouteError />,
+      },
+      {
+        path: 'prevention',
+        element: (
+          <Suspense fallback={null}>
+            <Prevention />
           </Suspense>
         ),
         errorElement: <RouteError />,

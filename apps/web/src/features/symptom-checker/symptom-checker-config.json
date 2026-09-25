@@ -1,0 +1,640 @@
+{
+  "symptomChecker": {
+    "id": "dengue-symptom-checker",
+    "title": "Dengue Symptom Checker",
+    "description": "A screening questionnaire for dengue-related symptoms and warning signs. This tool does not diagnose dengue.",
+    "version": "1.0.0",
+    "totalQuestions": 17,
+    "disclaimer": "This symptom checker is for screening and educational purposes only. It cannot confirm or rule out dengue. Consult a qualified healthcare professional for diagnosis and treatment.",
+    "sections": [
+      {
+        "id": "fever",
+        "title": "Fever",
+        "questions": [
+          {
+            "id": "q1",
+            "order": 1,
+            "type": "single_choice",
+            "question": "Do you currently have a fever, or have you had a fever recently?",
+            "required": true,
+            "options": [
+              {
+                "id": "currently_fever",
+                "label": "Yes, I currently have a fever",
+                "value": "currently_fever"
+              },
+              {
+                "id": "recently_gone",
+                "label": "Yes, but my fever recently went away",
+                "value": "recently_gone"
+              },
+              {
+                "id": "no_fever",
+                "label": "No",
+                "value": "no_fever"
+              },
+              {
+                "id": "not_sure",
+                "label": "I'm not sure",
+                "value": "not_sure"
+              }
+            ]
+          },
+          {
+            "id": "q2",
+            "order": 2,
+            "type": "single_choice",
+            "question": "How long have you had fever or fever-like symptoms?",
+            "required": true,
+            "options": [
+              {
+                "id": "less_than_1_day",
+                "label": "Less than 1 day",
+                "value": "less_than_1_day"
+              },
+              {
+                "id": "1_2_days",
+                "label": "1–2 days",
+                "value": "1_2_days"
+              },
+              {
+                "id": "3_5_days",
+                "label": "3–5 days",
+                "value": "3_5_days"
+              },
+              {
+                "id": "6_7_days",
+                "label": "6–7 days",
+                "value": "6_7_days"
+              },
+              {
+                "id": "more_than_7_days",
+                "label": "More than 7 days",
+                "value": "more_than_7_days"
+              },
+              {
+                "id": "not_sure",
+                "label": "I'm not sure",
+                "value": "not_sure"
+              }
+            ]
+          },
+          {
+            "id": "q3",
+            "order": 3,
+            "type": "single_choice",
+            "question": "What was the highest temperature you recorded?",
+            "required": true,
+            "options": [
+              {
+                "id": "below_38",
+                "label": "Below 38°C (100.4°F)",
+                "value": "below_38"
+              },
+              {
+                "id": "38_38_9",
+                "label": "38–38.9°C (100.4–102°F)",
+                "value": "38_38_9"
+              },
+              {
+                "id": "39_39_9",
+                "label": "39–39.9°C (102.2–103.8°F)",
+                "value": "39_39_9"
+              },
+              {
+                "id": "40_or_higher",
+                "label": "40°C (104°F) or higher",
+                "value": "40_or_higher"
+              },
+              {
+                "id": "not_measured",
+                "label": "I haven't measured my temperature",
+                "value": "not_measured"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "common_symptoms",
+        "title": "Common Symptoms",
+        "questions": [
+          {
+            "id": "q4",
+            "order": 4,
+            "type": "single_choice",
+            "question": "Are you experiencing a headache?",
+            "required": true,
+            "options": [
+              {
+                "id": "no",
+                "label": "No",
+                "value": "no"
+              },
+              {
+                "id": "mild",
+                "label": "Mild",
+                "value": "mild"
+              },
+              {
+                "id": "moderate",
+                "label": "Moderate",
+                "value": "moderate"
+              },
+              {
+                "id": "severe",
+                "label": "Severe",
+                "value": "severe"
+              },
+              {
+                "id": "not_sure",
+                "label": "I'm not sure",
+                "value": "not_sure"
+              }
+            ]
+          },
+          {
+            "id": "q5",
+            "order": 5,
+            "type": "single_choice",
+            "question": "Are you experiencing pain behind or around your eyes?",
+            "required": true,
+            "options": [
+              {
+                "id": "no",
+                "label": "No",
+                "value": "no"
+              },
+              {
+                "id": "mild",
+                "label": "Mild",
+                "value": "mild"
+              },
+              {
+                "id": "moderate",
+                "label": "Moderate",
+                "value": "moderate"
+              },
+              {
+                "id": "severe",
+                "label": "Severe",
+                "value": "severe"
+              },
+              {
+                "id": "not_sure",
+                "label": "I'm not sure",
+                "value": "not_sure"
+              }
+            ]
+          },
+          {
+            "id": "q6",
+            "order": 6,
+            "type": "single_choice",
+            "question": "Are you experiencing muscle, bone, or joint pain?",
+            "required": true,
+            "options": [
+              {
+                "id": "no",
+                "label": "No",
+                "value": "no"
+              },
+              {
+                "id": "mild",
+                "label": "Mild",
+                "value": "mild"
+              },
+              {
+                "id": "moderate",
+                "label": "Moderate",
+                "value": "moderate"
+              },
+              {
+                "id": "severe",
+                "label": "Severe",
+                "value": "severe"
+              },
+              {
+                "id": "not_sure",
+                "label": "I'm not sure",
+                "value": "not_sure"
+              }
+            ]
+          },
+          {
+            "id": "q7",
+            "order": 7,
+            "type": "single_choice",
+            "question": "Are you experiencing nausea or vomiting?",
+            "required": true,
+            "options": [
+              {
+                "id": "none",
+                "label": "No",
+                "value": "none"
+              },
+              {
+                "id": "nausea_only",
+                "label": "Nausea only",
+                "value": "nausea_only"
+              },
+              {
+                "id": "vomited_once_twice",
+                "label": "Vomited once or twice",
+                "value": "vomited_once_twice"
+              },
+              {
+                "id": "vomited_several_times",
+                "label": "Vomited several times",
+                "value": "vomited_several_times"
+              },
+              {
+                "id": "persistent_vomiting",
+                "label": "Persistent or repeated vomiting",
+                "value": "persistent_vomiting",
+                "warningSign": true
+              },
+              {
+                "id": "not_sure",
+                "label": "I'm not sure",
+                "value": "not_sure"
+              }
+            ]
+          },
+          {
+            "id": "q8",
+            "order": 8,
+            "type": "single_choice",
+            "question": "Have you developed a skin rash?",
+            "required": true,
+            "options": [
+              {
+                "id": "no",
+                "label": "No",
+                "value": "no"
+              },
+              {
+                "id": "yes",
+                "label": "Yes",
+                "value": "yes"
+              },
+              {
+                "id": "not_sure",
+                "label": "I'm not sure",
+                "value": "not_sure"
+              }
+            ]
+          },
+          {
+            "id": "q9",
+            "order": 9,
+            "type": "single_choice",
+            "question": "Have you noticed swollen glands or lymph nodes?",
+            "required": true,
+            "options": [
+              {
+                "id": "no",
+                "label": "No",
+                "value": "no"
+              },
+              {
+                "id": "yes",
+                "label": "Yes",
+                "value": "yes"
+              },
+              {
+                "id": "not_sure",
+                "label": "I'm not sure",
+                "value": "not_sure"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "warning_signs",
+        "title": "Warning Signs",
+        "description": "These questions check for symptoms that may require urgent medical evaluation.",
+        "questions": [
+          {
+            "id": "q10",
+            "order": 10,
+            "type": "single_choice",
+            "question": "Are you experiencing severe pain or tenderness in your abdomen or belly?",
+            "required": true,
+            "warningSignQuestion": true,
+            "options": [
+              {
+                "id": "no",
+                "label": "No",
+                "value": "no"
+              },
+              {
+                "id": "yes",
+                "label": "Yes",
+                "value": "yes",
+                "warningSign": true
+              },
+              {
+                "id": "not_sure",
+                "label": "I'm not sure",
+                "value": "not_sure"
+              }
+            ]
+          },
+          {
+            "id": "q11",
+            "order": 11,
+            "type": "single_choice",
+            "question": "Have you experienced persistent or repeated vomiting?",
+            "required": true,
+            "warningSignQuestion": true,
+            "options": [
+              {
+                "id": "no",
+                "label": "No",
+                "value": "no"
+              },
+              {
+                "id": "yes",
+                "label": "Yes",
+                "value": "yes",
+                "warningSign": true
+              },
+              {
+                "id": "not_sure",
+                "label": "I'm not sure",
+                "value": "not_sure"
+              }
+            ]
+          },
+          {
+            "id": "q12",
+            "order": 12,
+            "type": "multi_choice",
+            "question": "Have you experienced any unusual bleeding?",
+            "required": true,
+            "warningSignQuestion": true,
+            "options": [
+              {
+                "id": "none",
+                "label": "No unusual bleeding",
+                "value": "none"
+              },
+              {
+                "id": "nose",
+                "label": "Nose bleeding",
+                "value": "nose",
+                "warningSign": true
+              },
+              {
+                "id": "gums",
+                "label": "Gum bleeding",
+                "value": "gums",
+                "warningSign": true
+              },
+              {
+                "id": "blood_vomit",
+                "label": "Blood in vomit",
+                "value": "blood_vomit",
+                "warningSign": true
+              },
+              {
+                "id": "blood_stool",
+                "label": "Blood in stool or black stool",
+                "value": "blood_stool",
+                "warningSign": true
+              },
+              {
+                "id": "blood_urine",
+                "label": "Blood in urine",
+                "value": "blood_urine",
+                "warningSign": true
+              },
+              {
+                "id": "heavy_menstrual",
+                "label": "Unusually heavy menstrual bleeding",
+                "value": "heavy_menstrual",
+                "warningSign": true
+              },
+              {
+                "id": "other",
+                "label": "Other unusual bleeding",
+                "value": "other",
+                "warningSign": true
+              },
+              {
+                "id": "not_sure",
+                "label": "I'm not sure",
+                "value": "not_sure"
+              }
+            ],
+            "validation": {
+              "exclusiveOptions": ["none", "not_sure"]
+            }
+          },
+          {
+            "id": "q13",
+            "order": 13,
+            "type": "single_choice",
+            "question": "Are you having difficulty breathing or breathing unusually fast?",
+            "required": true,
+            "warningSignQuestion": true,
+            "options": [
+              {
+                "id": "no",
+                "label": "No",
+                "value": "no"
+              },
+              {
+                "id": "yes",
+                "label": "Yes",
+                "value": "yes",
+                "warningSign": true
+              },
+              {
+                "id": "not_sure",
+                "label": "I'm not sure",
+                "value": "not_sure"
+              }
+            ]
+          },
+          {
+            "id": "q14",
+            "order": 14,
+            "type": "single_choice",
+            "question": "Are you experiencing unusual weakness, extreme tiredness, restlessness, or confusion?",
+            "required": true,
+            "warningSignQuestion": true,
+            "options": [
+              {
+                "id": "no",
+                "label": "No",
+                "value": "no"
+              },
+              {
+                "id": "mild",
+                "label": "Mild",
+                "value": "mild"
+              },
+              {
+                "id": "noticeable",
+                "label": "Noticeable",
+                "value": "noticeable"
+              },
+              {
+                "id": "severe",
+                "label": "Severe",
+                "value": "severe",
+                "warningSign": true
+              },
+              {
+                "id": "not_sure",
+                "label": "I'm not sure",
+                "value": "not_sure"
+              }
+            ]
+          },
+          {
+            "id": "q15",
+            "order": 15,
+            "type": "single_choice",
+            "question": "Are you very thirsty or urinating much less than usual?",
+            "required": true,
+            "warningSignQuestion": true,
+            "options": [
+              {
+                "id": "no",
+                "label": "No",
+                "value": "no"
+              },
+              {
+                "id": "very_thirsty",
+                "label": "Very thirsty",
+                "value": "very_thirsty"
+              },
+              {
+                "id": "less_urination",
+                "label": "Urinating much less than usual",
+                "value": "less_urination",
+                "warningSign": true
+              },
+              {
+                "id": "both",
+                "label": "Both",
+                "value": "both",
+                "warningSign": true
+              },
+              {
+                "id": "not_sure",
+                "label": "I'm not sure",
+                "value": "not_sure"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "medical_context",
+        "title": "Additional Information",
+        "questions": [
+          {
+            "id": "q16",
+            "order": 16,
+            "type": "single_choice",
+            "question": "Have you had dengue before?",
+            "required": true,
+            "options": [
+              {
+                "id": "no",
+                "label": "No",
+                "value": "no"
+              },
+              {
+                "id": "yes",
+                "label": "Yes",
+                "value": "yes"
+              },
+              {
+                "id": "not_sure",
+                "label": "I'm not sure",
+                "value": "not_sure"
+              }
+            ]
+          },
+          {
+            "id": "q17",
+            "order": 17,
+            "type": "single_choice",
+            "question": "Has your fever decreased or gone away within the last 1–2 days?",
+            "required": true,
+            "options": [
+              {
+                "id": "no",
+                "label": "No",
+                "value": "no"
+              },
+              {
+                "id": "within_24_hours",
+                "label": "Yes, within the last 24 hours",
+                "value": "within_24_hours"
+              },
+              {
+                "id": "1_2_days_ago",
+                "label": "Yes, 1–2 days ago",
+                "value": "1_2_days_ago"
+              },
+              {
+                "id": "not_sure",
+                "label": "I'm not sure",
+                "value": "not_sure"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "resultCategories": [
+      {
+        "id": "urgent",
+        "label": "Urgent Medical Attention",
+        "description": "The user reported one or more potential warning signs.",
+        "triggerType": "warning_sign_detected",
+        "clinicalThreshold": "DOCTOR_VALIDATION_REQUIRED",
+        "message": "You reported a symptom that may require urgent medical evaluation. Please seek medical care promptly. This tool cannot determine the cause of your symptoms."
+      },
+      {
+        "id": "dengue_suspected",
+        "label": "Dengue Suspected",
+        "description": "Fever with several dengue-compatible symptoms suggests dengue is likely.",
+        "triggerType": "fever_and_multiple_dengue_compatible_symptoms",
+        "clinicalThreshold": "DOCTOR_VALIDATION_REQUIRED",
+        "message": "Your answers suggest dengue is suspected. Fever with several dengue-compatible symptoms can occur with dengue, and it is a good idea to contact a healthcare professional for evaluation."
+      },
+      {
+        "id": "dengue_possible",
+        "label": "Dengue Possible",
+        "description": "Fever with some dengue-compatible symptoms suggests dengue remains possible but not strongly suspected.",
+        "triggerType": "fever_and_some_dengue_compatible_symptoms",
+        "clinicalThreshold": "MONITOR_WITH_MEDICAL_ADVICE",
+        "message": "Your answers suggest dengue is possible. Fever with some compatible symptoms can occur with dengue, so continue monitoring closely and consider medical advice if symptoms worsen or new symptoms develop."
+      },
+      {
+        "id": "dengue_less_likely",
+        "label": "Dengue Less Likely",
+        "description": "Very few or no dengue-compatible symptoms are reported, so dengue is less likely though not ruled out.",
+        "triggerType": "few_or_no_dengue_compatible_symptoms",
+        "clinicalThreshold": "MONITOR",
+        "message": "Your answers suggest dengue is less likely, but dengue cannot be ruled out based on symptoms alone. Continue monitoring your condition and seek care if fever persists or new symptoms appear."
+      }
+    ],
+    "logic": {
+      "warningSignsOverrideSymptomScore": true,
+      "diagnosisEnabled": false,
+      "scoring": {
+        "enabled": false,
+        "note": "Any symptom scoring or thresholds must be reviewed and approved by a qualified healthcare professional before implementation."
+      }
+    }
+  }
+}

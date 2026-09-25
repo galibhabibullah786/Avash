@@ -1,158 +1,274 @@
-import { useState, type FormEvent } from 'react';
-import { SYMPTOM_TEXT_MAX_CHARS, type SymptomChecklist } from '@avash/types';
-import { useSymptomCheck } from './useSymptomCheck';
-import { SEVERE_SIGN_FIELDS, OTHER_SYMPTOM_FIELDS } from './checklistFields';
-import { SubmitButton } from '../../components/SubmitButton';
-import './symptom-checker.css';
+import { useMemo, useState, type FormEvent } from "react";
+import "./symptom-checker.css";
+import symptomCheckerConfigData from "./symptom-checker-config.json";
 
-const EMPTY_CHECKLIST: Partial<SymptomChecklist> = {};
+type QuestionType = "single_choice" | "multi_choice";
 
-const OUTCOME_LABEL: Record<string, string> = {
-  emergency: 'Emergency — seek care now',
-  'consult-24h': 'See a doctor within 24 hours',
-  monitor: 'Monitor at home',
+type QuestionOption = {
+  id: string;
+  label: string;
+  value: string;
+  warningSign?: boolean;
 };
+
+type Question = {
+  id: string;
+  order: number;
+  type: QuestionType;
+  question: string;
+  required: boolean;
+  warningSignQuestion?: boolean;
+  options: QuestionOption[];
+  validation?: {
+    exclusiveOptions?: string[];
+  };
+};
+
+type Section = {
+  id: string;
+  title: string;
+  description?: string;
+  questions: Question[];
+};
+
+type ResultCategory = {
+  id: string;
+  label: string;
+  description: string;
+  triggerType: string;
+  clinicalThreshold: string;
+  message: string;
+};
+
+type SymptomConfig = {
+  symptomChecker: {
+    id: string;
+    title: string;
+    description: string;
+    version: string;
+    totalQuestions: number;
+    disclaimer: string;
+    sections: Section[];
+    resultCategories: ResultCategory[];
+    logic: {
+      warningSignsOverrideSymptomScore: boolean;
+      diagnosisEnabled: boolean;
+      scoring: {
+        enabled: boolean;
+        note: string;
+      };
+    };
+  };
+};
+
+const SYMPTOM_CHECKER_CONFIG: SymptomConfig =
+  symptomCheckerConfigData as SymptomConfig;
 
 const OUTCOME_BADGE_CLASS: Record<string, string> = {
-  emergency: 'badge--severe',
-  'consult-24h': 'badge--high',
-  monitor: 'badge--low',
+  urgent: "badge--severe",
+  dengue_suspected: "badge--high",
+  dengue_possible: "badge--medium",
+  dengue_less_likely: "badge--low",
 };
 
-/**
- * Free-text symptom description plus the WHO warning-sign checklist. The
- * outcome shown is always whatever `POST /api/symptom-check` returns — the
- * deterministic rule engine's decision (ADR-004), never anything computed
- * client-side. Gemini only helps pre-fill the checklist from the free
- * text; the triage result never depends on it, so the result panel renders
- * unconditionally once a response comes back, whether or not AI assist
- * was available.
- */
+const allQuestions = SYMPTOM_CHECKER_CONFIG.symptomChecker.sections.flatMap(
+  (section) => section.questions,
+);
+const resultCategories = SYMPTOM_CHECKER_CONFIG.symptomChecker.resultCategories;
+
+function getSelectedValues(
+  question: Question,
+  answers: Record<string, string | string[] | undefined>,
+) {
+  const value = answers[question.id];
+
+  if (question.type === "multi_choice") {
+    return Array.isArray(value) ? value : [];
+  }
+
+  return typeof value === "string" && value.length > 0 ? [value] : [];
+}
+
+function determineOutcome(
+  answers: Record<string, string | string[] | undefined>,
+): ResultCategory {
+  const warningSignFound = allQuestions.some((question) => {
+    const selected = getSelectedValues(question, answers);
+    return question.options.some(
+      (option) =>
+        selected.includes(option.value) && option.warningSign === true,
+    );
+  });
+
+  if (warningSignFound) {
+    return resultCategories[0]!;
+  }
+
+  const feverPresent = (() => {
+    const selected = getSelectedValues(allQuestions[0]!, answers);
+    return selected.some(
+      (value) => value === "currently_fever" || value === "recently_gone",
+    );
+  })();
+
+  const dengueCompatibleSymptoms = ["q4", "q5", "q6", "q7", "q8", "q9"].reduce(
+    (count, questionId) => {
+      const question = allQuestions.find((entry) => entry.id === questionId);
+      if (!question) {
+        return count;
+      }
+
+      const selected = getSelectedValues(question, answers);
+      const hasCompatibleResponse = selected.some(
+        (value) => !["no", "none", "not_sure"].includes(value),
+      );
+      return hasCompatibleResponse ? count + 1 : count;
+    },
+    0,
+  );
+
+  if (feverPresent && dengueCompatibleSymptoms >= 3) {
+    return resultCategories[1]!;
+  }
+
+  if (feverPresent && dengueCompatibleSymptoms >= 1) {
+    return resultCategories[2]!;
+  }
+
+  return resultCategories[3]!;
+}
+
 export function SymptomCheckerForm() {
-  const [symptomText, setSymptomText] = useState('');
-  const [checklist, setChecklist] = useState<Partial<SymptomChecklist>>(EMPTY_CHECKLIST);
-  const mutation = useSymptomCheck();
+  const [answers, setAnswers] = useState<
+    Record<string, string | string[] | undefined>
+  >({});
+  const [result, setResult] = useState<ResultCategory | null>(null);
 
-  const remainingChars = SYMPTOM_TEXT_MAX_CHARS - symptomText.length;
-  const overLimit = remainingChars < 0;
+  const schema = useMemo(() => SYMPTOM_CHECKER_CONFIG.symptomChecker, []);
 
-  function toggleField(key: keyof SymptomChecklist) {
-    setChecklist((prev) => ({ ...prev, [key]: !prev[key] }));
+  function handleSingleChoice(questionId: string, value: string) {
+    setAnswers((previous) => ({ ...previous, [questionId]: value }));
+  }
+
+  function handleMultiChoice(questionId: string, value: string) {
+    setAnswers((previous) => {
+      const current = Array.isArray(previous[questionId])
+        ? previous[questionId]
+        : [];
+      const next = current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value];
+
+      return {
+        ...previous,
+        [questionId]: next,
+      };
+    });
   }
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (overLimit) {
-      return;
-    }
-    mutation.mutate({
-      symptomText: symptomText.trim().length > 0 ? symptomText : undefined,
-      checklist,
-    });
+    setResult(determineOutcome(answers));
   }
-
-  const result = mutation.data;
 
   return (
     <div className="symptom-checker">
-      <form className="form" onSubmit={handleSubmit} aria-label="Symptom checker">
-        <fieldset className="symptom-checker__form-fieldset" disabled={mutation.isPending}>
-          <div className="field">
-            <label className="field__label" htmlFor="symptom-text">
-              Describe how you feel (optional)
-            </label>
-            <textarea
-              id="symptom-text"
-              data-testid="symptom-text-input"
-              rows={4}
-              maxLength={SYMPTOM_TEXT_MAX_CHARS}
-              value={symptomText}
-              onChange={(event) => setSymptomText(event.target.value)}
-              aria-describedby="symptom-text-counter"
-            />
-            <span
-              id="symptom-text-counter"
-              className="field__label"
-              data-testid="symptom-text-counter"
-            >
-              {Math.max(remainingChars, 0)} characters remaining
-            </span>
-          </div>
+      <p className="symptom-checker__summary">{schema.description}</p>
 
-          <fieldset className="symptom-checker__fieldset">
-            <legend>Warning signs</legend>
-            <p className="field__label">
-              These signs can indicate severe dengue and need urgent attention.
-            </p>
-            {SEVERE_SIGN_FIELDS.map((field) => (
-              <label key={field.key} className="symptom-checker__checkbox">
-                <input
-                  type="checkbox"
-                  data-testid={`checklist-${field.key}`}
-                  checked={checklist[field.key] === true}
-                  onChange={() => toggleField(field.key)}
-                />
-                {field.label}
-              </label>
-            ))}
-          </fieldset>
+      <form
+        className="symptom-checker__form"
+        onSubmit={handleSubmit}
+        aria-label="Dengue symptom checker"
+      >
+        {schema.sections.map((section) => (
+          <section key={section.id} className="symptom-checker__section">
+            <h2>{section.title}</h2>
+            {section.description ? <p>{section.description}</p> : null}
 
-          <fieldset className="symptom-checker__fieldset">
-            <legend>Other symptoms</legend>
-            {OTHER_SYMPTOM_FIELDS.map((field) => (
-              <label key={field.key} className="symptom-checker__checkbox">
-                <input
-                  type="checkbox"
-                  data-testid={`checklist-${field.key}`}
-                  checked={checklist[field.key] === true}
-                  onChange={() => toggleField(field.key)}
-                />
-                {field.label}
-              </label>
-            ))}
-          </fieldset>
+            {section.questions.map((question) => {
+              const selectedValues = getSelectedValues(question, answers);
 
-          {overLimit ? (
-            <p className="field__error" data-testid="symptom-text-error">
-              Please shorten your description to {SYMPTOM_TEXT_MAX_CHARS} characters or fewer.
-            </p>
-          ) : null}
-        </fieldset>
+              return (
+                <fieldset
+                  key={question.id}
+                  className="symptom-checker__question"
+                  data-testid={`symptom-question-${question.id}`}
+                >
+                  <legend>{question.question}</legend>
 
-        <SubmitButton pending={mutation.isPending} disabled={overLimit} pendingLabel="Checking…">
+                  {question.options.map((option) => {
+                    const sharedProps = {
+                      id: `${question.id}-${option.value}`,
+                      name: question.id,
+                      checked:
+                        question.type === "multi_choice"
+                          ? selectedValues.includes(option.value)
+                          : selectedValues.includes(option.value),
+                      onChange: () => {
+                        if (question.type === "multi_choice") {
+                          handleMultiChoice(question.id, option.value);
+                        } else {
+                          handleSingleChoice(question.id, option.value);
+                        }
+                      },
+                      "data-testid": `symptom-option-${question.id}-${option.value}`,
+                    };
+
+                    return (
+                      <label
+                        key={option.id}
+                        className="symptom-checker__option"
+                      >
+                        <input
+                          type={
+                            question.type === "multi_choice"
+                              ? "checkbox"
+                              : "radio"
+                          }
+                          {...sharedProps}
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                    );
+                  })}
+                </fieldset>
+              );
+            })}
+          </section>
+        ))}
+
+        <button className="button" type="submit">
           Check my symptoms
-        </SubmitButton>
+        </button>
       </form>
 
-      {mutation.isError ? (
-        <p className="alert alert--error" role="alert" data-testid="symptom-check-error">
-          Unable to check symptoms right now. Please try again.
-        </p>
-      ) : null}
-
       {result ? (
-        <section className="card symptom-checker__result" data-testid="symptom-check-result" aria-live="polite">
-          <span className={`badge ${OUTCOME_BADGE_CLASS[result.outcome] ?? ''}`} data-testid="symptom-check-outcome">
-            {OUTCOME_LABEL[result.outcome] ?? result.outcome}
+        <section
+          className="card symptom-checker__result"
+          data-testid="symptom-check-result"
+          aria-live="polite"
+        >
+          <span
+            className={`badge ${OUTCOME_BADGE_CLASS[result.id] ?? ""}`}
+            data-testid="symptom-check-outcome"
+          >
+            {result.label}
           </span>
-          <p data-testid="symptom-check-guidance">{result.guidance}</p>
-
-          {!result.aiAssistAvailable ? (
-            <p className="alert" data-testid="symptom-check-ai-unavailable">
-              AI assist temporarily unavailable — this result was determined from the checklist
-              you filled in above.
-            </p>
-          ) : null}
-
-          <p className="symptom-checker__disclaimer" data-testid="symptom-check-disclaimer">
-            This tool does not provide a medical diagnosis. If you are worried about your
-            symptoms, contact a healthcare professional.
+          <p data-testid="symptom-check-guidance">{result.message}</p>
+          <p
+            className="symptom-checker__disclaimer"
+            data-testid="symptom-check-disclaimer"
+          >
+            {schema.disclaimer}
           </p>
         </section>
       ) : (
-        <p className="symptom-checker__disclaimer" data-testid="symptom-check-disclaimer-idle">
-          This tool does not provide a medical diagnosis. It is meant to help you decide how
-          urgently to seek care.
+        <p
+          className="symptom-checker__disclaimer"
+          data-testid="symptom-check-disclaimer-idle"
+          style={{ color: '#c94a4a' }}
+        >
+          {schema.disclaimer}
         </p>
       )}
     </div>
