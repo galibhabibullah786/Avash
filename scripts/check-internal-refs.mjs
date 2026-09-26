@@ -83,7 +83,7 @@ function filesToScan() {
 
 /** Skip binary and lockfile-shaped paths that can never carry prose. */
 function isScannable(path) {
-  if (/\.(png|jpe?g|gif|ico|webp|woff2?|ttf|onnx|pdf)$/i.test(path)) return false;
+  if (/\.(png|jpe?g|gif|ico|webp|svg|woff2?|ttf|onnx|pdf)$/i.test(path)) return false;
   if (/(^|\/)pnpm-lock\.yaml$/.test(path)) return false;
   return true;
 }

@@ -80,10 +80,7 @@ export function GeminiChatPopup() {
           aria-label="Open Chat"
         >
           {/* Gemini Sparkle Icon */}
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M11.9995 0L13.8824 8.11762L21.9995 10L13.8824 11.8824L11.9995 20L10.1171 11.8824L1.99951 10L10.1171 8.11762L11.9995 0Z" fill="currentColor" />
-            <path d="M19.4995 16L20.2526 19.2474L23.4995 20L20.2526 20.7526L19.4995 24L18.7469 20.7526L15.4995 20L18.7469 19.2474L19.4995 16Z" fill="currentColor" />
-          </svg>
+          <img src="/icons/gemini.svg" alt="Gemini" style={{ width: "40px" }} />
         </button>
       )}
 
@@ -91,9 +88,7 @@ export function GeminiChatPopup() {
         <div className="gemini-chat-window">
           <div className="gemini-header">
             <div className="gemini-header-title">
-              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M11.9995 0L13.8824 8.11762L21.9995 10L13.8824 11.8824L11.9995 20L10.1171 11.8824L1.99951 10L10.1171 8.11762L11.9995 0Z" fill="currentColor" />
-              </svg>
+              <img src="/icons/gemini-2.svg" alt="Gemini" style={{ width: "27px", height: "27px" }} aria-hidden="true" />
               Aavash AI Assistant
             </div>
             <button className="gemini-close-btn" onClick={toggleChat} aria-label="Close Chat">

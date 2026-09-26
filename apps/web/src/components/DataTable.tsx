@@ -55,8 +55,8 @@ export function DataTable<T>({
       {rows.length === 0 ? (
         <p data-testid={dataTestId ? `${dataTestId}-empty` : undefined}>{emptyMessage}</p>
       ) : (
-        <table className="table" data-testid={dataTestId ? `${dataTestId}-table` : undefined}>
-          <thead>
+        <table className="table w-full max-md:block" data-testid={dataTestId ? `${dataTestId}-table` : undefined}>
+          <thead className="max-md:hidden">
             <tr>
               {columns.map((column) => (
                 <th key={column.key}>
@@ -83,11 +83,21 @@ export function DataTable<T>({
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="max-md:block">
             {rows.map((row) => (
-              <tr key={rowKey(row)} data-testid={dataTestId ? `${dataTestId}-row` : undefined}>
+              <tr key={rowKey(row)} className="max-md:block max-md:mb-4 max-md:border max-md:border-[var(--color-border)] max-md:rounded-lg max-md:p-4 max-md:bg-[var(--color-surface)]" data-testid={dataTestId ? `${dataTestId}-row` : undefined}>
                 {columns.map((column) => (
-                  <td key={column.key}>{column.render(row)}</td>
+                  <td 
+                    key={column.key} 
+                    className="max-md:flex max-md:justify-between max-md:items-center max-md:py-2 max-md:border-b max-md:border-dashed max-md:border-[var(--color-border)] max-md:last:border-0"
+                  >
+                    <span className="md:hidden font-bold text-[var(--color-text-muted)] mr-4">
+                      {column.header}
+                    </span>
+                    <span className="max-md:text-right">
+                      {column.render(row)}
+                    </span>
+                  </td>
                 ))}
               </tr>
             ))}
