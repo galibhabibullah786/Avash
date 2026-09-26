@@ -162,7 +162,7 @@ export default function Weather() {
         </section>
       ) : null}
 
-      <section className="weather-grid">
+      <section className="weather-grid max-md:!flex max-md:!flex-col">
         <div className="chart-panel">
           <div className="panel-heading">
             <div>

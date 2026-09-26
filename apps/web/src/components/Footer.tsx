@@ -4,9 +4,7 @@ export const Footer = () => {
     return (
         <footer className="footer">
             <div className="footer__brand">
-                <span className="navbar__mark" aria-hidden="true">
-                    ✦
-                </span>
+                <img src="/icons/brand.svg" alt="Avas Brand Icon" style={{ width: "27px", height: "27px" }} aria-hidden="true" />
                 <strong>আভাস</strong>
                 <p>সুরক্ষার আগাম বার্তা</p>
             </div>

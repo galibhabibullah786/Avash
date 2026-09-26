@@ -99,7 +99,7 @@ export default function RiskMap() {
       )}
 
       <section
-        className="analysis-grid risk-map-grid"
+        className="analysis-grid risk-map-grid max-md:!flex max-md:!flex-col"
         style={{ marginBottom: "30px" }}
       >
         <div className="chart-panel map-panel">
@@ -172,7 +172,7 @@ export default function RiskMap() {
 
       {activeRegionId ? (
         <section
-          className="analysis-grid"
+          className="analysis-grid max-md:!flex max-md:!flex-col"
           aria-label="Region risk detail"
           data-testid="risk-detail-panel"
           style={{ marginTop: "30px" }}
