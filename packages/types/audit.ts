@@ -18,8 +18,6 @@ export const auditActionSchema = z.enum([
   'alert.subscribe',
   'alert.unsubscribe',
   'push.subscribe',
-  'announcement.create',
-  'announcement.delete',
   'auth.signout',
 ]);
 
@@ -30,7 +28,6 @@ export const auditEntityTypeSchema = z.enum([
   'upload',
   'alert_subscription',
   'push_subscription',
-  'announcement',
 ]);
 
 export const auditOutcomeSchema = z.enum(['success', 'failure']);

@@ -17,7 +17,7 @@ declare global {
  * must reference `writeAuditEntry` or `recordAudit` somewhere in its
  * file — the two sanctioned paths to `audit_log` (`uploads.ts`,
  * `admin-users.ts`, `reports.ts`, `resources.ts` open-code the former;
- * `alerts.ts`/`announcements.ts` use the latter, factored helper). This
+ * `alerts.ts` uses the latter, factored helper). This
  * is a coarse, file-level check (a route file with a genuine mix of
  * audited and unaudited mutations would still pass), not a full AST
  * walk — cheap enough to run every time, and it is proven to fail loudly
