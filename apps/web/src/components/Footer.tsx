@@ -12,7 +12,7 @@ export const Footer = () => {
             </div>
             <div className="footer__links">
                 <Link to="/risk">Risk Map</Link>
-                <Link to="/symptoms">Symptoms</Link>
+                <Link to="/symptoms">Symptoms-checker</Link>
                 <Link to="/prevention">Prevention</Link>
                 <Link to="/report">Report Site</Link>
             </div>

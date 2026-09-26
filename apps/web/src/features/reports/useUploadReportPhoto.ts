@@ -1,28 +1,25 @@
 import { useMutation } from "@tanstack/react-query";
-import { photoUploadResponseSchema, type PhotoUploadResponse } from "@avash/types";
-import { fetchApi } from "../../lib/apiClient";
+import { type PhotoUploadResponse } from "@avash/types";
+import { signedUpload } from "../uploads/useSignedUpload";
+
+export interface UploadReportPhotoInput {
+  file: File;
+  accessToken: string;
+}
 
 export async function uploadReportPhoto(
-  file: File,
+  input: UploadReportPhotoInput,
 ): Promise<PhotoUploadResponse> {
-  const formData = new FormData();
-  formData.append("file", file);
-  const result = await fetchApi(
-    "/api/reports/photo",
-    photoUploadResponseSchema,
-    {
-      method: "POST",
-      body: formData,
-    },
-  );
-  if (!result.ok) {
-    throw new Error(result.error);
-  }
-  return result.data;
+  const result = await signedUpload({
+    file: input.file,
+    purpose: 'report-photo',
+    accessToken: input.accessToken,
+  });
+  return { photoUrl: result.secureUrl };
 }
 
 export function useUploadReportPhoto() {
-  return useMutation<PhotoUploadResponse, Error, File>({
+  return useMutation<PhotoUploadResponse, Error, UploadReportPhotoInput>({
     mutationFn: uploadReportPhoto,
   });
 }

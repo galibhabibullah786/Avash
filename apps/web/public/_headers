@@ -24,7 +24,7 @@
 # unregister the service worker and take Web Push down with it — the
 # push handler lives in /sw.js, so this is load-bearing, not cosmetic.
 /*
-  Content-Security-Policy: default-src 'self'; connect-src 'self' https://avash-api-production.galibhabibullah786.workers.dev https://kdklmbqkczkaakgswlix.supabase.co wss://kdklmbqkczkaakgswlix.supabase.co; script-src 'self' https://challenges.cloudflare.com; worker-src 'self'; manifest-src 'self'; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://tile.openstreetmap.org;
+  Content-Security-Policy: default-src 'self'; connect-src 'self' https://avash-api-production.galibhabibullah786.workers.dev https://kdklmbqkczkaakgswlix.supabase.co wss://kdklmbqkczkaakgswlix.supabase.co https://api.cloudinary.com; script-src 'self' https://challenges.cloudflare.com; worker-src 'self'; manifest-src 'self'; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org https://res.cloudinary.com;
   Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY

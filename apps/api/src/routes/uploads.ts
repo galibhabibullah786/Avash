@@ -8,12 +8,15 @@ import {
 import { buildGenericErrorBody, logger } from '@avash/logger';
 import {
   UPLOAD_SIGNATURE_RATE_LIMIT,
+  REPORT_PHOTO_UPLOAD_RATE_LIMIT,
   buildAuditEntry,
   writeAuditEntry,
+  checkRateLimit,
+  rateLimitKey,
   type RateLimitRedisLike,
 } from '@avash/security';
+import { Redis } from '@upstash/redis';
 import { auth } from '../middleware/auth';
-import { rateLimit } from '../middleware/rate-limit';
 import { createSupabaseAdmin } from '../lib/supabaseAdmin';
 import { createAuditSink } from '../lib/auditSink';
 import { signUpload } from '../lib/cloudinarySignature';
@@ -33,6 +36,9 @@ function folderForPurpose(purpose: 'avatar' | 'report-photo', userId: string): s
   return purpose === 'avatar' ? `avash/avatars/${userId}` : 'avash/reports';
 }
 
+const defaultRedisFactory = (env: Bindings): RateLimitRedisLike =>
+  new Redis({ url: env.UPSTASH_REDIS_REST_URL, token: env.UPSTASH_REDIS_REST_TOKEN });
+
 /**
  * Signed direct-to-Cloudinary uploads (decision G, ADR-015). Every
  * signed-in role may mint a signature — no `capability` is required —
@@ -44,20 +50,11 @@ export function createUploads(options?: CreateUploadsOptions) {
   return new Hono<AppEnv>().post(
     '/',
     auth(),
-    rateLimit({
-      guard: 'upload-signature',
-      window: 'minute',
-      windowSeconds: 60,
-      limit: UPLOAD_SIGNATURE_RATE_LIMIT.perMinute,
-      keyStrategy: 'user',
-      redisFactory: options?.redisFactory,
-    }),
     async (c) => {
       const requestId = c.get('requestId');
       const user = c.get('user');
+      
       if (!user) {
-        // auth() always sets this before next() — defensive only, never
-        // exercised in practice.
         return c.json(buildGenericErrorBody(requestId), 401);
       }
 
@@ -65,6 +62,26 @@ export function createUploads(options?: CreateUploadsOptions) {
       const parsed = uploadSignatureRequestSchema.safeParse(body);
       if (!parsed.success) {
         return c.json(buildGenericErrorBody(requestId), 400);
+      }
+
+      // Rate limit logic
+      if (c.env.UPSTASH_REDIS_REST_URL && c.env.UPSTASH_REDIS_REST_TOKEN) {
+        const redis = (options?.redisFactory ?? defaultRedisFactory)(c.env);
+        const guard = parsed.data.purpose === 'report-photo' ? 'report-photo-upload' : 'upload-signature';
+        const limitConfig = parsed.data.purpose === 'report-photo' ? REPORT_PHOTO_UPLOAD_RATE_LIMIT : UPLOAD_SIGNATURE_RATE_LIMIT;
+        const actor = user.id;
+        const key = rateLimitKey(guard, 'minute', actor);
+
+        try {
+          const result = await checkRateLimit(redis, { key, limit: limitConfig.perMinute, windowSeconds: 60 });
+          if (!result.ok || !result.allowed) {
+            if (result.ok && !result.allowed) c.header('Retry-After', '60');
+            logger.error('uploads: rate limit exceeded or unreachable', { requestId, guard });
+            return c.json(buildGenericErrorBody(requestId), 429);
+          }
+        } catch {
+          return c.json(buildGenericErrorBody(requestId), 429);
+        }
       }
 
       try {

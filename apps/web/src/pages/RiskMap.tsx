@@ -5,6 +5,7 @@ import { useLeafletMap } from "../features/map/useLeafletMap";
 import { useRiskMap } from "../features/risk/useRiskMap";
 import { useRegionRisk } from "../features/risk/useRegionRisk";
 import { useRiskMapLayer } from "../features/risk/useRiskMapLayer";
+import { useRiskReportsLayer } from "../features/risk/useRiskReportsLayer";
 import {
   RISK_LEVEL_BAND_STYLES,
   RISK_LEVEL_ORDER,
@@ -38,6 +39,7 @@ export default function RiskMap() {
     "Region";
 
   useRiskMapLayer(mapRef, riskMap.data, setSelectedRegionId);
+  useRiskReportsLayer(mapRef, regionRisk.data?.verifiedReports);
 
   const features = riskMap.data?.features ?? [];
 
@@ -68,15 +70,7 @@ export default function RiskMap() {
         </div>
       </div>
 
-      <p
-        className="alert text-warning"
-        role="status"
-        data-testid="risk-provenance-banner"
-        style={{ marginBottom: "20px", color: '#d9a441' }}
-      >
-        Risk scores shown are placeholder values. Live model predictions arrive
-        with the prediction pipeline.
-      </p>
+
 
       {!isOnline ? (
         <p className="alert alert--error" data-testid="status-offline">

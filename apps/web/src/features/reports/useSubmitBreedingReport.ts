@@ -8,8 +8,7 @@ export interface SubmitBreedingReportInput {
   description?: string;
   photoUrl?: string;
   turnstileToken: string;
-  /** Attached only when the submitter is signed in; the route works fully anonymously without it. */
-  accessToken?: string | null;
+  accessToken: string;
 }
 
 export async function submitBreedingReport(input: SubmitBreedingReportInput): Promise<BreedingReportResponse> {
@@ -17,7 +16,7 @@ export async function submitBreedingReport(input: SubmitBreedingReportInput): Pr
   const result = await fetchApi('/api/reports/breeding-site', breedingReportResponseSchema, {
     method: 'POST',
     body,
-    ...(accessToken ? { accessToken } : {}),
+    accessToken,
   });
   if (!result.ok) {
     throw new Error(result.error);

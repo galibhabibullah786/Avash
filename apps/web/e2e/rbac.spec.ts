@@ -18,7 +18,7 @@ import { test, expect, type Page } from '@playwright/test';
 const SUPABASE_PROJECT_REF = 'kdklmbqkczkaakgswlix';
 const STORAGE_KEY = `sb-${SUPABASE_PROJECT_REF}-auth-token`;
 
-type E2ERole = 'citizen' | 'hospital_staff' | 'moderator' | 'admin' | null;
+type E2ERole = 'citizen' | 'moderator' | 'moderator' | 'admin' | null;
 
 function fakeSession(role: E2ERole) {
   return {
@@ -66,7 +66,7 @@ test.describe('role dashboards', () => {
   test('each role lands on its own dashboard', async ({ page }) => {
     const cases: { role: Exclude<E2ERole, null>; title: string; label: string }[] = [
       { role: 'citizen', title: 'Your dashboard', label: 'Citizen' },
-      { role: 'hospital_staff', title: 'Hospital dashboard', label: 'Hospital staff' },
+      { role: 'moderator', title: 'Hospital dashboard', label: 'Hospital staff' },
       { role: 'moderator', title: 'Moderator dashboard', label: 'Moderator' },
       { role: 'admin', title: 'Admin dashboard', label: 'Administrator' },
     ];
@@ -110,8 +110,8 @@ test.describe('role dashboards', () => {
 });
 
 test.describe('route guards', () => {
-  test('a hospital_staff visiting /moderation gets the no-access page, URL unchanged', async ({ page }) => {
-    await signInAs(page, 'hospital_staff');
+  test('a moderator visiting /moderation gets the no-access page, URL unchanged', async ({ page }) => {
+    await signInAs(page, 'moderator');
     await page.goto('/moderation');
 
     await expect(page.getByRole('heading', { name: 'Access restricted' })).toBeVisible();

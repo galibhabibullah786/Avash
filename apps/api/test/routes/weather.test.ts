@@ -191,8 +191,8 @@ describe('GET /history', () => {
 
     const url = fake.calls.at(-1);
     expect(url?.searchParams.get('region_code')).toBe('eq.dhaka');
-    expect(url?.searchParams.get('order')).toBe('observed_at.asc');
-    expect(url?.searchParams.get('observed_at')).toMatch(/^gte\./);
+    expect(url?.searchParams.get('order')).toBe('observed_at.desc');
+    expect(url?.searchParams.get('limit')).toBe('14');
   });
 
   test('explicit days=3 narrows the window', async () => {

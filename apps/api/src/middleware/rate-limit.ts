@@ -1,12 +1,5 @@
 import type { MiddlewareHandler } from 'hono';
-// The Cloudflare-specific entry point, not the package root: the default
-// (Node.js) build hardcodes `cache: "no-store"` on every fetch() call,
-// and workerd's fetch implementation doesn't support the Fetch API
-// `cache` option at all — every request throws
-// "The 'cache' field on 'RequestInitializerDict' is not implemented.",
-// which checkRateLimit's catch swallows into a fail-closed 429 on every
-// single rate-limited write. The `/cloudflare` build omits that field.
-import { Redis } from '@upstash/redis/cloudflare';
+import { Redis } from '@upstash/redis';
 import { buildGenericErrorBody, logger } from '@avash/logger';
 import { checkRateLimit, type RateLimitWindow, type RateLimitRedisLike } from '@avash/security';
 import type { AppEnv, Bindings } from '../types';
@@ -55,17 +48,29 @@ export const rateLimit =
       return c.json(buildGenericErrorBody(requestId), 429);
     }
 
-    const redis = (options.redisFactory ?? defaultRedisFactory)(c.env);
-    const key = `ratelimit:${options.guard}:${options.window}:${actor}`;
-    const result = await checkRateLimit(redis, { key, limit: options.limit, windowSeconds: options.windowSeconds });
-
-    if (!result.ok) {
-      logger.error('rate-limit: Redis unreachable, failing closed', { requestId, guard: options.guard });
-      return c.json(buildGenericErrorBody(requestId), 429);
+    // Skip rate limiting if Redis is not configured (local dev mode)
+    if (!c.env.UPSTASH_REDIS_REST_URL || !c.env.UPSTASH_REDIS_REST_TOKEN) {
+      logger.warn('rate-limit: Redis not configured, skipping (local dev mode)', { requestId, guard: options.guard });
+      return next();
     }
 
-    if (!result.allowed) {
-      c.header('Retry-After', String(options.windowSeconds));
+    const redis = (options.redisFactory ?? defaultRedisFactory)(c.env);
+    const key = `ratelimit:${options.guard}:${options.window}:${actor}`;
+    
+    try {
+      const result = await checkRateLimit(redis, { key, limit: options.limit, windowSeconds: options.windowSeconds });
+
+      if (!result.ok) {
+        logger.error('rate-limit: Redis unreachable, failing closed', { requestId, guard: options.guard });
+        return c.json(buildGenericErrorBody(requestId), 429);
+      }
+
+      if (!result.allowed) {
+        c.header('Retry-After', String(options.windowSeconds));
+        return c.json(buildGenericErrorBody(requestId), 429);
+      }
+    } catch (error) {
+      logger.error('rate-limit: Redis error, failing closed', { requestId, guard: options.guard, error: error instanceof Error ? error.message : String(error) });
       return c.json(buildGenericErrorBody(requestId), 429);
     }
 

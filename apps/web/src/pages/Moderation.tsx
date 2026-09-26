@@ -9,6 +9,7 @@ import {
 import { useVerifyReport } from '../features/reports/useVerifyReport';
 import { useListQuery } from '../hooks/useListQuery';
 import { DataTable, type DataTableColumn } from '../components/DataTable';
+import '../features/dashboard/dashboard.css';
 
 const SORTABLE = ['createdAt', 'status'] as const;
 
@@ -27,9 +28,9 @@ export default function Moderation() {
   });
   const verify = useVerifyReport();
 
-  const handleDecision = (id: string, decision: 'verified' | 'rejected') => {
+  const handleDecision = (id: string, decision: ModerationStatus) => {
     if (!accessToken) return;
-    verify?.mutate?.({ id, status: decision, accessToken });
+    verify?.mutate?.({ id, status: decision as any, accessToken });
   };
 
   const rows: PendingReportRow[] = queue?.data?.items ?? [];
@@ -44,6 +45,18 @@ export default function Moderation() {
 
   const columns: DataTableColumn<PendingReportRow>[] = [
     {
+      key: 'photo',
+      header: 'Photo',
+      render: (report) =>
+        report?.photo_url ? (
+          <a href={report.photo_url} target="_blank" rel="noreferrer">
+            <img src={report.photo_url} alt="Report" style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '4px' }} data-testid="moderation-photo" />
+          </a>
+        ) : (
+          <span className="badge" data-testid="moderation-no-photo">No photo</span>
+        ),
+    },
+    {
       key: 'description',
       header: 'Description',
       render: (report) => <span data-testid="moderation-description">{report?.description ?? '(no description)'}</span>,
@@ -53,9 +66,14 @@ export default function Moderation() {
       header: 'Flag',
       sortable: true,
       render: (report) => {
-        const spamLikelihood = report?.ai_validation?.spamLikelihood ?? 0;
-        const flagged = spamLikelihood > SPAM_LIKELIHOOD_REJECT_THRESHOLD;
-        return flagged ? <span className="badge badge--severe">Flagged for review</span> : null;
+        const ai = report?.ai_validation;
+        const flagged = (ai?.spamLikelihood ?? 0) > SPAM_LIKELIHOOD_REJECT_THRESHOLD;
+        return (
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {flagged && <span className="badge badge--severe">Flagged for review</span>}
+            {ai && <span className="badge badge--secondary">{ai.category}</span>}
+          </div>
+        );
       },
     },
     {
@@ -67,28 +85,48 @@ export default function Moderation() {
     {
       key: 'actions',
       header: 'Actions',
-      render: (report) => (
-        <>
-          <button
-            type="button"
-            className="button"
-            onClick={() => handleDecision(report.id, 'verified')}
-            disabled={!accessToken || verify?.isPending}
-            data-testid="verify-report"
-          >
-            Verify
-          </button>{' '}
-          <button
-            type="button"
-            className="button button--secondary"
-            onClick={() => handleDecision(report.id, 'rejected')}
-            disabled={!accessToken || verify?.isPending}
-            data-testid="reject-report"
-          >
-            Reject
-          </button>
-        </>
-      ),
+      render: (report) => {
+        if (report.status === 'rejected' || report.status === 'resolved') {
+          return null;
+        }
+        return (
+          <>
+            {report.status === 'pending' && (
+              <>
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() => handleDecision(report.id, 'verified')}
+                  disabled={!accessToken || verify?.isPending}
+                  data-testid="verify-report"
+                >
+                  Verify
+                </button>{' '}
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  onClick={() => handleDecision(report.id, 'rejected')}
+                  disabled={!accessToken || verify?.isPending}
+                  data-testid="reject-report"
+                >
+                  Reject
+                </button>
+              </>
+            )}
+            {report.status === 'verified' && (
+              <button
+                type="button"
+                className="button"
+                onClick={() => handleDecision(report.id, 'resolved')}
+                disabled={!accessToken || verify?.isPending}
+                data-testid="resolve-report"
+              >
+                Resolve
+              </button>
+            )}
+          </>
+        );
+      },
     },
   ];
 

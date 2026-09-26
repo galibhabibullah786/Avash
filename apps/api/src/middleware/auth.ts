@@ -33,33 +33,33 @@ function extractBearerToken(header: string | undefined): string | null {
  */
 export const auth =
   (options?: AuthOptions): MiddlewareHandler<AppEnv> =>
-  async (c, next) => {
-    const requestId = c.get('requestId');
-    const token = extractBearerToken(c.req.header('Authorization'));
+    async (c, next) => {
+      const requestId = c.get('requestId');
+      const token = extractBearerToken(c.req.header('Authorization'));
 
-    if (!token) {
-      return c.json(buildGenericErrorBody(requestId), 401);
-    }
+      if (!token) {
+        return c.json(buildGenericErrorBody(requestId), 401);
+      }
 
-    const result = await jwtVerify(token, {
-      secret: c.env.SUPABASE_JWT_SECRET,
-      supabaseUrl: c.env.SUPABASE_URL,
-    });
-    if (!result.ok) {
-      return c.json(buildGenericErrorBody(requestId), 401);
-    }
+      const result = await jwtVerify(token, {
+        secret: c.env.SUPABASE_JWT_SECRET,
+        supabaseUrl: c.env.SUPABASE_URL,
+      });
+      if (!result.ok) {
+        return c.json(buildGenericErrorBody(requestId), 401);
+      }
 
-    const role = resolveAppRole(result.claims);
-    const user: AuthenticatedUser = {
-      id: String(result.claims?.sub ?? ''),
-      email: typeof result.claims?.email === 'string' ? result.claims.email : null,
-      role,
+      const role = resolveAppRole(result.claims);
+      const user: AuthenticatedUser = {
+        id: String(result.claims?.sub ?? ''),
+        email: typeof result.claims?.email === 'string' ? result.claims.email : null,
+        role,
+      };
+
+      if (options?.capability && !can(role, options.capability)) {
+        return c.json(buildGenericErrorBody(requestId), 403);
+      }
+
+      c.set('user', user);
+      await next();
     };
-
-    if (options?.capability && !can(role, options.capability)) {
-      return c.json(buildGenericErrorBody(requestId), 403);
-    }
-
-    c.set('user', user);
-    await next();
-  };

@@ -1,10 +1,9 @@
 import { useEffect } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { can, DEFAULT_APP_ROLE } from '@avash/security';
 import { useSession } from '../features/auth/SessionProvider';
 import { ROLE_DASHBOARDS, ROLE_LABELS } from '../features/dashboard/roleDashboards';
 import { AlertSubscribeForm } from '../features/alerts/AlertSubscribeForm';
-import { AnnouncementList } from '../features/alerts/AnnouncementList';
 import { PushNotificationToggle } from '../features/alerts/PushNotificationToggle';
 import { InstallAppPrompt } from '../features/alerts/InstallAppPrompt';
 import { listenForServiceWorkerNavigation } from '../lib/serviceWorker';
@@ -36,8 +35,8 @@ export default function Dashboard() {
   // an unknown/malformed id degrades to "nothing pinned" through the same
   // 404-swallowing path AnnouncementList already uses, rather than
   // needing a second validation path.
-  const [searchParams] = useSearchParams();
-  const announcementId = searchParams?.get?.('announcement') ?? null;
+  // const [searchParams] = useSearchParams();
+  // const announcementId = searchParams?.get?.('announcement') ?? null;
 
   // Wires sw.js's `avash:navigate` postMessage (sent when a subscriber
   // clicks a notification while this tab is already open) to a
@@ -89,9 +88,7 @@ export default function Dashboard() {
         <AlertSubscribeForm />
       </section>
 
-      <section className="dashboard__section">
-        <AnnouncementList highlightedAnnouncementId={announcementId} />
-      </section>
+
     </main>
   );
 }

@@ -142,17 +142,17 @@ describe('useSession / SessionProvider', () => {
     expect(latest?.role).toBe('citizen');
   });
 
-  test('app_metadata.role = hospital_staff surfaces as role', async () => {
+  test('app_metadata.role = moderator surfaces as role', async () => {
     getSessionMock.mockResolvedValue({
       data: {
         session: {
           access_token: 'token-123',
-          user: { id: 'user-1', email: 'staff@example.test', app_metadata: { role: 'hospital_staff' } },
+          user: { id: 'user-1', email: 'staff@example.test', app_metadata: { role: 'moderator' } },
         },
       },
     });
     await mount();
-    expect(latest?.role).toBe('hospital_staff');
+    expect(latest?.role).toBe('moderator');
   });
 
   test('anonymous stays null-roled — never upgraded to citizen', async () => {

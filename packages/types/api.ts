@@ -127,20 +127,12 @@ export const regionRiskPredictionSchema = z.object({
   generatedAt: z.string(),
 });
 
-export const riskDetailResponseSchema = z.object({
-  regionId: z.string().uuid(),
-  regionCode: z.string(),
-  regionName: z.string(),
-  predictions: z.array(regionRiskPredictionSchema),
-  latestWeather: weatherObservationDtoSchema.nullable(), // null when none exists
-  requestId: z.string(),
-});
 
 export type WeatherObservationDto = z.infer<typeof weatherObservationDtoSchema>;
 export type LatestWeatherResponse = z.infer<typeof latestWeatherResponseSchema>;
 export type WeatherHistoryResponse = z.infer<typeof weatherHistoryResponseSchema>;
 export type RiskMapResponse = z.infer<typeof riskMapResponseSchema>;
-export type RiskDetailResponse = z.infer<typeof riskDetailResponseSchema>;
+
 
 // ── Auth / role shared primitives ──────────────────────────────────────────
 
@@ -150,6 +142,28 @@ export type RiskDetailResponse = z.infer<typeof riskDetailResponseSchema>;
 export const bloodGroupSchema = z.enum(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']);
 export const latitudeSchema = z.number().min(-90).max(90);
 export const longitudeSchema = z.number().min(-180).max(180);
+
+export const verifiedReportDtoSchema = z.object({
+  id: z.string().uuid(),
+  lat: latitudeSchema,
+  lng: longitudeSchema,
+  description: z.string().nullable(),
+  photoUrl: z.string().nullable(),
+  aiCategory: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type VerifiedReportDto = z.infer<typeof verifiedReportDtoSchema>;
+
+export const riskDetailResponseSchema = z.object({
+  regionId: z.string().uuid(),
+  regionCode: z.string(),
+  regionName: z.string(),
+  predictions: z.array(regionRiskPredictionSchema),
+  latestWeather: weatherObservationDtoSchema.nullable(), // null when none exists
+  verifiedReports: z.array(verifiedReportDtoSchema).default([]),
+  requestId: z.string(),
+});
+export type RiskDetailResponse = z.infer<typeof riskDetailResponseSchema>;
 /**
  * The four application roles. Deliberately NOT a rank ordering — a
  * moderator is not "a hospital_staff plus more", so authorization is
@@ -159,7 +173,7 @@ export const longitudeSchema = z.number().min(-180).max(180);
  * rather than an absence, so revoking a role is an assignment and shows
  * up in the audit trail like any other.
  */
-export const appRoleSchema = z.enum(['citizen', 'hospital_staff', 'moderator', 'admin']);
+export const appRoleSchema = z.enum(['citizen', 'moderator', 'admin']);
 
 export type AppRole = z.infer<typeof appRoleSchema>;
 
@@ -201,8 +215,6 @@ export type RoleAssignmentResponse = z.infer<typeof roleAssignmentResponseSchema
 
 // ── Symptom checker (§13 slice 4) ──────────────────────────────────────────
 
-export const SYMPTOM_TEXT_MAX_CHARS = 500;
-
 /** The WHO checklist — the only input the deterministic rule engine ever sees. */
 export const symptomChecklistSchema = z.object({
   fever: z.boolean(),
@@ -219,18 +231,21 @@ export const symptomChecklistSchema = z.object({
   leukopenia: z.boolean(),
 });
 
+export const symptomQaSchema = z.object({
+  question: z.string(),
+  answer: z.string(),
+});
+
 export const symptomCheckRequestSchema = z.object({
-  symptomText: z.string().max(SYMPTOM_TEXT_MAX_CHARS).optional(),
-  checklist: symptomChecklistSchema.partial().optional(),
+  qaPairs: z.array(symptomQaSchema),
+  checklist: symptomChecklistSchema,
 });
 
 export const triageOutcomeSchema = z.enum(['emergency', 'consult-24h', 'monitor']);
 
 export const symptomCheckResponseSchema = z.object({
   outcome: triageOutcomeSchema,
-  guidance: z.string(), // fixed server-side copy per outcome, never model text
-  checklist: symptomChecklistSchema,
-  aiAssistAvailable: z.boolean(), // false ⇒ quota tripped or Gemini failed; §7.3 fallback
+  guidance: z.string(),
   requestId: z.string(),
 });
 
@@ -310,6 +325,21 @@ export const hospitalDtoSchema = z.object({
   lat: latitudeSchema,
   lng: longitudeSchema,
 });
+
+
+export const hospitalCreateRequestSchema = z.object({
+  name: z.string().min(1),
+  lat: latitudeSchema,
+  lng: longitudeSchema,
+  address: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  verified: z.boolean().default(true),
+});
+
+export const hospitalUpdateRequestSchema = hospitalCreateRequestSchema.partial();
+
+export type HospitalCreateRequest = z.infer<typeof hospitalCreateRequestSchema>;
+export type HospitalUpdateRequest = z.infer<typeof hospitalUpdateRequestSchema>;
 
 export const hospitalsResponseSchema = z.object({
   hospitals: z.array(hospitalDtoSchema), // [] is valid, never null

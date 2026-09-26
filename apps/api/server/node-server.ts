@@ -27,9 +27,6 @@ const DEFAULT_PORT = 8787;
  * than surfacing as a config error. Both of those guards return a generic
  * body (R10), so from the browser an unset secret is indistinguishable
  * from a real rejection:
- *   - `UPSTASH_REDIS_REST_*` — packages/security/rateLimit.ts cannot
- *     consult a limiter it cannot reach, so every symptom check and every
- *     breeding-site report 429s.
  *   - `TURNSTILE_SECRET_KEY` — siteverify answers `invalid-input-secret`,
  *     so every breeding-site report 403s.
  *   - `SUPABASE_*` — every read and write against PostgREST fails, and
@@ -42,8 +39,6 @@ const REQUIRED_VARS = [
   'SUPABASE_URL',
   'SUPABASE_SERVICE_ROLE_KEY',
   'SUPABASE_JWT_SECRET',
-  'UPSTASH_REDIS_REST_URL',
-  'UPSTASH_REDIS_REST_TOKEN',
   'TURNSTILE_SECRET_KEY',
 ] as const;
 
@@ -59,7 +54,7 @@ const REQUIRED_VARS = [
  * (ADR-015) — it has no caller in this slice, so a container without them
  * still serves every other route.
  */
-const OPTIONAL_VARS = ['GEMINI_API_KEY', 'CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'] as const;
+const OPTIONAL_VARS = ['GEMINI_API_KEY', 'CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN'] as const;
 
 function readBindings(): Bindings {
   const missing = REQUIRED_VARS.filter((name) => !process.env[name]);

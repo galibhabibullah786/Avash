@@ -11,7 +11,6 @@ export type {
   HospitalRow as Hospital,
   BloodInventoryRow as BloodInventory,
   BloodGroup,
-  VerifiedHospitalStaffRow as VerifiedHospitalStaff,
   AlertSubscriptionRow as AlertSubscription,
   PushSubscriptionRow as PushSubscription,
   NewsItemRow as NewsItem,

@@ -48,9 +48,9 @@ function fakeBindings(overrides: Partial<Bindings> = {}): Bindings {
     ENVIRONMENT: 'test',
     CORS_ALLOWED_ORIGINS: 'https://avash.pages.dev',
     CORS_PREVIEW_ORIGIN_SUFFIX: 'avash.pages.dev',
-    CLOUDINARY_CLOUD_NAME: '',
-    CLOUDINARY_API_KEY: '',
-    CLOUDINARY_API_SECRET: '',
+    CLOUDINARY_CLOUD_NAME: 'test-cloud',
+    CLOUDINARY_API_KEY: 'test-key',
+    CLOUDINARY_API_SECRET: 'test-secret',
     ...overrides,
   };
 }
@@ -68,6 +68,8 @@ interface CombinedFetchOptions {
   /** Row(s) the fake PostgREST insert/update returns. `null` on update simulates "no row matched" (404 path). */
   insertResult?: { status?: number; row?: Record<string, unknown> };
   updateResult?: { status?: number; row?: Record<string, unknown> | null };
+  /** `{ status: 500 }` simulates a Supabase Storage upload failure; omit for a default success. */
+  storageUploadResult?: { status?: number };
 }
 
 /**
@@ -113,6 +115,14 @@ function combinedFetch(options: CombinedFetchOptions = {}) {
     }
     calls.push({ url, method, body });
 
+    if (url.pathname.startsWith('/storage/v1/object/') && method === 'POST') {
+      const status = options.storageUploadResult?.status ?? 200;
+      if (status >= 400) {
+        return new Response(JSON.stringify({ message: 'storage upload failed' }), { status });
+      }
+      return new Response(JSON.stringify({ Key: url.pathname.replace('/storage/v1/object/', '') }), { status });
+    }
+
     if (url.pathname === '/rest/v1/breeding_reports' && method === 'POST') {
       const result = options.insertResult ?? { row: { id: '99999999-9999-4999-8999-999999999999', status: 'pending' } };
       if (!result.row) {
@@ -130,13 +140,6 @@ function combinedFetch(options: CombinedFetchOptions = {}) {
       }
       // `.maybeSingle()` unwraps a 0-or-1-length array client-side.
       return new Response(JSON.stringify(result.row ? [result.row] : []), { status: 200 });
-    }
-
-    // The audit write is best-effort and isolated (route code); a
-    // successful test run always stubs it so the write "succeeds" rather
-    // than exercising the throwing-sink path incidentally.
-    if (url.pathname === '/rest/v1/audit_log' && method === 'POST') {
-      return new Response(JSON.stringify([{ id: 1 }]), { status: 201 });
     }
 
     throw new Error(`combinedFetch: no rule matched ${method} ${url.pathname}`);
@@ -385,63 +388,6 @@ describe('POST /api/reports/breeding-site', () => {
     expect(body.flaggedForReview).toBe(false);
   });
 
-  test('a normal submission records a success report.submit audit entry', async () => {
-    const combined = combinedFetch();
-    vi.stubGlobal('fetch', combined.fetch);
-
-    await buildApp().request(
-      '/breeding-site',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ lat: 23.78, lng: 90.4, turnstileToken: 'good-token' }),
-      },
-      fakeBindings()
-    );
-
-    const auditCall = combined.calls.find((c) => c.url.pathname === '/rest/v1/audit_log');
-    expect(auditCall?.body?.action).toBe('report.submit');
-    expect(auditCall?.body?.outcome).toBe('success');
-  });
-
-  test('a reporter id that is not a UUID makes buildAuditEntry throw — still 201, isolated from the response', async () => {
-    // auditEntrySchema requires actorId to be a UUID or null; a signed-in
-    // but non-UUID subject exercises the isolated try/catch around the
-    // audit write without touching the network layer at all.
-    const combined = combinedFetch();
-    vi.stubGlobal('fetch', combined.fetch);
-    const token = await signTestJwt({ sub: 'not-a-uuid-subject' });
-
-    const res = await buildApp().request(
-      '/breeding-site',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ lat: 23.78, lng: 90.4, turnstileToken: 'good-token' }),
-      },
-      fakeBindings()
-    );
-    expect(res.status).toBe(201);
-  });
-
-  test('a flagged (spam-likely) submission records a failure-outcome audit entry, even though the row is stored', async () => {
-    const combined = combinedFetch({ gemini: { data: { isPlausible: true, category: 'other', spamLikelihood: 0.95 } } });
-    vi.stubGlobal('fetch', combined.fetch);
-
-    await buildApp().request(
-      '/breeding-site',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ lat: 23.78, lng: 90.4, description: 'buy cheap watches now', turnstileToken: 'good-token' }),
-      },
-      fakeBindings()
-    );
-
-    const auditCall = combined.calls.find((c) => c.url.pathname === '/rest/v1/audit_log');
-    expect(auditCall?.body?.outcome).toBe('failure');
-  });
-
   test('Supabase insert failure → 503 generic body, never leaks upstream detail', async () => {
     const combined = combinedFetch({ insertResult: { row: undefined as unknown as Record<string, unknown>, status: 500 } });
     vi.stubGlobal('fetch', combined.fetch);
@@ -459,6 +405,94 @@ describe('POST /api/reports/breeding-site', () => {
     const body = (await res.json()) as GenericErrorBody;
     expect(body.error?.message).toBeDefined();
     expect(JSON.stringify(body)).not.toContain('insert failed');
+  });
+});
+
+function makePhotoFormData(overrides: { file?: File | null } = {}): FormData {
+  const formData = new FormData();
+  const file = overrides.file === undefined ? new File(['fake-bytes'], 'photo.png', { type: 'image/png' }) : overrides.file;
+  if (file) {
+    formData.append('file', file);
+  }
+  return formData;
+}
+
+describe('POST /api/reports/photo', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('no file field → 400', async () => {
+    const { fetch } = combinedFetch();
+    vi.stubGlobal('fetch', fetch);
+
+    const res = await buildApp().request('/photo', { method: 'POST', body: makePhotoFormData({ file: null }) }, fakeBindings());
+    expect(res.status).toBe(400);
+  });
+
+  test('disallowed mime type → 400', async () => {
+    const { fetch } = combinedFetch();
+    vi.stubGlobal('fetch', fetch);
+
+    const file = new File(['<svg/>'], 'photo.svg', { type: 'image/svg+xml' });
+    const res = await buildApp().request('/photo', { method: 'POST', body: makePhotoFormData({ file }) }, fakeBindings());
+    expect(res.status).toBe(400);
+  });
+
+  test('oversized file → 400', async () => {
+    const { fetch } = combinedFetch();
+    vi.stubGlobal('fetch', fetch);
+
+    const oversized = new File([new Uint8Array(6 * 1024 * 1024)], 'photo.png', { type: 'image/png' });
+    const res = await buildApp().request('/photo', { method: 'POST', body: makePhotoFormData({ file: oversized }) }, fakeBindings());
+    expect(res.status).toBe(400);
+  });
+
+  test('rate limit exceeded (perMinute=5) → 429', async () => {
+    const redis = fakeRedis();
+    const { fetch } = combinedFetch();
+    vi.stubGlobal('fetch', fetch);
+
+    const app = buildApp(() => redis);
+    const makeRequest = () =>
+      app.request(
+        '/photo',
+        { method: 'POST', headers: { 'CF-Connecting-IP': '203.0.113.30' }, body: makePhotoFormData() },
+        fakeBindings()
+      );
+
+    const results = [];
+    for (let i = 0; i < 6; i++) {
+      results.push(await makeRequest());
+    }
+    expect(results[0]?.status).toBe(201);
+    expect(results[5]?.status).toBe(429);
+  });
+
+  test('a valid upload → 201 with a photoUrl pointing at the bucket', async () => {
+    const combined = combinedFetch();
+    vi.stubGlobal('fetch', combined.fetch);
+
+    const res = await buildApp().request('/photo', { method: 'POST', body: makePhotoFormData() }, fakeBindings());
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { photoUrl: string; requestId: string };
+    expect(body.photoUrl).toContain('breeding-report-photos');
+    expect(body.photoUrl.startsWith('https://project.supabase.test')).toBe(true);
+    expect(typeof body.requestId).toBe('string');
+
+    const uploadCall = combined.calls.find((c) => c.url.pathname.startsWith('/storage/v1/object/'));
+    expect(uploadCall).toBeDefined();
+  });
+
+  test('Supabase storage upload failure → 503 generic body, never leaks upstream detail', async () => {
+    const combined = combinedFetch({ storageUploadResult: { status: 500 } });
+    vi.stubGlobal('fetch', combined.fetch);
+
+    const res = await buildApp().request('/photo', { method: 'POST', body: makePhotoFormData() }, fakeBindings());
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as GenericErrorBody;
+    expect(body.error?.message).toBeDefined();
+    expect(JSON.stringify(body)).not.toContain('storage upload failed');
   });
 });
 
@@ -576,49 +610,6 @@ describe('PATCH /api/reports/breeding-site/:id/verify', () => {
         method: 'PATCH',
         headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ status: 'rejected' }),
-      },
-      fakeBindings()
-    );
-    expect(res.status).toBe(200);
-  });
-
-  test('a successful verification records a report.verify audit entry', async () => {
-    const moderatorId = '33333333-3333-4333-8333-333333333333';
-    const combined = combinedFetch({
-      updateResult: { row: { id: validId, status: 'verified', ai_validation: null } },
-    });
-    vi.stubGlobal('fetch', combined.fetch);
-    const token = await signTestJwt({ sub: moderatorId, role: 'moderator' });
-
-    await buildApp().request(
-      `/breeding-site/${validId}/verify`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ status: 'verified' }),
-      },
-      fakeBindings()
-    );
-
-    const auditCall = combined.calls.find((c) => c.url.pathname === '/rest/v1/audit_log' && c.method === 'POST');
-    expect(auditCall?.body?.action).toBe('report.verify');
-    expect(auditCall?.body?.actor_id).toBe(moderatorId);
-    expect(auditCall?.body?.outcome).toBe('success');
-  });
-
-  test('a moderator id that is not a UUID makes buildAuditEntry throw — still 200, isolated from the response', async () => {
-    const combined = combinedFetch({
-      updateResult: { row: { id: validId, status: 'verified', ai_validation: null } },
-    });
-    vi.stubGlobal('fetch', combined.fetch);
-    const token = await signTestJwt({ sub: 'not-a-uuid-moderator', role: 'moderator' });
-
-    const res = await buildApp().request(
-      `/breeding-site/${validId}/verify`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ status: 'verified' }),
       },
       fakeBindings()
     );

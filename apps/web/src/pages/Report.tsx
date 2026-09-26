@@ -17,6 +17,7 @@ import { TurnstileWidget } from "../features/reports/TurnstileWidget";
 import { env } from "../lib/env";
 import L from "leaflet";
 import { useLeafletMap } from "../features/map/useLeafletMap";
+import { ReportSubmissionList } from "../features/reports/ReportSubmissionList";
 
 const PHOTO_ACCEPT = REPORT_PHOTO_ALLOWED_MIME_TYPES.join(",");
 const PHOTO_MAX_MB = Math.round(REPORT_PHOTO_MAX_BYTES / (1024 * 1024));
@@ -121,13 +122,19 @@ export default function Report() {
       return;
     }
 
+    if (!accessToken) {
+      setPhotoError("You must be signed in to upload a photo.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     setPhotoError(null);
     setPhotoFile(file);
     setPhotoPreviewUrl((previous) => {
       if (previous) URL.revokeObjectURL(previous);
       return URL.createObjectURL(file);
     });
-    uploadPhoto.mutate(file);
+    uploadPhoto.mutate({ file, accessToken });
   }
 
   function handleRemovePhoto() {
@@ -148,6 +155,7 @@ export default function Report() {
   const canSubmit =
     hasLocation &&
     Boolean(turnstileToken) &&
+    Boolean(accessToken) &&
     description.length <= REPORT_DESCRIPTION_MAX_CHARS &&
     !photoBlocking &&
     !mutation.isPending;
@@ -177,7 +185,7 @@ export default function Report() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!canSubmit || lat === null || lng === null || !turnstileToken) return;
+    if (!canSubmit || lat === null || lng === null || !turnstileToken || !accessToken) return;
     mutation.mutate({
       lat,
       lng,
@@ -231,7 +239,6 @@ export default function Report() {
             your neighborhood safer.
           </p>
         </div>
-        <span className="report-private">No account required</span>
       </div>
       <form
         className="report-form"
@@ -447,6 +454,7 @@ export default function Report() {
           </button>
         </div>
       </form>
+      <ReportSubmissionList />
     </main>
   );
 }
