@@ -2,7 +2,6 @@ import { describe, test, expect } from 'vitest';
 import { Hono } from 'hono';
 import type { RateLimitRedisLike } from '@avash/security';
 import { createAlerts } from '../../src/routes/alerts';
-import { createAnnouncements } from '../../src/routes/announcements';
 import { createAuditLog } from '../../src/routes/audit-log';
 import { requestId } from '../../src/middleware/request-id';
 import type { AppEnv, Bindings } from '../../src/types';
@@ -14,8 +13,8 @@ import { signTestJwt } from '../helpers/fakeJwt';
 // frozen schema, then 501) exercised in
 // apps/api/test/routes/{weather,risk-map,symptom-check,reports,resources}.test.ts.
 //
-// `alerts`, `announcements`, and `audit-log` have real handlers now —
-// apps/api/test/routes/{alerts,announcements,audit-log}.test.ts cover
+// `alerts` and `audit-log` have real handlers now —
+// apps/api/test/routes/{alerts,audit-log}.test.ts cover
 // their success/failure paths in full. What remains here is the
 // auth-boundary shape (401/403 before any handler body runs), still worth
 // asserting at this coarse, cross-route level.
@@ -76,35 +75,6 @@ describe('mounted route stubs (contract-shaped placeholders where handlers remai
   test('alerts: POST /push-subscription with no token → 401, not 501', async () => {
     const app = buildApp(createAlerts({ redisFactory: fakeRedis }));
     const res = await app.request('/push-subscription', { method: 'POST' }, fakeBindings());
-    expect(res.status).toBe(401);
-  });
-
-  test('announcements: POST / with no token → 401, not 501', async () => {
-    const app = buildApp(createAnnouncements({ redisFactory: fakeRedis }));
-    const res = await app.request('/', { method: 'POST' }, fakeBindings());
-    expect(res.status).toBe(401);
-  });
-
-  test('announcements: POST / with a citizen token → 403, not 501', async () => {
-    const app = buildApp(createAnnouncements({ redisFactory: fakeRedis }));
-    const token = await signTestJwt({ role: 'citizen' });
-    const res = await app.request(
-      '/',
-      { method: 'POST', headers: { authorization: `Bearer ${token}` } },
-      fakeBindings()
-    );
-    expect(res.status).toBe(403);
-  });
-
-  test('announcements: GET / with no token → 401, not 501', async () => {
-    const app = buildApp(createAnnouncements({ redisFactory: fakeRedis }));
-    const res = await app.request('/', { method: 'GET' }, fakeBindings());
-    expect(res.status).toBe(401);
-  });
-
-  test('announcements: DELETE /:id with no token → 401, not 501', async () => {
-    const app = buildApp(createAnnouncements({ redisFactory: fakeRedis }));
-    const res = await app.request('/abc', { method: 'DELETE' }, fakeBindings());
     expect(res.status).toBe(401);
   });
 
