@@ -194,6 +194,7 @@ describe('CORS allow-list (env-driven, wrangler.toml CORS_ALLOWED_ORIGINS / CORS
     expect(res.status).toBe(204);
     expect(res.headers.get('access-control-allow-origin')).toBe('https://avash.pages.dev');
     expect(res.headers.get('access-control-allow-methods')).toBeTruthy();
+    expect(res.headers.get('access-control-allow-methods')).toContain('PATCH');
   });
 
   // Every PATCH route (report verification, role assignment) is otherwise

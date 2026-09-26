@@ -69,8 +69,7 @@ export type Capability =
 
 export const ROLE_CAPABILITIES: Readonly<Record<AppRole, readonly Capability[]>> = {
   citizen: [],
-  hospital_staff: ['inventory:write'],
-  moderator: ['reports:moderate', 'news:moderate'],
+  moderator: ['reports:moderate', 'news:moderate', 'inventory:write', 'hospitals:manage'],
   admin: ['reports:moderate', 'news:moderate', 'inventory:write', 'hospitals:manage', 'roles:manage'],
 };
 

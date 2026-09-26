@@ -46,6 +46,7 @@ export const UPLOAD_SIGNATURE_RATE_LIMIT = { perMinute: 10 } as const;
 export const ALERT_SUBSCRIBE_RATE_LIMIT = { perMinute: 5 } as const;
 /** `ANNOUNCEMENT_CREATE_RATE_LIMIT` (§14). */
 export const ANNOUNCEMENT_CREATE_RATE_LIMIT = { perMinute: 10 } as const;
+export const REPORT_PHOTO_UPLOAD_RATE_LIMIT = { perMinute: 5, perDay: 20 } as const;
 
 export type RateLimitWindow = 'minute' | 'day';
 

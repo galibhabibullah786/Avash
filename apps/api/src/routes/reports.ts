@@ -287,6 +287,78 @@ export function createReports(options?: CreateReportsOptions) {
           return c.json(buildGenericErrorBody(requestId), 503);
         }
       }
+    )
+    .get(
+      '/',
+      auth(),
+      rateLimit({
+        guard: 'breeding-report',
+        window: 'minute',
+        windowSeconds: 60,
+        limit: BREEDING_REPORT_RATE_LIMIT.perMinute,
+        keyStrategy: 'user',
+        redisFactory: options?.redisFactory,
+      }),
+      async (c) => {
+        const requestId = c.get('requestId');
+        const user = c.get('user');
+        if (!user) return c.json(buildGenericErrorBody(requestId), 401);
+
+        const latStr = c.req.query('lat');
+        const lngStr = c.req.query('lng');
+        const lat = latStr ? Number(latStr) : null;
+        const lng = lngStr ? Number(lngStr) : null;
+
+        if (lat === null || lng === null || isNaN(lat) || isNaN(lng)) {
+          return c.json(buildGenericErrorBody(requestId), 400);
+        }
+
+        try {
+          const supabase = createSupabaseAdmin(c.env);
+          
+          const { data, error } = await supabase
+            .from('breeding_reports')
+            .select('id, description, photo_url, status, created_at, geom')
+            .in('status', ['pending', 'verified', 'resolved'])
+            .order('created_at', { ascending: false })
+            .limit(100);
+
+          if (error) {
+            logger.error('reports/list: Supabase select failed', { requestId });
+            return c.json(buildGenericErrorBody(requestId), 503);
+          }
+
+          const items = (data ?? []).map(row => {
+            const geom = row.geom as { coordinates?: number[] };
+            const pointLat = geom?.coordinates?.[1] ?? 0;
+            const pointLng = geom?.coordinates?.[0] ?? 0;
+            
+            // simple distance limit (radius approx 10km)
+            const dLat = pointLat - lat;
+            const dLng = pointLng - lng;
+            const dist = Math.sqrt(dLat*dLat + dLng*dLng);
+            
+            return {
+              id: row.id,
+              description: row.description,
+              photoUrl: row.photo_url,
+              status: row.status,
+              createdAt: row.created_at,
+              lat: pointLat,
+              lng: pointLng,
+              distance: dist
+            };
+          }).filter(r => r.distance < 0.1);
+
+          return c.json({ items, requestId }, 200);
+        } catch (thrown) {
+          logger.error('reports/list: unexpected failure', {
+            requestId,
+            message: thrown instanceof Error ? thrown.message : String(thrown),
+          });
+          return c.json(buildGenericErrorBody(requestId), 503);
+        }
+      }
     );
 }
 

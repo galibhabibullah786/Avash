@@ -11,8 +11,6 @@ const WEATHER_CACHE_TTL_S = 'public, max-age=0, s-maxage=900, stale-while-revali
 /** `WEATHER_HISTORY_WINDOW_DAYS` (§14) — dashboard history window; also the `?days=` ceiling. */
 const WEATHER_HISTORY_WINDOW_DAYS = 14;
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
 export const weather = new Hono<AppEnv>()
   .get('/latest', async (c) => {
     const requestId = c.get('requestId');
@@ -66,23 +64,23 @@ export const weather = new Hono<AppEnv>()
         ? Math.min(Math.trunc(rawDays), WEATHER_HISTORY_WINDOW_DAYS)
         : WEATHER_HISTORY_WINDOW_DAYS;
 
-    const sinceIso = new Date(Date.now() - windowDays * MS_PER_DAY).toISOString();
-
     try {
       const supabase = createSupabaseAdmin(c.env);
       const { data, error } = await supabase
         .from('region_weather_observations')
         .select('*')
         .eq('region_code', regionCode)
-        .gte('observed_at', sinceIso)
-        .order('observed_at', { ascending: true });
+        .order('observed_at', { ascending: false })
+        .limit(windowDays);
 
       if (error) {
         logger.error('weather/history: Supabase read failed', { requestId });
         return c.json(buildGenericErrorBody(requestId), 503);
       }
 
-      const rows = (data ?? []) as Record<string, unknown>[];
+      // Data was fetched descending to get the latest windowDays rows.
+      // Reverse to restore chronological (ascending) order.
+      const rows = (data ?? []).reverse() as Record<string, unknown>[];
       const regionName = rows.length > 0 ? String(rows[0]?.region_name ?? regionCode) : regionCode;
 
       const points = rows.map((row) => ({

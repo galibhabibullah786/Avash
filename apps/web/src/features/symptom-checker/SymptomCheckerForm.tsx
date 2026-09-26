@@ -1,6 +1,8 @@
 import { useMemo, useState, type FormEvent } from "react";
 import "./symptom-checker.css";
 import symptomCheckerConfigData from "./symptom-checker-config.json";
+import { useSymptomCheck } from "./useSymptomCheck";
+import type { SymptomChecklist, SymptomCheckRequest } from "@avash/types";
 
 type QuestionType = "single_choice" | "multi_choice";
 
@@ -138,11 +140,58 @@ function determineOutcome(
   return resultCategories[3]!;
 }
 
+function buildChecklist(answers: Record<string, string | string[] | undefined>): SymptomChecklist {
+  const fever = ['currently_fever', 'recently_gone'].includes(answers.q1 as string);
+
+  const achesAndPains = ['mild', 'moderate', 'severe'].includes(answers.q4 as string) ||
+    ['mild', 'moderate', 'severe'].includes(answers.q5 as string) ||
+    ['mild', 'moderate', 'severe'].includes(answers.q6 as string);
+
+  const nauseaOrVomiting = ['nausea_only', 'vomited_once_twice', 'vomited_several_times', 'persistent_vomiting'].includes(answers.q7 as string);
+
+  const rash = answers.q8 === 'yes';
+
+  const severeAbdominalPain = answers.q10 === 'yes';
+  const persistentVomiting = answers.q11 === 'yes' || answers.q7 === 'persistent_vomiting';
+
+  const q12 = (answers.q12 || []) as string[];
+  const mucosalBleeding = q12.some(v => ['nose', 'gums', 'blood_vomit', 'blood_stool', 'blood_urine', 'heavy_menstrual', 'other'].includes(v));
+
+  const lethargyOrRestlessness = ['noticeable', 'severe'].includes(answers.q14 as string);
+
+  return {
+    fever,
+    severeAbdominalPain,
+    persistentVomiting,
+    mucosalBleeding,
+    lethargyOrRestlessness,
+    liverEnlargement: false,
+    fluidAccumulation: answers.q13 === 'yes',
+    nauseaOrVomiting,
+    rash,
+    achesAndPains,
+    positiveTourniquetTest: false,
+    leukopenia: false,
+  };
+}
+
+function backendOutcomeToResultCategory(outcome: 'emergency' | 'consult-24h' | 'monitor', guidance: string): ResultCategory {
+  if (outcome === 'emergency') {
+    return { id: 'urgent', label: 'Urgent Medical Attention', message: guidance, description: '', triggerType: '', clinicalThreshold: '' };
+  }
+  if (outcome === 'consult-24h') {
+    return { id: 'dengue_suspected', label: 'Medical Consultation Recommended', message: guidance, description: '', triggerType: '', clinicalThreshold: '' };
+  }
+  return { id: 'dengue_possible', label: 'Monitor Symptoms', message: guidance, description: '', triggerType: '', clinicalThreshold: '' };
+}
+
 export function SymptomCheckerForm() {
   const [answers, setAnswers] = useState<
     Record<string, string | string[] | undefined>
   >({});
   const [result, setResult] = useState<ResultCategory | null>(null);
+
+  const mutation = useSymptomCheck();
 
   const schema = useMemo(() => SYMPTOM_CHECKER_CONFIG.symptomChecker, []);
 
@@ -166,9 +215,31 @@ export function SymptomCheckerForm() {
     });
   }
 
-  function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    setResult(determineOutcome(answers));
+
+    try {
+      const qaPairs = schema.sections.flatMap(section => 
+        section.questions.map(q => {
+          const selected = getSelectedValues(q, answers);
+          const answerLabels = selected.map(val => q.options.find(opt => opt.value === val)?.label).filter(Boolean);
+          return {
+            question: q.question,
+            answer: answerLabels.length > 0 ? answerLabels.join(', ') : 'Not answered'
+          };
+        }).filter(qa => qa.answer !== 'Not answered')
+      );
+
+      const payload: SymptomCheckRequest = { 
+        qaPairs,
+        checklist: buildChecklist(answers)
+      };
+      const response = await mutation.mutateAsync(payload);
+      setResult(backendOutcomeToResultCategory(response.outcome, response.guidance));
+    } catch (error) {
+      console.warn("Backend symptom check failed, using local fallback", error);
+      setResult(determineOutcome(answers));
+    }
   }
 
   return (

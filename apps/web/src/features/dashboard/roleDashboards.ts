@@ -71,20 +71,6 @@ export const ROLE_DASHBOARDS: Readonly<Record<AppRole, RoleDashboard>> = {
     description: 'Everything you can do to protect yourself and your neighbourhood.',
     tiles: dedupeByDestination(CITIZEN_TILES),
   },
-  hospital_staff: {
-    title: 'Hospital dashboard',
-    description:
-      'Keep your hospital’s blood stock current — the public ticker reads it live, so an update here is visible immediately.',
-    tiles: dedupeByDestination([
-      {
-        to: '/resources',
-        label: 'Update blood inventory',
-        description: 'Edit units and platelet counts for the hospitals you are verified for.',
-        capability: 'inventory:write',
-      },
-      ...CITIZEN_TILES,
-    ]),
-  },
   moderator: {
     title: 'Moderator dashboard',
     description: 'Citizen submissions waiting on a human decision.',
@@ -95,11 +81,12 @@ export const ROLE_DASHBOARDS: Readonly<Record<AppRole, RoleDashboard>> = {
         description: 'Verify or reject pending breeding-site reports.',
         capability: 'reports:moderate',
       },
+
       {
-        to: '/announcements',
-        label: 'Announcements',
-        description: 'Broadcast a message to an area, and retire ones you have published.',
-        capability: 'reports:moderate',
+        to: '/admin/resources',
+        label: 'Manage Resources',
+        description: 'Add, update, or remove hospital records and inventory.',
+        capability: 'hospitals:manage',
       },
       ...CITIZEN_TILES,
     ]),
@@ -120,17 +107,12 @@ export const ROLE_DASHBOARDS: Readonly<Record<AppRole, RoleDashboard>> = {
         description: 'Verify or reject pending breeding-site reports.',
         capability: 'reports:moderate',
       },
+
       {
-        to: '/announcements',
-        label: 'Announcements',
-        description: 'Broadcast a message to an area, and retire any published announcement.',
-        capability: 'reports:moderate',
-      },
-      {
-        to: '/resources',
-        label: 'Hospitals & blood stock',
-        description: 'Hospital listings and live inventory.',
-        capability: 'inventory:write',
+        to: '/admin/resources',
+        label: 'Manage Resources',
+        description: 'Add, update, or remove hospital records and inventory.',
+        capability: 'hospitals:manage',
       },
       ...CITIZEN_TILES,
     ]),
@@ -140,7 +122,6 @@ export const ROLE_DASHBOARDS: Readonly<Record<AppRole, RoleDashboard>> = {
 /** Human-readable role names for the UI. Never derived from the enum by string munging. */
 export const ROLE_LABELS: Readonly<Record<AppRole, string>> = {
   citizen: 'Citizen',
-  hospital_staff: 'Hospital staff',
   moderator: 'Moderator',
   admin: 'Administrator',
 };

@@ -20,7 +20,7 @@ import { test, expect, type Page } from '@playwright/test';
 const SUPABASE_PROJECT_REF = 'kdklmbqkczkaakgswlix';
 const STORAGE_KEY = `sb-${SUPABASE_PROJECT_REF}-auth-token`;
 
-type E2ERole = 'citizen' | 'hospital_staff' | 'moderator' | 'admin' | null;
+type E2ERole = 'citizen' | 'moderator' | 'moderator' | 'admin' | null;
 
 function fakeSession(role: E2ERole) {
   return {

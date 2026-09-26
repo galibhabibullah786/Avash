@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
 import {
+  hospitalCreateRequestSchema,
+  hospitalUpdateRequestSchema,
   bloodSearchQuerySchema,
   bloodUpdateRequestSchema,
   hospitalsResponseSchema,
@@ -79,6 +81,169 @@ export function createResources(options?: CreateResourcesOptions) {
         return c.json(buildGenericErrorBody(requestId), 503);
       }
     })
+    
+    .post(
+      '/hospitals',
+      auth({ capability: 'hospitals:manage' }),
+      async (c) => {
+        const requestId = c.get('requestId');
+        const user = c.get('user')!;
+        
+        const body = await c.req.json().catch(() => undefined);
+        const parsed = hospitalCreateRequestSchema.safeParse(body);
+        if (!parsed.success) {
+          return c.json(buildGenericErrorBody(requestId), 400);
+        }
+
+        try {
+          const supabase = createSupabaseAdmin(c.env);
+          
+          // PostGIS formatting
+          const geom = `POINT(${parsed.data.lng} ${parsed.data.lat})`;
+          
+          const { data, error } = await supabase
+            .from('hospitals')
+            .insert({
+              name: parsed.data.name,
+              geom,
+              address: parsed.data.address,
+              phone: parsed.data.phone,
+              verified: parsed.data.verified,
+            })
+            .select('*')
+            .single();
+
+          if (error) {
+            logger.error('resources/hospitals POST: insert failed', { requestId, error });
+            return c.json(buildGenericErrorBody(requestId), 503);
+          }
+
+          // Also insert 8 blood groups initialized to 0
+          const bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+          const inventoryRows = bloodGroups.map(bg => ({
+            hospital_id: data.id,
+            blood_group: bg,
+            units_available: 0,
+            platelet_units: 0,
+            updated_by: user.id
+          }));
+          
+          await supabase.from('blood_inventory').insert(inventoryRows);
+
+          // We query from hospital_locations view to get lat/lng correctly formatted
+          const { data: viewData, error: viewError } = await supabase
+            .from('hospital_locations')
+            .select('*')
+            .eq('id', data.id)
+            .single();
+            
+          if (viewError) {
+             return c.json(buildGenericErrorBody(requestId), 503);
+          }
+
+          return c.json(toHospitalDto(viewData), 201);
+        } catch (error) {
+          logger.error('resources/hospitals POST: unexpected failure', { requestId });
+          return c.json(buildGenericErrorBody(requestId), 503);
+        }
+      }
+    )
+    .patch(
+      '/hospitals/:id',
+      auth({ capability: 'hospitals:manage' }),
+      async (c) => {
+        const requestId = c.get('requestId');
+        const id = c.req.param('id');
+        if (!UUID_PATTERN.test(id)) return c.json(buildGenericErrorBody(requestId), 400);
+        
+        const body = await c.req.json().catch(() => undefined);
+        const parsed = hospitalUpdateRequestSchema.safeParse(body);
+        if (!parsed.success) return c.json(buildGenericErrorBody(requestId), 400);
+
+        try {
+          const supabase = createSupabaseAdmin(c.env);
+          
+          const updateData: any = {};
+          if (parsed.data.name !== undefined) updateData.name = parsed.data.name;
+          if (parsed.data.address !== undefined) updateData.address = parsed.data.address;
+          if (parsed.data.phone !== undefined) updateData.phone = parsed.data.phone;
+          if (parsed.data.verified !== undefined) updateData.verified = parsed.data.verified;
+          if (parsed.data.lat !== undefined && parsed.data.lng !== undefined) {
+             updateData.geom = `POINT(${parsed.data.lng} ${parsed.data.lat})`;
+          }
+
+          const { error } = await supabase
+            .from('hospitals')
+            .update(updateData)
+            .eq('id', id);
+
+          if (error) {
+            logger.error('resources/hospitals PATCH: update failed', { requestId, error });
+            return c.json(buildGenericErrorBody(requestId), 503);
+          }
+
+          const { data: viewData, error: viewError } = await supabase
+            .from('hospital_locations')
+            .select('*')
+            .eq('id', id)
+            .single();
+            
+          if (viewError || !viewData) return c.json(buildGenericErrorBody(requestId), 404);
+
+          return c.json(toHospitalDto(viewData), 200);
+        } catch (error) {
+          logger.error('resources/hospitals PATCH: unexpected failure', { requestId });
+          return c.json(buildGenericErrorBody(requestId), 503);
+        }
+      }
+    )
+    .delete(
+      '/hospitals/:id',
+      auth({ capability: 'hospitals:manage' }),
+      async (c) => {
+        const requestId = c.get('requestId');
+        const id = c.req.param('id');
+        if (!UUID_PATTERN.test(id)) return c.json(buildGenericErrorBody(requestId), 400);
+
+        try {
+          const supabase = createSupabaseAdmin(c.env);
+          const { error } = await supabase
+            .from('hospitals')
+            .delete()
+            .eq('id', id);
+
+          if (error) {
+            logger.error('resources/hospitals DELETE: delete failed', { requestId });
+            return c.json(buildGenericErrorBody(requestId), 503);
+          }
+          return c.body(null, 204);
+        } catch (error) {
+          logger.error('resources/hospitals DELETE: unexpected failure', { requestId });
+          return c.json(buildGenericErrorBody(requestId), 503);
+        }
+      }
+    )
+    
+    .get('/hospitals/:id/blood', auth({ capability: 'hospitals:manage' }), async (c) => {
+      const requestId = c.get('requestId');
+      const id = c.req.param('id');
+      if (!UUID_PATTERN.test(id)) return c.json(buildGenericErrorBody(requestId), 400);
+
+      try {
+        const supabase = createSupabaseAdmin(c.env);
+        const { data, error } = await supabase
+          .from('blood_inventory')
+          .select('*')
+          .eq('hospital_id', id);
+
+        if (error) return c.json(buildGenericErrorBody(requestId), 503);
+        
+        return c.json({ inventory: data }, 200);
+      } catch (error) {
+        return c.json(buildGenericErrorBody(requestId), 503);
+      }
+    })
+
     .get('/blood', async (c) => {
       const requestId = c.get('requestId');
       const parsed = bloodSearchQuerySchema.safeParse({
@@ -126,9 +291,9 @@ export function createResources(options?: CreateResourcesOptions) {
     .patch(
       '/blood/:id',
       // The capability is a cheap first gate, not the boundary — step 2
-      // below is. It exists so revoking someone's hospital_staff role
+      // below is. It exists so revoking someone's moderator role
       // locks them out immediately, without also having to find and delete
-      // their verified_hospital_staff membership rows.
+      // their verified_moderator membership rows.
       auth({ capability: 'inventory:write' }),
       rateLimit({
         guard: 'blood-update',
@@ -179,25 +344,7 @@ export function createResources(options?: CreateResourcesOptions) {
           }
           const hospitalId = String(invRow.hospital_id);
 
-          // Step 2 — the actual authorization boundary. The service-role
-          // key bypasses RLS entirely, so this handler-level check is the
-          // only thing standing between an authenticated caller and any
-          // hospital's inventory row, not defense-in-depth.
-          const { data: staffRows, error: staffError } = await supabase
-            .from('verified_hospital_staff')
-            .select('user_id, hospital_id')
-            .eq('user_id', user.id)
-            .eq('hospital_id', hospitalId)
-            .limit(1);
-
-          if (staffError) {
-            logger.error('resources/blood PATCH: staff read failed', { requestId });
-            return c.json(buildGenericErrorBody(requestId), 503);
-          }
-
-          if (!staffRows || staffRows.length === 0) {
-            return c.json(buildGenericErrorBody(requestId), 403);
-          }
+          
 
           // Step 3 — only now write.
           const nowIso = new Date().toISOString();

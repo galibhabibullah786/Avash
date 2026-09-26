@@ -1,8 +1,7 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { can, type Capability } from '@avash/security';
 import { useSession } from '../features/auth/SessionProvider';
 import { SignOutButton } from '../features/auth/SignOutButton';
-import { useSignOut } from '../features/auth/useSignOut';
 
 // Every page currently routed (router.tsx). Add a link here when a new
 // page is wired into the router so navigation stays complete without
@@ -38,8 +37,6 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 export const Header = () => {
   const { status, role } = useSession();
   const isAuthenticated = status === 'authenticated';
-  const { signOut } = useSignOut();
-  const navigate = useNavigate();
 
   const visibleLinks = NAV_LINKS.filter((link) => {
     if (link?.authenticatedOnly && !isAuthenticated) return false;
@@ -47,12 +44,6 @@ export const Header = () => {
     return true;
   });
 
-  async function handleSignOut() {
-    const result = await signOut();
-    if (result?.ok) {
-      navigate('/');
-    }
-  }
 
   return (
     <header className="navbar">

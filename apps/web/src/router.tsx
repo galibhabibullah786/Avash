@@ -15,8 +15,9 @@ const Prevention = lazy(() => import('./pages/Prevention'));
 const Resources = lazy(() => import('./pages/Resources'));
 const Moderation = lazy(() => import('./pages/Moderation'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
+const ManageResources = lazy(() => import('./pages/admin/ManageResources'));
 const AdminUsers = lazy(() => import('./pages/admin/Users'));
-const Announcements = lazy(() => import('./pages/Announcements'));
+
 
 export const router = createBrowserRouter([
   {
@@ -67,9 +68,11 @@ export const router = createBrowserRouter([
       {
         path: 'report',
         element: (
-          <Suspense fallback={null}>
-            <Report />
-          </Suspense>
+          <ProtectedRoute>
+            <Suspense fallback={null}>
+              <Report />
+            </Suspense>
+          </ProtectedRoute>
         ),
         errorElement: <RouteError />,
       },
@@ -115,12 +118,13 @@ export const router = createBrowserRouter([
         ),
         errorElement: <RouteError />,
       },
+
       {
-        path: 'announcements',
+        path: 'admin/resources',
         element: (
-          <ProtectedRoute capability="reports:moderate">
+          <ProtectedRoute capability="hospitals:manage">
             <Suspense fallback={null}>
-              <Announcements />
+              <ManageResources />
             </Suspense>
           </ProtectedRoute>
         ),

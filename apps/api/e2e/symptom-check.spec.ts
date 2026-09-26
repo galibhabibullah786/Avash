@@ -18,7 +18,7 @@ import { symptomCheckResponseSchema } from '@avash/types';
 test.describe('POST /api/symptom-check', () => {
   test('a well-formed request returns a schema-valid 200 over real HTTP', async ({ request }) => {
     const res = await request.post('/api/symptom-check', {
-      data: { checklist: { fever: true, rash: true } },
+      data: { qaPairs: [], checklist: { fever: true, rash: true, severeAbdominalPain: false, persistentVomiting: false, mucosalBleeding: false, lethargyOrRestlessness: false, liverEnlargement: false, fluidAccumulation: false, nauseaOrVomiting: false, achesAndPains: false, positiveTourniquetTest: false, leukopenia: false } },
     });
     expect(res.status()).toBe(200);
     const body = await res.json();
@@ -28,27 +28,17 @@ test.describe('POST /api/symptom-check', () => {
   test('an empty body is valid per the frozen contract and still returns a schema-valid 200', async ({
     request,
   }) => {
-    const res = await request.post('/api/symptom-check', { data: {} });
+    const res = await request.post('/api/symptom-check', { data: { qaPairs: [], checklist: { fever: false, severeAbdominalPain: false, persistentVomiting: false, mucosalBleeding: false, lethargyOrRestlessness: false, liverEnlargement: false, fluidAccumulation: false, nauseaOrVomiting: false, rash: false, achesAndPains: false, positiveTourniquetTest: false, leukopenia: false } } });
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(() => symptomCheckResponseSchema.parse(body)).not.toThrow();
     expect(body.outcome).toBe('monitor');
   });
 
-  test('an over-length symptomText is a generic 400, not a raw validation error', async ({ request }) => {
-    const res = await request.post('/api/symptom-check', {
-      data: { symptomText: 'a'.repeat(501) },
-    });
-    expect(res.status()).toBe(400);
-    const body = await res.json();
-    expect(body.error.message).toBeTruthy();
-    expect(body.error.requestId).toBeTruthy();
-    expect(JSON.stringify(body).toLowerCase()).not.toContain('stack');
-  });
 
   test('a disallowed CORS origin gets no Access-Control-Allow-Origin header', async ({ request }) => {
     const res = await request.post('/api/symptom-check', {
-      data: {},
+      data: { qaPairs: [], checklist: { fever: false, severeAbdominalPain: false, persistentVomiting: false, mucosalBleeding: false, lethargyOrRestlessness: false, liverEnlargement: false, fluidAccumulation: false, nauseaOrVomiting: false, rash: false, achesAndPains: false, positiveTourniquetTest: false, leukopenia: false } },
       headers: { Origin: 'https://evil.example' },
     });
     expect(res.headers()['access-control-allow-origin']).toBeUndefined();

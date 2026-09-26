@@ -214,6 +214,25 @@ export const riskDetail = new Hono<AppEnv>().get('/:regionId', async (c) => {
 
     const weatherRow = (weatherRows ?? [])[0] as Record<string, unknown> | undefined;
 
+    const { data: verifiedReportsData, error: verifiedReportsError } = await supabase
+      .rpc('verified_reports_in_region', { p_region_id: regionId });
+
+    if (verifiedReportsError) {
+      logger.error('risk/:regionId: verified_reports_in_region RPC failed', { requestId });
+      return c.json(buildGenericErrorBody(requestId), 503);
+    }
+    
+    const verifiedReportsRows = (verifiedReportsData ?? []) as Record<string, unknown>[];
+    const verifiedReports = verifiedReportsRows.map(row => ({
+      id: String(row.id),
+      lat: Number(row.lat),
+      lng: Number(row.lng),
+      description: row.description ? String(row.description) : null,
+      photoUrl: row.photo_url ? String(row.photo_url) : null,
+      aiCategory: row.ai_category ? String(row.ai_category) : null,
+      createdAt: String(row.created_at),
+    }));
+
     const predictions = Array.from(latestByHorizon.values()).map((row) => {
       const modelVersion = String(row.model_version);
       return {
@@ -234,6 +253,7 @@ export const riskDetail = new Hono<AppEnv>().get('/:regionId', async (c) => {
       regionName: regionRow?.name !== undefined ? String(regionRow.name) : '',
       predictions,
       latestWeather: weatherRow ? toWeatherObservationDto(weatherRow) : null,
+      verifiedReports,
       requestId,
     });
     return c.json(body, 200);

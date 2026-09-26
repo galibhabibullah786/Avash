@@ -1,0 +1,230 @@
+.gemini-popup {
+  position: fixed;
+  bottom: var(--space-4, 24px);
+  right: var(--space-4, 24px);
+  z-index: 9999;
+  font-family: var(--font-sans);
+}
+
+.gemini-fab {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1A73E8, #8E24AA);
+  border: none;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.gemini-fab:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+.gemini-fab svg {
+  width: 28px;
+  height: 28px;
+}
+
+.gemini-chat-window {
+  position: absolute;
+  bottom: 76px;
+  right: 0;
+  width: 380px;
+  height: 550px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 120px);
+  background-color: var(--color-surface, #131c2e);
+  border: 1px solid var(--color-border, #263048);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.gemini-header {
+  padding: var(--space-3, 16px);
+  background: linear-gradient(90deg, #1a253c, #131c2e);
+  border-bottom: 1px solid var(--color-border, #263048);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.gemini-header-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  font-weight: 600;
+  color: var(--color-text, #f5f7fa);
+}
+
+.gemini-header-title svg {
+  width: 20px;
+  height: 20px;
+  color: #a46cf5;
+}
+
+.gemini-close-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-muted, #b8c2d1);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  padding: 4px;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.gemini-close-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--color-text, #f5f7fa);
+}
+
+.gemini-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-3, 16px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 16px);
+  scroll-behavior: smooth;
+}
+
+.gemini-message {
+  max-width: 85%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  line-height: 1.5;
+  font-size: 14px;
+  word-wrap: break-word;
+}
+
+.gemini-message.user {
+  align-self: flex-end;
+  background-color: var(--color-primary, #0b6e4f);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.gemini-message.bot {
+  align-self: flex-start;
+  background-color: #212d43;
+  color: var(--color-text, #f5f7fa);
+  border-bottom-left-radius: 4px;
+}
+
+.gemini-typing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 16px;
+}
+
+.gemini-dot {
+  width: 6px;
+  height: 6px;
+  background-color: var(--color-text-muted, #b8c2d1);
+  border-radius: 50%;
+  animation: pulse 1.5s infinite;
+}
+
+.gemini-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.gemini-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+
+.gemini-input-area {
+  padding: var(--space-3, 16px);
+  border-top: 1px solid var(--color-border, #263048);
+  display: flex;
+  gap: var(--space-2, 8px);
+  background-color: var(--color-surface, #131c2e);
+}
+
+.gemini-input {
+  flex: 1;
+  background-color: #0b1220;
+  border: 1px solid var(--color-border, #263048);
+  border-radius: 20px;
+  padding: 10px 16px;
+  color: var(--color-text, #f5f7fa);
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.gemini-input:focus {
+  border-color: #a46cf5;
+}
+
+.gemini-send-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background-color: #a46cf5;
+  border: none;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  flex-shrink: 0;
+}
+
+.gemini-send-btn:hover:not(:disabled) {
+  background-color: #9258e6;
+}
+
+.gemini-send-btn:disabled {
+  background-color: #4a4a4a;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Scrollbar styles for the message area */
+.gemini-messages::-webkit-scrollbar {
+  width: 6px;
+}
+.gemini-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+.gemini-messages::-webkit-scrollbar-thumb {
+  background-color: var(--color-border, #263048);
+  border-radius: 10px;
+}

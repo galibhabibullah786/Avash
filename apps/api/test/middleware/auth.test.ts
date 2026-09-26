@@ -70,9 +70,9 @@ describe('auth middleware', () => {
     expect(res.status).toBe(200);
   });
 
-  test('hospital_staff cannot reach a moderation capability', async () => {
+  test('moderator cannot reach an admin capability', async () => {
     const app = buildApp({ capability: 'reports:moderate' });
-    const token = await signTestJwt({ role: 'hospital_staff' });
+    const token = await signTestJwt({ role: 'moderator' });
     const res = await app.request('/protected', { headers: { Authorization: `Bearer ${token}` } }, env);
     expect(res.status).toBe(403);
   });

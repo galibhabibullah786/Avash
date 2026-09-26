@@ -145,8 +145,10 @@ export default function Resources() {
               <thead>
                 <tr>
                   <th style={{ paddingLeft: "25px", paddingTop: "18px" }}>
-                    Hospital
+                    Hospital Name
                   </th>
+                  <th style={{ paddingTop: "18px" }}>Address</th>
+                  <th style={{ paddingTop: "18px" }}>Contact</th>
                   <th style={{ paddingTop: "18px" }}>Units</th>
                   <th style={{ paddingTop: "18px" }}>Platelets</th>
                   <th style={{ paddingTop: "18px" }}>Distance</th>
@@ -175,6 +177,17 @@ export default function Resources() {
                             Verified
                           </span>
                         ) : null}
+                      </td>
+                      <td
+                        style={{ paddingBottom: isLast ? "18px" : undefined }}
+                      >
+                        {row?.hospital?.address ?? "—"}
+                      </td>
+
+                      <td
+                        style={{ paddingBottom: isLast ? "18px" : undefined }}
+                      >
+                        {row?.hospital?.phone ?? "—"}
                       </td>
                       <td
                         style={{ paddingBottom: isLast ? "18px" : undefined }}

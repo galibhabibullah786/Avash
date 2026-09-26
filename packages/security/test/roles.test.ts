@@ -77,12 +77,7 @@ describe('can', () => {
     }
   });
 
-  test('moderator and hospital_staff are disjoint, not ranked', () => {
-    expect(can('moderator', 'reports:moderate')).toBe(true);
-    expect(can('moderator', 'inventory:write')).toBe(false);
-    expect(can('hospital_staff', 'inventory:write')).toBe(true);
-    expect(can('hospital_staff', 'reports:moderate')).toBe(false);
-  });
+  
 
   test('only admin may manage roles', () => {
     for (const role of appRoleSchema.options) {
@@ -123,7 +118,7 @@ describe('isModerator / isAdmin', () => {
     expect(isModerator('moderator')).toBe(true);
     expect(isModerator('admin')).toBe(true);
     expect(isModerator('citizen')).toBe(false);
-    expect(isModerator('hospital_staff')).toBe(false);
+    expect(isModerator('citizen')).toBe(false);
     expect(isModerator(null)).toBe(false);
     expect(isModerator(undefined)).toBe(false);
   });
