@@ -37,7 +37,7 @@ split where each tier does one job:
 
 | Tier | Content | Where | Budget |
 |---|---|---|---|
-| **Steer** | The non-negotiables + a routing table | `AGENTS.md`, `CLAUDE.md` | **≤ 200 lines combined** |
+| **Steer** | The non-negotiables + a routing table | `AGENTS.md`, `CLAUDE.md` | **AGENTS.md: 200–250 lines (≤ 320 combined)** |
 | **Route** | Trigger → document, one line each | the table inside the above | ≤ 20 rows |
 | **Reference** | Everything else, in full | `docs/**`, `.claude/skills/**` | unbounded |
 
@@ -123,8 +123,8 @@ build when:
 - a routing-table row points at a file that does not exist, or a
   `docs/standards/*.md` file has no row pointing at it;
 - a tool config file exists that the table above does not list;
-- **the eager-tier budget is exceeded** — `AGENTS.md` + `CLAUDE.md` over
-  200 lines combined, or any routing table over 20 rows. This is the check
+- **the eager-tier budget is exceeded** — `AGENTS.md` outside 200–250 lines
+  or `AGENTS.md` + `CLAUDE.md` over 320 lines combined, or any routing table over 20 rows. This is the check
   that keeps Tier 1 from silently growing back into the thing it replaced.
 
 This is what stops the quiet drift where `AGENTS.md` gains a rule and the

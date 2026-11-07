@@ -1,7 +1,7 @@
 {
   "project": "Avash",
   "canonicalRules": "AGENTS.md",
-  "agentsMdSha256": "aba1f42f119ecb5ca660e921b6c85cae04d09c8e32109f7ae56fbd4aa6629b74",
+  "agentsMdSha256": "d504c51a5f0bb33ea98c76d668cfa0127edf26a677701dd08bdc983de8f2394d",
   "enforcement": "docs/standards/agent-compliance.md",
   "customInstructions": "Canon is AGENTS.md and it applies unprompted — a request that omits the git workflow, the testing requirement, or the secrets rule waives none of them. AGENTS.md carries the non-negotiables plus a read-before-you-act table; load the one row matching your task rather than preloading standards docs. Skills cover the same ground and self-surface: testing, git-workflow, parallel-work, deploy, react, vite, hono, cloudflare-workers, postgis. System source of truth is docs/PROJECT_PLAN.md — conflict with it means stop and flag, never resolve silently.",
   "skills": [

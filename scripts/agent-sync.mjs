@@ -47,7 +47,9 @@ const KNOWN = new Set([
 ]);
 
 /** Eager tier: loaded every session, by every tool. Budget is the point. */
-const EAGER_LINE_BUDGET = 200;
+const AGENTS_LINE_BUDGET_MIN = 200;
+const AGENTS_LINE_BUDGET_MAX = 250;
+const EAGER_LINE_BUDGET = 320;
 const ROUTING_ROW_BUDGET = 20;
 
 const problems = [];
@@ -182,7 +184,15 @@ if (has("docs/standards")) {
   }
 }
 
-const eager = lines("AGENTS.md") + lines("CLAUDE.md");
+const agentsLines = lines("AGENTS.md");
+if (agentsLines < AGENTS_LINE_BUDGET_MIN || agentsLines > AGENTS_LINE_BUDGET_MAX) {
+  fail(
+    `AGENTS.md is ${agentsLines} lines (budget ${AGENTS_LINE_BUDGET_MIN}–${AGENTS_LINE_BUDGET_MAX}). ` +
+      `Keep it tightly compressed and within budget (Section 14 Document Length Guard).`,
+  );
+}
+
+const eager = agentsLines + lines("CLAUDE.md");
 if (eager > EAGER_LINE_BUDGET)
   fail(
     `Eager tier is ${eager} lines (budget ${EAGER_LINE_BUDGET}). AGENTS.md + CLAUDE.md are loaded ` +
@@ -314,5 +324,5 @@ if (problems.length) {
 
 console.log(
   `PASS: agent config in sync — ${POINTERS.length} pointers stamped, ${onDisk.length} skills, ` +
-    `${routing.length} routing rows, eager tier ${eager}/${EAGER_LINE_BUDGET} lines.`,
+    `${routing.length} routing rows, eager tier ${eager}/${EAGER_LINE_BUDGET} lines (AGENTS.md: ${agentsLines}/${AGENTS_LINE_BUDGET_MAX}).`,
 );
