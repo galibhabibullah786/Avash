@@ -28,12 +28,10 @@ runs:
   steps:
     - uses: pnpm/action-setup@v5
 
-    # Node 24: wrangler 4 requires >=22, and the app images (ADR-012) pin
-    # node:24 — the runner matching the image keeps a "works in CI, fails
-    # in the container" class of bug from existing.
+    # Node 22 LTS: standardized project canon across package.json, CI, and local dev.
     - uses: actions/setup-node@v4
       with:
-        node-version: 24
+        node-version: 22
         cache: pnpm
 
     - if: inputs.turbo-cache == 'true'

@@ -47,7 +47,7 @@ export default function RiskMap() {
     <main className="inner-page">
       <div className="inner-page__intro">
         <div>
-          <p className="eyebrow">District analysis</p>
+          <p className="eyebrow">জেলা ও এলাকাভিত্তিক বিশ্লেষণ</p>
           {regions.length > 0 ? (
             <label className="location-select">
               <select
@@ -62,10 +62,10 @@ export default function RiskMap() {
               </select>
             </label>
           ) : (
-            <h1>Risk Map</h1>
+            <h1>ঝুঁকির মানচিত্র</h1>
           )}
           <p className="inner-lede">
-            A closer look at the signals shaping dengue risk in this district.
+            এই জেলার ডেঙ্গু ঝুঁকি পরিস্থিতি এবং পারিপার্শ্বিক প্রভাবকসমূহের বিস্তারিত চিত্র।
           </p>
         </div>
       </div>
@@ -74,19 +74,19 @@ export default function RiskMap() {
 
       {!isOnline ? (
         <p className="alert alert--error" data-testid="status-offline">
-          You are offline
+          আপনি অফলাইনে আছেন
         </p>
       ) : riskMap.isLoading ? (
         <p className="checker-time" data-testid="status-loading">
-          Loading map data…
+          মানচিত্রের তথ্য লোড হচ্ছে…
         </p>
       ) : riskMap.isError ? (
         <p className="alert alert--error" data-testid="status-error">
-          API: unavailable right now. Please try again later.
+          সার্ভার সংযোগ এই মুহূর্তে অনুপলব্ধ। অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।
         </p>
       ) : features.length === 0 ? (
         <p className="checker-time" data-testid="status-empty">
-          No risk predictions yet — the prediction pipeline has not run.
+          এখনো কোনো ঝুঁকি পূর্বাভাস প্রস্তুত হয়নি।
         </p>
       ) : (
         <p
@@ -94,7 +94,7 @@ export default function RiskMap() {
           data-testid="status-success"
           style={{ color: "var(--teal)" }}
         >
-          Showing {features.length} region{features.length === 1 ? "" : "s"}.
+          {features.length}টি এলাকার ঝুঁকি তথ্য প্রদর্শিত হচ্ছে।
         </p>
       )}
 
@@ -105,8 +105,8 @@ export default function RiskMap() {
         <div className="chart-panel map-panel">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Interactive map</p>
-              <h2>Regional risk overview</h2>
+              <p className="eyebrow">ইন্টারেক্টিভ মানচিত্র</p>
+              <h2>এলাকাভিত্তিক ঝুঁকি পর্যালোচনা</h2>
             </div>
           </div>
           <div
@@ -116,7 +116,7 @@ export default function RiskMap() {
             style={{ height: "400px", width: "100%" }}
           >
             {riskMap.isLoading ? (
-              <p className="map-frame__status">Loading map data…</p>
+              <p className="map-frame__status">মানচিত্রের তথ্য লোড হচ্ছে…</p>
             ) : null}
           </div>
         </div>
@@ -128,8 +128,8 @@ export default function RiskMap() {
         >
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Legend</p>
-              <h2>Risk levels</h2>
+              <p className="eyebrow">নির্দেশিকা</p>
+              <h2>ঝুঁকির মাত্রা</h2>
             </div>
           </div>
           <ul className="map-legend">
@@ -164,7 +164,7 @@ export default function RiskMap() {
             aria-pressed={option === horizonWeeks}
             onClick={() => setHorizonWeeks(option)}
           >
-            <span>{option} weeks</span>
+            <span>{option === 2 ? "২ সপ্তাহ" : "৪ সপ্তাহ"} ({option} weeks)</span>
             <i>→</i>
           </button>
         ))}
@@ -180,13 +180,13 @@ export default function RiskMap() {
           {regionRisk.isLoading ? (
             <div className="chart-panel">
               <p className="checker-time" data-testid="status-loading">
-                Loading region detail…
+                এলাকার বিস্তারিত তথ্য লোড হচ্ছে…
               </p>
             </div>
           ) : regionRisk.isError ? (
             <div className="chart-panel">
               <p className="alert alert--error" data-testid="status-error">
-                Unable to load region detail right now.
+                এই মুহূর্তে বিস্তারিত তথ্য লোড করা যায়নি।
               </p>
             </div>
           ) : (
@@ -194,24 +194,24 @@ export default function RiskMap() {
               <div className="chart-panel">
                 <div className="panel-heading">
                   <div>
-                    <p className="eyebrow">Predictions</p>
+                    <p className="eyebrow">ঝুঁকি পূর্বাভাস</p>
                     <h2>{activeRegionName}</h2>
                   </div>
                 </div>
                 <div className="condition-list">
                   {(regionRisk.data?.predictions ?? []).length === 0 ? (
-                    <p>No prediction available for this region.</p>
+                    <p>এই এলাকার জন্য কোনো পূর্বাভাস নেই।</p>
                   ) : (
                     (regionRisk.data?.predictions ?? []).map((prediction) => (
                       <div className="condition" key={prediction.horizonWeeks}>
                         <div>
-                          <b>{prediction.horizonWeeks}-week horizon</b>
+                          <b>{prediction.horizonWeeks === 2 ? "২ সপ্তাহ" : "৪ সপ্তাহ"} আগাম পূর্বাভাস</b>
                           <small>
                             {(prediction.topFactors ?? []).length === 0
-                              ? "No factor breakdown available."
+                              ? "কোনো বিশেষ কারণ চিহ্নিত করা যায়নি।"
                               : (prediction.topFactors ?? [])
                                 .map(
-                                  (f) => `${f.feature} ${f.direction} risk`,
+                                  (f) => `${f.feature} ${f.direction} ঝুঁকি`,
                                 )
                                 .join(", ")}
                           </small>
@@ -230,8 +230,8 @@ export default function RiskMap() {
               <div className="signals-panel">
                 <div className="panel-heading">
                   <div>
-                    <p className="eyebrow">Current conditions</p>
-                    <h2>Latest weather</h2>
+                    <p className="eyebrow">বর্তমান অবস্থা</p>
+                    <h2>সর্বশেষ আবহাওয়া</h2>
                   </div>
                 </div>
                 <div className="condition-list">
@@ -239,7 +239,7 @@ export default function RiskMap() {
                     <>
                       <div className="condition">
                         <div>
-                          <b>Temperature</b>
+                          <b>তাপমাত্রা</b>
                         </div>
                         <strong>
                           {regionRisk.data.latestWeather.tempMeanC ?? "—"}°C
@@ -247,7 +247,7 @@ export default function RiskMap() {
                       </div>
                       <div className="condition">
                         <div>
-                          <b>Humidity</b>
+                          <b>আর্দ্রতা</b>
                         </div>
                         <strong>
                           {regionRisk.data.latestWeather.humidityPct ?? "—"}%
@@ -255,7 +255,7 @@ export default function RiskMap() {
                       </div>
                     </>
                   ) : (
-                    <p>No weather observations yet.</p>
+                    <p>আবহাওয়ার কোনো তথ্য পাওয়া যায়নি।</p>
                   )}
                 </div>
               </div>

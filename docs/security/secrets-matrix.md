@@ -63,14 +63,11 @@ now refuses to start without them rather than warning.
 | `CLOUDINARY_API_SECRET` | server-only | `apps/api` (`POST /api/uploads/signature`) — the value `signUpload()` hashes into the signature; never logged, never returned in any response | `apps/api/.dev.vars`, `.env` |
 | `VITE_PUBLIC_TURNSTILE_SITE_KEY` | client | widget render only | `apps/web/.env` |
 | `VITE_PUBLIC_VAPID_PUBLIC_KEY` | client (`apps/web`) | Push subscription registration | `apps/web/.env` |
-| `VAPID_PUBLIC_KEY` | server-only | `ml/serving/predict.py` **and** `apps/notify` (ADR-016) — Web Push signing needs both halves of the keypair; same value as `VITE_PUBLIC_VAPID_PUBLIC_KEY` | `.env` |
-| `VAPID_PRIVATE_KEY` | server-only | `ml/serving/predict.py` **and** `apps/notify` (ADR-016) — sends push notifications, never in any deployed app reachable by a browser | `.env` |
-| `INNGEST_EVENT_KEY` | server-only | `apps/notify` — authenticates event sends to Inngest (the announcement-published trigger and the sweep both send through this) | none yet (§ below) |
-| `INNGEST_SIGNING_KEY` | server-only | `apps/notify` — verifies that an inbound Inngest function invocation actually came from Inngest, not a forged request | none yet (§ below) |
-| `ANNOUNCEMENT_WEBHOOK_SECRET` | server-only | `apps/notify`'s Supabase Database Webhook receiver — the shared-secret header compared in constant time; the webhook body itself is untrusted (critique §11, `temp/live-announcement-push.md`) | none yet (§ below) |
-| `VERCEL_TOKEN` | CI/deploy-only, a real secret | `.github/workflows/deploy-notify.yml` — authenticates `vercel pull` / `vercel build` / `vercel deploy` | GitHub Actions secret only |
-| `VERCEL_ORG_ID` | CI/deploy-only | `.github/workflows/deploy-notify.yml` — identifies the Vercel org/team `apps/notify` deploys under | GitHub Actions secret only |
-| `VERCEL_PROJECT_ID` | CI/deploy-only | `.github/workflows/deploy-notify.yml` — identifies the Vercel project `apps/notify` deploys to | GitHub Actions secret only |
+| `VAPID_PUBLIC_KEY` | server-only | `ml/serving/predict.py` and Supabase Edge Function (`risk-alerts`) — Web Push signing needs both halves of the keypair; same value as `VITE_PUBLIC_VAPID_PUBLIC_KEY` | `.env` |
+| `VAPID_PRIVATE_KEY` | server-only | `ml/serving/predict.py` and Supabase Edge Function (`risk-alerts`) — sends push notifications, never in any deployed app reachable by a browser | `.env` |
+| `INNGEST_EVENT_KEY` | server-only | Supabase Edge Function (`risk-alerts`) — authenticates event sends to Inngest | Supabase Edge Function secret |
+| `INNGEST_SIGNING_KEY` | server-only | Supabase Edge Function (`risk-alerts`) — verifies that an inbound Inngest function invocation actually came from Inngest | Supabase Edge Function secret |
+| `SUPABASE_ACCESS_TOKEN` | CI/deploy-only | GitHub Actions — authenticates Supabase CLI to deploy Edge Functions | GitHub Actions secret only |
 | `DATABASE_URL_LOCAL` | local-only | migration/seed tooling pointed at the `compose.yaml` `db` container (ADR-011) — a disposable localhost database, never a deployed one | `.env` |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT` | local-only | optional overrides for the `db` container's defaults (`postgres` / `postgres` / `avash` / `54322`), read by Compose | `.env` |
 | `DATABASE_URL_HOSTED` | server-only, a real secret | `scripts/seed-db.ts` when passed `--hosted` (§ 9a) — full superuser access to a real Supabase project's Postgres | `.env` |

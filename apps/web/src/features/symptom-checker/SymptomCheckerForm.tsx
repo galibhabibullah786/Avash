@@ -177,12 +177,12 @@ function buildChecklist(answers: Record<string, string | string[] | undefined>):
 
 function backendOutcomeToResultCategory(outcome: 'emergency' | 'consult-24h' | 'monitor', guidance: string): ResultCategory {
   if (outcome === 'emergency') {
-    return { id: 'urgent', label: 'Urgent Medical Attention', message: guidance, description: '', triggerType: '', clinicalThreshold: '' };
+    return { id: 'urgent', label: 'জরুরি চিকিৎসা সেবা প্রয়োজন (Urgent Medical Attention)', message: guidance, description: '', triggerType: '', clinicalThreshold: '' };
   }
   if (outcome === 'consult-24h') {
-    return { id: 'dengue_suspected', label: 'Medical Consultation Recommended', message: guidance, description: '', triggerType: '', clinicalThreshold: '' };
+    return { id: 'dengue_suspected', label: 'দ্রুত চিকিৎসকের পরামর্শ নিন (Medical Consultation Recommended)', message: guidance, description: '', triggerType: '', clinicalThreshold: '' };
   }
-  return { id: 'dengue_possible', label: 'Monitor Symptoms', message: guidance, description: '', triggerType: '', clinicalThreshold: '' };
+  return { id: 'dengue_possible', label: 'লক্ষণ পর্যবেক্ষণ করুন (Monitor Symptoms)', message: guidance, description: '', triggerType: '', clinicalThreshold: '' };
 }
 
 export function SymptomCheckerForm() {
@@ -249,7 +249,7 @@ export function SymptomCheckerForm() {
       <form
         className="symptom-checker__form"
         onSubmit={handleSubmit}
-        aria-label="Dengue symptom checker"
+        aria-label="ডেঙ্গুর লক্ষণ যাচাইকরণ"
       >
         {schema.sections.map((section) => (
           <section key={section.id} className="symptom-checker__section">
@@ -309,7 +309,7 @@ export function SymptomCheckerForm() {
         ))}
 
         <button className="button" type="submit">
-          Check my symptoms
+          লক্ষণ যাচাই করুন
         </button>
       </form>
 

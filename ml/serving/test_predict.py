@@ -110,3 +110,73 @@ def test_find_crossings_ignores_low_and_moderate_latest():
         {"region_id": "r2", "horizon_weeks": 4, "risk_level": "low", "prediction_date": "2026-08-17"},
     ]
     assert predict._find_crossings(predictions) == []
+
+
+def test_fetch_model_from_hub_with_strict_tag(tmp_path, monkeypatch):
+    dest = tmp_path / "model.onnx"
+    recorded_kwargs = {}
+
+    def fake_download(**kwargs):
+        recorded_kwargs.update(kwargs)
+        dest.write_text("dummy-onnx-content")
+        return str(dest)
+
+    fake_hf = SimpleNamespace(hf_hub_download=fake_download)
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hf)
+
+    result = predict.fetch_model_from_hub(
+        repo_id="custom-org/custom-model",
+        tag="v1.2.0",
+        filename="model.onnx",
+        destination=dest,
+    )
+
+    assert result == dest
+    assert recorded_kwargs.get("repo_id") == "custom-org/custom-model"
+    assert recorded_kwargs.get("revision") == "v1.2.0"
+    assert recorded_kwargs.get("filename") == "model.onnx"
+
+
+def test_fetch_model_from_hub_falls_back_to_existing_disk_cache(tmp_path, monkeypatch, caplog):
+    dest = tmp_path / "model.onnx"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text("pre-existing-cached-onnx")
+
+    def failing_download(**_kwargs):
+        raise RuntimeError("Hugging Face Hub connection timed out")
+
+    fake_hf = SimpleNamespace(hf_hub_download=failing_download)
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hf)
+
+    with caplog.at_level(logging.INFO):
+        result = predict.fetch_model_from_hub(
+            repo_id="avash-health/avash-dengue-models",
+            tag="v1.0.0",
+            destination=dest,
+            expected_sha256="mismatched_sha_forcing_download_attempt",
+        )
+
+    assert result == dest
+    assert any("Hugging Face Hub model fetch failed" in record.getMessage() for record in caplog.records)
+    assert any("Disk cache fallback" in record.getMessage() for record in caplog.records)
+
+
+def test_fetch_model_from_hub_graceful_none_when_uncached_and_offline(tmp_path, monkeypatch, caplog):
+    dest = tmp_path / "non-existent-model.onnx"
+
+    def failing_download(**_kwargs):
+        raise ConnectionError("No network route to host")
+
+    fake_hf = SimpleNamespace(hf_hub_download=failing_download)
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hf)
+
+    with caplog.at_level(logging.INFO):
+        result = predict.fetch_model_from_hub(
+            repo_id="avash-health/avash-dengue-models",
+            tag="v1.0.0",
+            destination=dest,
+        )
+
+    # Returns None safely without throwing
+    assert result is None
+    assert any("skipping inference pass gracefully without failing" in record.getMessage() for record in caplog.records)

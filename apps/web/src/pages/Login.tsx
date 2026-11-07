@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { SignInForm } from "../features/auth/SignInForm";
 import { SignUpForm } from "../features/auth/SignUpForm";
 import "../features/auth/auth.css";
@@ -7,6 +8,16 @@ type Mode = "sign-in" | "sign-up";
 
 export default function Login() {
   const [mode, setMode] = useState<Mode>("sign-in");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [showConfirmedToast, setShowConfirmedToast] = useState(
+    searchParams.get("confirmed") === "true"
+  );
+
+  function dismissToast() {
+    setShowConfirmedToast(false);
+    searchParams.delete("confirmed");
+    setSearchParams(searchParams, { replace: true });
+  }
 
   return (
     <main className="auth-page">
@@ -14,15 +25,28 @@ export default function Login() {
         <span className="navbar__mark">✦</span>
         <strong>আভাস</strong>
       </div>
-      <h1>Welcome back</h1>
+      <h1>স্বাগতম</h1>
       <p className="auth-page__lede">
-        Your early-warning dashboard for a safer, healthier community.
+        একটি নিরাপদ ও সুস্থ সমাজের জন্য আপনার আগাম পূর্বাভাস প্ল্যাটফর্ম।
       </p>
       <div className="card">
+        {showConfirmedToast && (
+          <div className="auth-toast" role="status" aria-live="polite">
+            <span>ইমেইল যাচাইকরণ সফলভাবে সম্পন্ন হয়েছে! আপনার অ্যাকাউন্টে লগইন করুন।</span>
+            <button
+              type="button"
+              className="auth-toast__close"
+              aria-label="বন্ধ করুন"
+              onClick={dismissToast}
+            >
+              ×
+            </button>
+          </div>
+        )}
         <div
           className="auth-toggle"
           role="tablist"
-          aria-label="Sign in or sign up"
+          aria-label="লগইন অথবা নিবন্ধন করুন"
         >
           <button
             type="button"
@@ -33,7 +57,7 @@ export default function Login() {
             }
             onClick={() => setMode("sign-in")}
           >
-            Sign in
+            লগইন
           </button>
           <button
             type="button"
@@ -44,7 +68,7 @@ export default function Login() {
             }
             onClick={() => setMode("sign-up")}
           >
-            Sign up
+            নিবন্ধন করুন
           </button>
         </div>
 

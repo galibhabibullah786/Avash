@@ -13,11 +13,11 @@ msg_file="$1"
 subject=$(head -n 1 "$msg_file")
 
 # docs/standards/git-workflow.md § Conventional Commits
-type_re='^(feat|fix|docs|chore|ci|sec)(\([a-z0-9-]+\))?!?: .+'
+type_re='^(feat|fix|docs|chore|ci|sec|refactor)(\([a-z0-9-]+\))?!?: .+'
 
 if ! printf '%s\n' "$subject" | grep -qE "$type_re"; then
   echo "commit-msg: subject does not start with a Conventional Commits type."
-  echo "  Expected one of: feat: fix: docs: chore: ci: sec: (optionally with a (scope))"
+  echo "  Expected one of: feat: fix: docs: chore: ci: sec: refactor: (optionally with a (scope))"
   echo "  Got: $subject"
   echo "  See docs/standards/git-workflow.md § Conventional Commits."
   exit 1

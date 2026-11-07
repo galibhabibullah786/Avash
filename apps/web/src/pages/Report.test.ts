@@ -33,8 +33,22 @@ vi.mock('../features/reports/useSubmitBreedingReport', () => ({
   }),
 }));
 
+vi.mock('../features/reports/useUploadReportPhoto', () => ({
+  useUploadReportPhoto: () => ({
+    isPending: false,
+    isSuccess: false,
+    isError: false,
+    error: null,
+    mutate: vi.fn(),
+  }),
+}));
+
 vi.mock('../features/reports/TurnstileWidget', () => ({
   TurnstileWidget: () => null,
+}));
+
+vi.mock('../features/reports/ReportSubmissionList', () => ({
+  ReportSubmissionList: () => null,
 }));
 
 describe('Report — location spinner + disabled inputs (feature 9, B-T05)', () => {

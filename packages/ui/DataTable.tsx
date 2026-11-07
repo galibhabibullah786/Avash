@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import type { PageMeta } from '@avash/types';
 
 export interface DataTableColumn<T> {
@@ -8,7 +8,7 @@ export interface DataTableColumn<T> {
   render: (row: T) => ReactNode;
 }
 
-interface DataTableProps<T> {
+export interface DataTableProps<T> {
   columns: ReadonlyArray<DataTableColumn<T>>;
   rows: readonly T[];
   rowKey: (row: T) => string;

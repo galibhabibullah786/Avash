@@ -7,7 +7,7 @@ import tseslint from 'typescript-eslint';
  * under apps/web/src where X does not start with VITE_PUBLIC_ (R2, §7.1).
  */
 const noNonPublicEnvUnderWeb = {
-  files: ['src/**/*.{ts,tsx}', 'apps/web/src/**/*.{ts,tsx}'],
+  files: ['apps/web/src/**/*.{ts,tsx}'],
   rules: {
     'no-restricted-syntax': [
       'error',

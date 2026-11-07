@@ -1,11 +1,11 @@
 {
   "symptomChecker": {
     "id": "dengue-symptom-checker",
-    "title": "Dengue Symptom Checker",
-    "description": "A screening questionnaire for dengue-related symptoms and warning signs. This tool does not diagnose dengue.",
+    "title": "ডেঙ্গুর লক্ষণ পরীক্ষা (Dengue Symptom Checker)",
+    "description": "ডেঙ্গু সম্পর্কিত লক্ষণ ও সতর্ক সংকেত মূল্যায়নের প্রাথমিক যাচাইকরণ টুল। এই টুল কোনো সরাসরি ডাক্তারি রোগ নির্ণয় বা নিশ্চিতকরণ নয়।",
     "version": "1.0.0",
     "totalQuestions": 17,
-    "disclaimer": "This symptom checker is for screening and educational purposes only. It cannot confirm or rule out dengue. Consult a qualified healthcare professional for diagnosis and treatment.",
+    "disclaimer": "এই লক্ষণ যাচাইকরণ ব্যবস্থাটি শুধুমাত্র সাধারণ স্বাস্থ্য সচেতনতা ও প্রাথমিক মূল্যায়নের উদ্দেশ্যে প্রস্তুতকৃত। এটি কোনোভাবেই ডেঙ্গু নিশ্চিত বা বাতিল করতে পারে না। সঠিক রোগ নির্ণয় ও চিকিৎসার জন্য দ্রুত একজন নিবন্ধিত চিকিৎসকের পরামর্শ নিন।",
     "sections": [
       {
         "id": "fever",
@@ -597,35 +597,35 @@
     "resultCategories": [
       {
         "id": "urgent",
-        "label": "Urgent Medical Attention",
-        "description": "The user reported one or more potential warning signs.",
+        "label": "জরুরি চিকিৎসা সেবা প্রয়োজন (Urgent Medical Attention)",
+        "description": "ব্যবহারকারীর মধ্যে এক বা একাধিক জরুরি সতর্ক সংকেত চিহ্নিত হয়েছে।",
         "triggerType": "warning_sign_detected",
         "clinicalThreshold": "DOCTOR_VALIDATION_REQUIRED",
-        "message": "You reported a symptom that may require urgent medical evaluation. Please seek medical care promptly. This tool cannot determine the cause of your symptoms."
+        "message": "আপনার প্রদত্ত তথ্যে এমন কিছু লক্ষণ বা সতর্ক সংকেত প্রকাশ পেয়েছে যা তাৎক্ষণিক ডাক্তারি মূল্যায়নের দাবি রাখে। কালক্ষেপণ না করে দ্রুত নিকটস্থ হাসপাতালে যোগাযোগ করুন।"
       },
       {
         "id": "dengue_suspected",
-        "label": "Dengue Suspected",
-        "description": "Fever with several dengue-compatible symptoms suggests dengue is likely.",
+        "label": "ডেঙ্গু সন্দেহভাজন (Dengue Suspected)",
+        "description": "জ্বরের সাথে একাধিক ডেঙ্গু সদৃশ লক্ষণ রয়েছে।",
         "triggerType": "fever_and_multiple_dengue_compatible_symptoms",
         "clinicalThreshold": "DOCTOR_VALIDATION_REQUIRED",
-        "message": "Your answers suggest dengue is suspected. Fever with several dengue-compatible symptoms can occur with dengue, and it is a good idea to contact a healthcare professional for evaluation."
+        "message": "আপনার লক্ষণসমূহ ডেঙ্গু সংক্রমণের সম্ভাবনা নির্দেশ করছে। দ্রুত একজন নিবন্ধিত চিকিৎসকের পরামর্শ নিয়ে প্রয়োজনীয় রক্ত পরীক্ষা (CBC, NS1 antigen) সম্পন্ন করুন।"
       },
       {
         "id": "dengue_possible",
-        "label": "Dengue Possible",
-        "description": "Fever with some dengue-compatible symptoms suggests dengue remains possible but not strongly suspected.",
+        "label": "ডেঙ্গুর সম্ভাবনা রয়েছে (Dengue Possible)",
+        "description": "জ্বরের সাথে কিছু ডেঙ্গু সামঞ্জস্যপূর্ণ লক্ষণ প্রকাশ পেয়েছে।",
         "triggerType": "fever_and_some_dengue_compatible_symptoms",
         "clinicalThreshold": "MONITOR_WITH_MEDICAL_ADVICE",
-        "message": "Your answers suggest dengue is possible. Fever with some compatible symptoms can occur with dengue, so continue monitoring closely and consider medical advice if symptoms worsen or new symptoms develop."
+        "message": "আপনার লক্ষণসমূহ ডেঙ্গুর সাথে সামঞ্জস্যপূর্ণ হতে পারে। শারীরিক অবস্থা নিবিড়ভাবে পর্যবেক্ষণ করুন, প্রচুর তরল পান করুন এবং লক্ষণ বৃদ্ধি পেলে চিকিৎসকের পরামর্শ নিন।"
       },
       {
         "id": "dengue_less_likely",
-        "label": "Dengue Less Likely",
-        "description": "Very few or no dengue-compatible symptoms are reported, so dengue is less likely though not ruled out.",
+        "label": "ডেঙ্গুর সম্ভাবনা কম (Dengue Less Likely)",
+        "description": "খুব কম বা কোনো উল্লেখযোগ্য ডেঙ্গু লক্ষণ নেই।",
         "triggerType": "few_or_no_dengue_compatible_symptoms",
         "clinicalThreshold": "MONITOR",
-        "message": "Your answers suggest dengue is less likely, but dengue cannot be ruled out based on symptoms alone. Continue monitoring your condition and seek care if fever persists or new symptoms appear."
+        "message": "আপনার উত্তরে ডেঙ্গুর লক্ষণ প্রকাশের মাত্রা খুবই কম, তবে শুধুমাত্র প্রাথমিক লক্ষণের ভিত্তিতে ডেঙ্গু পুরোপুরি বাতিল করা যায় না। জ্বর অব্যাহত থাকলে চিকিৎসকের সাথে পরামর্শ করুন।"
       }
     ],
     "logic": {

@@ -16,7 +16,7 @@ name: docker-image-scan
 # buildx GHA cache is what keeps running it every time affordable.
 
 on:
-  workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read

@@ -17,9 +17,18 @@ vi.mock('leaflet', () => ({
   default: {
     map: vi.fn(() => mapInstance),
     tileLayer: vi.fn(() => ({ addTo: addToMock })),
+    Icon: {
+      Default: Object.assign(function () {}, {
+        prototype: {},
+        mergeOptions: vi.fn(),
+      }),
+    },
   },
 }));
 vi.mock('leaflet/dist/leaflet.css', () => ({}));
+vi.mock('leaflet/dist/images/marker-icon-2x.png', () => ({ default: '' }));
+vi.mock('leaflet/dist/images/marker-icon.png', () => ({ default: '' }));
+vi.mock('leaflet/dist/images/marker-shadow.png', () => ({ default: '' }));
 
 // Not React-Testing-Library — a minimal react-dom harness, permitted for
 // hook logic per docs/standards/testing.md's jsdom scope. Verifies the

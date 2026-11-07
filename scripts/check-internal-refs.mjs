@@ -130,5 +130,3 @@ if (violations.length > 0) {
   console.error(`\n${violations.length} violation(s).`);
   process.exit(1);
 }
-
-console.log('PASS: no internal planning references in shipped files.');

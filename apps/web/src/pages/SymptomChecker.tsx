@@ -5,14 +5,13 @@ export default function SymptomChecker() {
     <main className="inner-page checker-page">
       <div className="inner-page__intro">
         <div>
-          <p className="eyebrow">Screening tool</p>
-          <h1>Dengue Symptom Checker</h1>
+          <p className="eyebrow">প্রাথমিক মূল্যায়ন</p>
+          <h1>ডেঙ্গুর লক্ষণ পরীক্ষা (Dengue Symptom Checker)</h1>
           <p className="inner-lede">
-            A screening questionnaire for dengue-related symptoms and warning
-            signs. This tool does not diagnose dengue.
+            ডেঙ্গু সম্পর্কিত লক্ষণ ও সতর্ক সংকেত মূল্যায়নের জন্য একটি প্রাথমিক যাচাইকরণ টুল। এই টুল কোনো সরাসরি ডাক্তারি রোগ নির্ণয় বা নিশ্চিতকরণ নয়।
           </p>
         </div>
-        <span className="checker-time">Screening · private</span>
+        <span className="checker-time">যাচাইকরণ · গোপনীয়</span>
       </div>
 
       <SymptomCheckerForm />

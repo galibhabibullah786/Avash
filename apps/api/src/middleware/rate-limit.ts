@@ -48,8 +48,8 @@ export const rateLimit =
       return c.json(buildGenericErrorBody(requestId), 429);
     }
 
-    // Skip rate limiting if Redis is not configured (local dev mode)
-    if (!c.env.UPSTASH_REDIS_REST_URL || !c.env.UPSTASH_REDIS_REST_TOKEN) {
+    // Skip rate limiting if Redis is not configured (local dev mode and no test factory injected)
+    if (!options.redisFactory && (!c.env.UPSTASH_REDIS_REST_URL || !c.env.UPSTASH_REDIS_REST_TOKEN)) {
       logger.warn('rate-limit: Redis not configured, skipping (local dev mode)', { requestId, guard: options.guard });
       return next();
     }

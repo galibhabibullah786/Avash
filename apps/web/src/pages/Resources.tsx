@@ -83,15 +83,14 @@ export default function Resources() {
     <main className="inner-page">
       <div className="inner-page__intro">
         <div>
-          <p className="eyebrow">Resources</p>
-          <h1>Blood availability</h1>
+          <p className="eyebrow">জরুরি সেবা</p>
+          <h1>রক্তের প্রাপ্যতা ও মজুদ (Blood Availability)</h1>
           <p className="inner-lede">
-            Live blood-unit availability at nearby hospitals, updated in real
-            time as hospital staff report changes.
+            নিকটস্থ হাসপাতালসমূহে রক্তের বর্তমান মজুদ, হাসপাতাল কর্মীদের তথ্য অনুযায়ী সরাসরি হালনাগাদকৃত।
           </p>
         </div>
         <label className="location-select">
-          Blood group
+          রক্তের গ্রুপ
           <select
             id="blood-group-select"
             data-testid="blood-group-select"
@@ -115,25 +114,25 @@ export default function Resources() {
           data-testid="realtime-unavailable"
           style={{ marginBottom: "20px" }}
         >
-          Live updates unavailable — showing the last fetched availability.
+          লাইভ আপডেট এই মুহূর্তে পাওয়া যাচ্ছে না — পূর্বে সংগৃহীত তথ্য প্রদর্শিত হচ্ছে।
         </p>
       ) : null}
 
       {!isOnline ? (
         <p className="alert alert--error" data-testid="status-offline">
-          You are offline
+          আপনি অফলাইনে আছেন
         </p>
       ) : search.isLoading ? (
         <p className="checker-time" data-testid="status-loading">
-          Loading resources…
+          তথ্য লোড হচ্ছে…
         </p>
       ) : search.isError ? (
         <p className="alert alert--error" data-testid="resources-error">
-          API: unavailable right now. Please try again later.
+          সার্ভার সংযোগ এই মুহূর্তে অনুপলব্ধ। অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।
         </p>
       ) : results.length === 0 ? (
         <p className="checker-time" data-testid="status-empty">
-          No hospitals reporting {bloodGroup} availability nearby.
+          নিকটস্থ কোনো হাসপাতালে {bloodGroup} রক্তের মজুদের তথ্য পাওয়া যায়নি।
         </p>
       ) : (
         <div
@@ -145,15 +144,15 @@ export default function Resources() {
               <thead className="max-md:hidden">
                 <tr>
                   <th style={{ paddingLeft: "25px", paddingTop: "18px" }}>
-                    Hospital Name
+                    হাসপাতালের নাম
                   </th>
-                  <th style={{ paddingTop: "18px" }}>Address</th>
-                  <th style={{ paddingTop: "18px" }}>Contact</th>
-                  <th style={{ paddingTop: "18px" }}>Units</th>
-                  <th style={{ paddingTop: "18px" }}>Platelets</th>
-                  <th style={{ paddingTop: "18px" }}>Distance</th>
+                  <th style={{ paddingTop: "18px" }}>ঠিকানা</th>
+                  <th style={{ paddingTop: "18px" }}>যোগাযোগ</th>
+                  <th style={{ paddingTop: "18px" }}>মোট রক্ত (Units)</th>
+                  <th style={{ paddingTop: "18px" }}>প্লাটিলেট (Platelets)</th>
+                  <th style={{ paddingTop: "18px" }}>দূরত্ব</th>
                   <th style={{ paddingRight: "25px", paddingTop: "18px" }}>
-                    Updated
+                    সর্বশেষ আপডেট
                   </th>
                 </tr>
               </thead>
@@ -169,7 +168,7 @@ export default function Resources() {
                           paddingBottom: isLast ? "18px" : undefined,
                         }}
                       >
-                        <span className="md:hidden font-bold text-[var(--color-text-muted)] mr-4">Name</span>
+                        <span className="md:hidden font-bold text-[var(--color-text-muted)] mr-4">নাম</span>
                         <span className="max-md:text-right">
                           {row?.hospital?.name ?? "—"}
                           {row?.hospital?.verified ? (
@@ -177,7 +176,7 @@ export default function Resources() {
                               className="table-badge table-badge--medium"
                               style={{ marginLeft: "8px" }}
                             >
-                              Verified
+                              যাচাইকৃত
                             </span>
                           ) : null}
                         </span>
@@ -186,7 +185,7 @@ export default function Resources() {
                         className="max-md:flex max-md:justify-between max-md:items-center max-md:py-2 max-md:border-b max-md:border-dashed max-md:border-[var(--color-border)] max-md:!p-2 max-md:!pb-2"
                         style={{ paddingBottom: isLast ? "18px" : undefined }}
                       >
-                        <span className="md:hidden font-bold text-[var(--color-text-muted)] mr-4">Address</span>
+                        <span className="md:hidden font-bold text-[var(--color-text-muted)] mr-4">ঠিকানা</span>
                         <span className="max-md:text-right">{row?.hospital?.address ?? "—"}</span>
                       </td>
 
@@ -194,28 +193,28 @@ export default function Resources() {
                         className="max-md:flex max-md:justify-between max-md:items-center max-md:py-2 max-md:border-b max-md:border-dashed max-md:border-[var(--color-border)] max-md:!p-2 max-md:!pb-2"
                         style={{ paddingBottom: isLast ? "18px" : undefined }}
                       >
-                        <span className="md:hidden font-bold text-[var(--color-text-muted)] mr-4">Contact</span>
+                        <span className="md:hidden font-bold text-[var(--color-text-muted)] mr-4">যোগাযোগ</span>
                         <span className="max-md:text-right">{row?.hospital?.phone ?? "—"}</span>
                       </td>
                       <td
                         className="max-md:flex max-md:justify-between max-md:items-center max-md:py-2 max-md:border-b max-md:border-dashed max-md:border-[var(--color-border)] max-md:!p-2 max-md:!pb-2"
                         style={{ paddingBottom: isLast ? "18px" : undefined }}
                       >
-                        <span className="md:hidden font-bold text-[var(--color-text-muted)] mr-4">Units</span>
+                        <span className="md:hidden font-bold text-[var(--color-text-muted)] mr-4">মোট রক্ত</span>
                         <span className="max-md:text-right">{row?.unitsAvailable ?? "—"}</span>
                       </td>
                       <td
                         className="max-md:flex max-md:justify-between max-md:items-center max-md:py-2 max-md:border-b max-md:border-dashed max-md:border-[var(--color-border)] max-md:!p-2 max-md:!pb-2"
                         style={{ paddingBottom: isLast ? "18px" : undefined }}
                       >
-                        <span className="md:hidden font-bold text-[var(--color-text-muted)] mr-4">Platelets</span>
+                        <span className="md:hidden font-bold text-[var(--color-text-muted)] mr-4">প্লাটিলেট</span>
                         <span className="max-md:text-right">{row?.plateletUnits ?? "—"}</span>
                       </td>
                       <td
                         className="max-md:flex max-md:justify-between max-md:items-center max-md:py-2 max-md:border-b max-md:border-dashed max-md:border-[var(--color-border)] max-md:!p-2 max-md:!pb-2"
                         style={{ paddingBottom: isLast ? "18px" : undefined }}
                       >
-                        <span className="md:hidden font-bold text-[var(--color-text-muted)] mr-4">Distance</span>
+                        <span className="md:hidden font-bold text-[var(--color-text-muted)] mr-4">দূরত্ব</span>
                         <span className="max-md:text-right">{formatDistance(row?.distanceM)}</span>
                       </td>
                       <td
@@ -225,7 +224,7 @@ export default function Resources() {
                           paddingBottom: isLast ? "18px" : undefined,
                         }}
                       >
-                        <span className="md:hidden font-bold text-[var(--color-text-muted)] mr-4">Updated</span>
+                        <span className="md:hidden font-bold text-[var(--color-text-muted)] mr-4">হালনাগাদ</span>
                         <span className="max-md:text-right">{formatUpdatedAt(row?.updatedAt)}</span>
                       </td>
                     </tr>

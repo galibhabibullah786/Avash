@@ -40,6 +40,9 @@ shap==0.51.0
 supabase==2.31.0
 python-dotenv==1.2.2
 
+# Hugging Face Hub client (downloads pinned ONNX artifacts from model repo)
+huggingface-hub==0.28.1
+
 # Web Push delivery from ml/serving/predict.py (VAPID keypair, §7.1)
 pywebpush==2.3.0
 

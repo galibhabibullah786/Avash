@@ -92,7 +92,7 @@ per-feature docs cannot describe behavior that doesn't exist yet).
 | [`features/health-endpoint.md`](features/health-endpoint.md) | `/health` liveness endpoint and `/health/db` readiness probe | Existing |
 | [`features/integration.md`](features/integration.md) | Frontend↔backend integration: request lifecycle, CORS matrix, shared-contract rule, UI-state↔spec mapping | Existing |
 | [`features/database.md`](features/database.md) | Migration workflow, seed/refresh tooling, what shipped vs. what `schema.md` documents | Existing |
-| [`features/announcement-push.md`](features/announcement-push.md) | Live announcement delivery via `apps/notify`/`packages/push`: two-trigger design, claim-with-lease semantics, the role-targeting fix, platform support matrix | Existing |
+| [`features/announcement-push.md`](features/announcement-push.md) | Web Push delivery via Edge Functions/`packages/push`: two-trigger design, claim-with-lease semantics, platform support matrix (Historical reference) | Archived / Amended |
 
 Further feature docs (breeding reports, blood inventory, symptom checker,
 alerts, news aggregator) are added as their vertical slices ship, per

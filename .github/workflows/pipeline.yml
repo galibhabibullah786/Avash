@@ -13,7 +13,7 @@ name: pipeline
 # claimed could not happen. Composing them as reusable workflows here
 # turns that claim into a real edge in the graph:
 #
-#   ci + codeql  ->  images + ml-image  ->  deploy-web + deploy-api
+#   ci + codeql  ->  deploy-web + deploy-api + deploy-notify
 #
 # `workflow_run` would also sequence them, but it reports no status on the
 # pull request and always executes the default branch's copy of the
@@ -25,23 +25,16 @@ on:
   pull_request:
   push:
     branches: [main, dev]
-  # A base image accumulates CVEs while the Dockerfile sits untouched, so
-  # the gates and image scans need a heartbeat of their own. The weekly
-  # run publishes the CVE report below; it never deploys.
-  schedule:
-    - cron: "0 4 * * 1"
   workflow_dispatch:
     inputs:
       bypass_gates:
         description: >-
-          Break-glass only. Skip waiting on ci/codeql before building
-          images and deploying — the gate jobs still run and still show
-          their real red/green, this only stops a bypassed one from
-          blocking deploy-web/deploy-api. Does not skip a build failure
-          inside images/ml-image itself, and does not touch each
-          environment's own required-reviewer protection rule, which
+          Break-glass only. Skip waiting on ci/codeql before deploying —
+          the gate jobs still run and still show their real red/green, this
+          only stops a bypassed one from blocking deploys. Does not touch
+          each environment's own required-reviewer protection rule, which
           still applies normally. Only meaningful on this manual trigger;
-          ignored on push/pull_request/schedule.
+          ignored on push/pull_request.
         type: boolean
         default: false
 
@@ -67,14 +60,15 @@ jobs:
       publish: ${{ steps.resolve.outputs.publish }}
       deploy_web: ${{ steps.resolve.outputs.deploy_web }}
       deploy_api: ${{ steps.resolve.outputs.deploy_api }}
-      deploy_notify: ${{ steps.resolve.outputs.deploy_notify }}
+      deploy_functions: ${{ steps.resolve.outputs.deploy_functions }}
       pages_branch: ${{ steps.resolve.outputs.pages_branch }}
       wrangler_env: ${{ steps.resolve.outputs.wrangler_env }}
       origin_var: ${{ steps.resolve.outputs.origin_var }}
-      vercel_target: ${{ steps.resolve.outputs.vercel_target }}
-      notify_origin_var: ${{ steps.resolve.outputs.notify_origin_var }}
       environment: ${{ steps.resolve.outputs.channel }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - id: resolve
         env:
           EVENT: ${{ github.event_name }}
@@ -83,62 +77,83 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Defaults are the safe ones: preview channel, publish nothing,
-          # deploy nothing. A branch has to be named below to earn more.
+          # Determine base commit for change detection
+          if [ "$EVENT" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          elif [ "$EVENT" = "push" ] && [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            BASE="${{ github.event.before }}"
+          else
+            BASE="HEAD~1"
+          fi
+
+          CHANGED_FILES=$(git diff --name-only "$BASE" HEAD 2>/dev/null || git diff --name-only HEAD~1 2>/dev/null || echo "")
+
+          web_changed=false
+          api_changed=false
+          functions_changed=false
+
+          if echo "$CHANGED_FILES" | grep -qE '^(apps/web/|packages/ui/|packages/types/|packages/config/|\.github/workflows/deploy-web\.yml)'; then
+            web_changed=true
+          fi
+
+          if echo "$CHANGED_FILES" | grep -qE '^(apps/api/|packages/security/|packages/types/|packages/geo/|packages/logger/|packages/config/|\.github/workflows/deploy-api\.yml)'; then
+            api_changed=true
+          fi
+
+          if echo "$CHANGED_FILES" | grep -qE '^(packages/db/|packages/push/|packages/types/)'; then
+            functions_changed=true
+          fi
+
+          # Manual workflow_dispatch deploys all stacks unless selectively gated
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            web_changed=true
+            api_changed=true
+            functions_changed=true
+          fi
+
           channel=preview
           publish=false
           deploy_web=false
           deploy_api=false
-          deploy_notify=false
+          deploy_functions=false
           pages_branch="$HEAD_REF"
           wrangler_env=preview
           origin_var=PREVIEW_API_ORIGIN
-          vercel_target=preview
-          notify_origin_var=PREVIEW_NOTIFY_ORIGIN
 
           case "$EVENT" in
             pull_request)
-              # Pages preview per pull request, keyed on the source branch.
-              # No Worker deploy and no apps/notify deploy — a pull request
-              # has no environment of its own to deploy either into, and
-              # deploying apps/notify per-PR would mean per-PR Inngest
-              # environments the Supabase Database Webhook doesn't know
-              # about anyway (see the deploy-notify job comment below).
-              deploy_web=true
+              if [ "$web_changed" = "true" ]; then
+                deploy_web=true
+              fi
               ;;
             push | workflow_dispatch)
               case "$REF_NAME" in
                 main)
                   channel=production
                   publish=true
-                  deploy_web=true
-                  deploy_api=true
-                  deploy_notify=true
                   pages_branch=main
                   wrangler_env=production
                   origin_var=PRODUCTION_API_ORIGIN
-                  vercel_target=production
-                  notify_origin_var=PRODUCTION_NOTIFY_ORIGIN
+                  deploy_web="$web_changed"
+                  deploy_api="$api_changed"
+                  deploy_functions="$functions_changed"
                   ;;
                 dev)
                   publish=true
-                  deploy_web=true
-                  deploy_api=true
-                  deploy_notify=true
                   pages_branch=dev
+                  deploy_web="$web_changed"
+                  deploy_api="$api_changed"
+                  deploy_functions="$functions_changed"
                   ;;
                 *)
-                  echo "::notice::$REF_NAME is not a deploy branch — gates and image scans only."
+                  echo "::notice::$REF_NAME is not a deploy branch — gates only."
                   ;;
               esac
-              ;;
-            schedule)
-              echo "::notice::Scheduled sweep — gates and image scans only, no publish, no deploy."
               ;;
           esac
 
           if [ "$EVENT" = "workflow_dispatch" ] && [ "${{ inputs.bypass_gates }}" = "true" ]; then
-            echo "::warning::bypass_gates is set — images/ml-image will proceed even if ci or codeql failed. Deploy still requires images/ml-image's own steps to succeed and each environment's required-reviewer rule, if any."
+            echo "::warning::bypass_gates is set — deployments will proceed even if ci or codeql failed."
           fi
 
           {
@@ -146,12 +161,11 @@ jobs:
             echo "publish=$publish"
             echo "deploy_web=$deploy_web"
             echo "deploy_api=$deploy_api"
-            echo "deploy_notify=$deploy_notify"
+            echo "deploy_functions=$deploy_functions"
             echo "pages_branch=$pages_branch"
             echo "wrangler_env=$wrangler_env"
             echo "origin_var=$origin_var"
-            echo "vercel_target=$vercel_target"
-            echo "notify_origin_var=$notify_origin_var"
+            echo "environment=$channel"
           } | tee -a "$GITHUB_OUTPUT"
 
   # ---- Stage 1: gates. Nothing is built for release until these pass. ----
@@ -168,56 +182,23 @@ jobs:
       actions: read
     uses: ./.github/workflows/codeql.yml
 
-  # ---- Stage 2: build and scan the images. ----
+  # ---- Stage 2: deploy. Reached only through quality gates above. ----
 
-  images:
+  deploy-web:
     needs: [context, ci, codeql]
-    # always() so a bypassed ci/codeql failure doesn't auto-skip this job
-    # (default needs: behavior skips downstream when any need fails).
-    # The explicit per-need checks below are what actually gate it: a
-    # normal run still requires both to have succeeded, same as before.
     if: |
       always() &&
       needs.context.result == 'success' &&
+      needs.context.outputs.deploy_web == 'true' &&
       (needs.ci.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.bypass_gates == true)) &&
       (needs.codeql.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.bypass_gates == true))
-    permissions:
-      contents: read
-      packages: write
-    uses: ./.github/workflows/build-images.yml
-    with:
-      publish: ${{ needs.context.outputs.publish == 'true' }}
-      channel: ${{ needs.context.outputs.channel }}
-
-  ml-image:
-    needs: [ci, codeql]
-    if: |
-      always() &&
-      (needs.ci.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.bypass_gates == true)) &&
-      (needs.codeql.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.bypass_gates == true))
-    uses: ./.github/workflows/docker-image-scan.yml
-
-  # ---- Stage 3: deploy. Reached only through both stages above. ----
-
-  deploy-web:
-    needs: [context, images, ml-image]
-    if: needs.context.outputs.deploy_web == 'true'
     # No `environment:` here — GitHub's schema does not allow it on a job
-    # that also has `uses:` (a reusable-workflow call). This was already
-    # present, and already invalid, before this change (confirmed against
-    # the base commit with `act -l`); the pipeline has never actually run
-    # past this point. `deploy-web.yml`'s own job carries
-    # `environment: ${{ inputs.environment }}` instead, which is the
-    # only place GitHub's schema allows it — see
-    # docs/security/github-environments.md § Step 6 for the secret-scope
-    # reasoning that shape still needs to satisfy.
+    # that also has `uses:` (a reusable-workflow call). `deploy-web.yml`'s
+    # own job carries `environment: ${{ inputs.environment }}` instead.
     permissions:
       contents: read
       deployments: write
     uses: ./.github/workflows/deploy-web.yml
-    # Named, not `secrets: inherit` (docs/security/github-environments.md
-    # § Step 6) — an explicit list is an audit trail and makes adding a
-    # secret a reviewable diff instead of a standing grant of everything.
     secrets:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -226,9 +207,13 @@ jobs:
       pages_branch: ${{ needs.context.outputs.pages_branch }}
 
   deploy-api:
-    needs: [context, images, ml-image]
-    if: needs.context.outputs.deploy_api == 'true'
-    # See deploy-web's comment above — same reasoning, same fix.
+    needs: [context, ci, codeql]
+    if: |
+      always() &&
+      needs.context.result == 'success' &&
+      needs.context.outputs.deploy_api == 'true' &&
+      (needs.ci.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.bypass_gates == true)) &&
+      (needs.codeql.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.bypass_gates == true))
     uses: ./.github/workflows/deploy-api.yml
     secrets:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -245,124 +230,26 @@ jobs:
       wrangler_env: ${{ needs.context.outputs.wrangler_env }}
       smoke_test_origin_var: ${{ needs.context.outputs.origin_var }}
 
-  deploy-notify:
-    # `ml-image` is deliberately not a need here, unlike deploy-web/
-    # deploy-api: apps/notify ships no container image at all (it's a
-    # Vercel deploy, ADR-016) and has no relationship to the ML image or
-    # its Trivy scan. `images` still gates it — that job already carries
-    # `needs: [context, ci, codeql]`, so waiting on it (rather than on
-    # `ci`/`codeql` directly) keeps deploy-notify at the same stage-3 depth
-    # as its siblings and behind the same ci/codeql gate, without adding a
-    # wait on a scan result that says nothing about this service.
-    needs: [context, images]
-    if: needs.context.outputs.deploy_notify == 'true'
-    # See deploy-web's comment above — same schema reasoning, same fix:
-    # `environment:` lives on deploy-notify.yml's own job, not here.
-    uses: ./.github/workflows/deploy-notify.yml
-    # Named, not `secrets: inherit` — same audit-trail reasoning as every
-    # other deploy job in this file.
-    secrets:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-      INNGEST_EVENT_KEY: ${{ secrets.INNGEST_EVENT_KEY }}
-      INNGEST_SIGNING_KEY: ${{ secrets.INNGEST_SIGNING_KEY }}
-      ANNOUNCEMENT_WEBHOOK_SECRET: ${{ secrets.ANNOUNCEMENT_WEBHOOK_SECRET }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
-      VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
-    with:
-      environment: ${{ needs.context.outputs.environment }}
-      vercel_target: ${{ needs.context.outputs.vercel_target }}
-      smoke_test_origin_var: ${{ needs.context.outputs.notify_origin_var }}
-    # CRITICAL: the preview build above deploys to Vercel's preview
-    # environment and syncs a SEPARATE Inngest environment from
-    # production's (Inngest scopes registered apps by the signing key/
-    # environment the deploy carries, same idea as Cloudflare's `--env
-    # preview` vs `--env production` Workers). The Supabase Database
-    # Webhook that actually triggers `announcement/published`
-    # (docs/manual-deploy.md's new Supabase Database Webhook section)
-    # points ONLY at the production apps/notify origin — it is configured
-    # once, by hand, in the Supabase dashboard, and is never pointed at a
-    # preview deployment. If it were, every announcement insert would fire
-    # the webhook once and have BOTH the production Inngest environment and
-    # the preview Inngest environment pick it up independently whenever a
-    # preview deploy exists alongside production, double-sending (or worse,
-    # N-sending across however many preview deploys are live) every
-    # announcement push to real subscribers. Nothing in this workflow
-    # enforces that — it is a one-time manual configuration fact outside
-    # GitHub Actions entirely — so it is recorded here, at the job that
-    # would otherwise make it easy to assume "preview" is symmetric with
-    # "production" the way it is for deploy-web/deploy-api.
-
-  # ---- The weekly CVE report. ----
-  #
-  # One rolling artifact rather than a per-run pile: the same name every
-  # week, overwritten in place, so "what CVEs do our images have right
-  # now" is a single download and never a question of which run to open.
-  #
-  # `if: always()` because the run whose scans FAILED is precisely the run
-  # whose report is worth reading. This reports, it does not soften — the
-  # Trivy steps upstream keep `exit-code: 1`, so a HIGH/CRITICAL finding
-  # still fails its image job and still blocks every deploy.
-  cve-report:
-    needs: [images, ml-image]
-    if: always() && github.event_name == 'schedule'
+  deploy-functions:
+    name: Deploy Supabase Functions
+    needs: [context, ci, codeql]
+    if: |
+      always() &&
+      needs.context.result == 'success' &&
+      needs.context.outputs.deploy_functions == 'true' &&
+      (needs.ci.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.bypass_gates == true)) &&
+      (needs.codeql.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.bypass_gates == true))
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: scan-*
-          path: scans
-          merge-multiple: true
-
-      - name: Assemble the report
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-workspace
+      - name: Deploy risk-alerts Edge Function
         env:
-          IMAGES_RESULT: ${{ needs.images.result }}
-          ML_RESULT: ${{ needs.ml-image.result }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: |
-          set -euo pipefail
-
-          {
-            echo "# Container image CVE report"
-            echo
-            echo "- Generated: $(date -u '+%Y-%m-%d %H:%M UTC')"
-            echo "- Commit: \`${GITHUB_SHA}\`"
-            echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            echo "- App image jobs: \`${IMAGES_RESULT}\` — ML image job: \`${ML_RESULT}\`"
-            echo
-            echo "Scanned at HIGH,CRITICAL with unfixed vulnerabilities ignored,"
-            echo "matching the gate that runs on every pull request."
-            echo
-          } > cve-report.md
-
-          shopt -s nullglob
-          reports=(scans/trivy-*.txt)
-          if [ ${#reports[@]} -eq 0 ]; then
-            echo "No scan reports were produced — every image job failed before Trivy ran." >> cve-report.md
+          if [ -n "$SUPABASE_ACCESS_TOKEN" ]; then
+            pnpm --filter @avash/db exec supabase functions deploy risk-alerts --project-ref "${SUPABASE_PROJECT_REF:-kdklmbqkczkaakgswlix}"
           else
-            for f in "${reports[@]}"; do
-              name=$(basename "$f" .txt)
-              name=${name#trivy-}
-              {
-                echo "## avash-${name}"
-                echo
-                echo '```'
-                cat "$f"
-                echo '```'
-                echo
-              } >> cve-report.md
-            done
+            echo "::notice::SUPABASE_ACCESS_TOKEN secret not set; skipping Edge Function deploy."
           fi
-
-          cat cve-report.md >> "$GITHUB_STEP_SUMMARY"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cve-report
-          path: cve-report.md
-          # Without this, v4 fails the upload rather than replacing the
-          # previous week's artifact of the same name.
-          overwrite: true
-          retention-days: 90

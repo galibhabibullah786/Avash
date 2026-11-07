@@ -14,10 +14,10 @@ function weatherIcon(precipitationMm: number | null | undefined): string {
 }
 
 function formatDay(observedAt: string, index: number): string {
-  if (index === 0) return "Today";
+  if (index === 0) return "আজ";
   const parsed = new Date(observedAt);
   if (Number.isNaN(parsed.getTime())) return observedAt;
-  return parsed.toLocaleDateString(undefined, { weekday: "short" });
+  return parsed.toLocaleDateString("bn-BD", { weekday: "short" });
 }
 
 function average(values: number[]): number | null {
@@ -77,15 +77,15 @@ export default function Weather() {
     <main className="inner-page">
       <div className="inner-page__intro">
         <div>
-          <p className="eyebrow">Local conditions</p>
-          <h1>Weather insight</h1>
+          <p className="eyebrow">স্থানীয় পরিস্থিতি</p>
+          <h1>আবহাওয়া ও ডেঙ্গু ঝুঁকি</h1>
           <p className="inner-lede">
-            Weather patterns help us understand where dengue risk may rise next.
+            আবহাওয়ার পরিবর্তনের ধরন এডিস মশার প্রজনন ও ডেঙ্গু ঝুঁকি বুঝতে সাহায্য করে।
           </p>
         </div>
         {locations.length > 0 ? (
           <label className="location-select">
-            Your location
+            আপনার এলাকা নির্বাচন করুন
             <select
               value={activeRegionCode ?? ""}
               onChange={(event) => setSelectedRegionCode(event.target.value)}
@@ -102,16 +102,16 @@ export default function Weather() {
 
       {!isOnline ? (
         <p className="alert alert--error" role="alert">
-          You are offline
+          আপনি অফলাইনে আছেন
         </p>
       ) : latest.isError ? (
         <p className="alert alert--error" role="alert">
-          Unable to load weather data right now. Please try again.
+          আবহাওয়া তথ্য লোড করা যায়নি। অনুগ্রহ করে পুনরায় চেষ্টা করুন।
         </p>
       ) : null}
 
       {latest.isLoading ? (
-        <p className="checker-time">Loading weather data…</p>
+        <p className="checker-time">আবহাওয়া তথ্য লোড হচ্ছে…</p>
       ) : null}
 
       {current ? (
@@ -121,36 +121,36 @@ export default function Weather() {
               {weatherIcon(current.precipitationMm)}
             </span>
             <div>
-              <small>Today in {activeRegionName}</small>
+              <small>{activeRegionName}-এ আজকের তাপমাত্রা</small>
               <strong>
                 {current.tempMeanC !== null
                   ? `${Math.round(current.tempMeanC)}°`
                   : "—"}
               </strong>
-              <span>{current.source ?? "Latest observation"}</span>
+              <span>{current.source ?? "সর্বশেষ পর্যবেক্ষণ"}</span>
             </div>
           </div>
           {[
             [
-              "Humidity",
+              "আর্দ্রতা",
               current.humidityPct !== null
                 ? `${Math.round(current.humidityPct)}%`
                 : "—",
-              "Current",
+              "বর্তমান",
             ],
             [
-              "Rainfall",
+              "বৃষ্টিপাত",
               current.precipitationMm !== null
-                ? `${current.precipitationMm} mm`
+                ? `${current.precipitationMm} মিমি`
                 : "—",
-              "Last observation",
+              "সর্বশেষ তথ্য",
             ],
             [
-              "Temp range",
+              "তাপমাত্রার পরিসীমা",
               current.tempMinC !== null && current.tempMaxC !== null
                 ? `${Math.round(current.tempMinC)}°–${Math.round(current.tempMaxC)}°`
                 : "—",
-              "Min · Max",
+              "সর্বনিম্ন · সর্বোচ্চ",
             ],
           ].map(([label, value, note]) => (
             <div className="weather-stat" key={label}>
@@ -166,11 +166,11 @@ export default function Weather() {
         <div className="chart-panel">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Past {HISTORY_WINDOW_DAYS} days</p>
-              <h2>Recent temperature trend</h2>
+              <p className="eyebrow">বিগত {HISTORY_WINDOW_DAYS} দিন</p>
+              <h2>সাম্প্রতিক তাপমাত্রার পরিবর্তন</h2>
             </div>
             <span className="chart-range">
-              {activeRegionName} · Updated today
+              {activeRegionName} · আজকের আপডেট
             </span>
           </div>
           <div className="weather-chart">
@@ -186,7 +186,7 @@ export default function Weather() {
                   </strong>
                   <small>
                     {point.precipitationMm !== null
-                      ? `${point.precipitationMm} mm`
+                      ? `${point.precipitationMm} মিমি`
                       : "—"}
                   </small>
                 </div>
@@ -194,24 +194,24 @@ export default function Weather() {
             </div>
             <Sparkline
               points={sparklinePoints}
-              label={`${HISTORY_WINDOW_DAYS}-day mean temperature`}
+              label={`${HISTORY_WINDOW_DAYS} দিনের গড় তাপমাত্রা`}
             />
           </div>
         </div>
         <aside className="suitability">
-          <p className="eyebrow">Weekly summary</p>
+          <p className="eyebrow">সাপ্তাহিক সংক্ষিপ্তসার</p>
           <h3>{activeRegionName}</h3>
           <p>
-            Averages over the last {HISTORY_WINDOW_DAYS} days of observations.
+            বিগত {HISTORY_WINDOW_DAYS} দিনের সংগৃহীত তথ্যের গড় পরিমাপ।
           </p>
           {[
             [
-              "Average temperature",
+              "গড় তাপমাত্রা",
               avgTemp !== null ? `${avgTemp.toFixed(1)}°C` : "—",
             ],
-            ["Total rainfall", `${totalRainfall.toFixed(0)} mm`],
+            ["মোট বৃষ্টিপাত", `${totalRainfall.toFixed(0)} মিমি`],
             [
-              "Average humidity",
+              "গড় আর্দ্রতা",
               avgHumidity !== null ? `${avgHumidity.toFixed(0)}%` : "—",
             ],
           ].map(([label, value]) => (

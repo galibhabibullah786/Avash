@@ -4,7 +4,7 @@ import { useSession } from '../auth/SessionProvider';
 import { useSubscribeAlert } from './useSubscribeAlert';
 import { useUnsubscribeAlert } from './useUnsubscribeAlert';
 import { useAlertSubscription } from './useAlertSubscription';
-import { SubmitButton } from '../../components/SubmitButton';
+import { SubmitButton } from '@avash/ui';
 
 /** Bounds mirror `alertSubscribeSchema` in packages/types/alerts.ts EXACTLY (100–20,000). */
 const ALERT_RADIUS_MIN_M = 100;

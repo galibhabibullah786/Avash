@@ -110,20 +110,20 @@ export default function Report() {
         file.type,
       )
     ) {
-      setPhotoError("Please choose a JPEG, PNG, or WebP image.");
+      setPhotoError("অনুগ্রহ করে JPEG, PNG, বা WebP ফরম্যাটের ছবি নির্বাচন করুন।");
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
     if (file.size > REPORT_PHOTO_MAX_BYTES) {
       setPhotoError(
-        `That photo is too large. Please choose one under ${PHOTO_MAX_MB} MB.`,
+        `ছবির আকার অনেক বড়। অনুগ্রহ করে ${PHOTO_MAX_MB} মেগাবাইট বা তার চেয়ে ছোট ছবি নির্বাচন করুন।`,
       );
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
     if (!accessToken) {
-      setPhotoError("You must be signed in to upload a photo.");
+      setPhotoError("ছবি সংযুক্ত করতে অনুগ্রহ করে প্রথমে লগইন করুন।");
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
@@ -162,7 +162,7 @@ export default function Report() {
 
   function useMyLocation() {
     if (!navigator?.geolocation) {
-      setLocationError("Location is not available in this browser.");
+      setLocationError("এই ব্রাউজারে অবস্থান শনাক্তকরণ সুবিধা নেই।");
       return;
     }
     setLocating(true);
@@ -176,7 +176,7 @@ export default function Report() {
       () => {
         setLocating(false);
         setLocationError(
-          "Unable to get your location. Please allow location access and try again.",
+          "অবস্থান শনাক্ত করা যায়নি। অনুগ্রহ করে ব্রাউজারে লোকেশন পারমিশন দিন এবং পুনরায় চেষ্টা করুন।",
         );
       },
       { enableHighAccuracy: true, timeout: 10000 },
@@ -202,26 +202,25 @@ export default function Report() {
       <main className="inner-page report-page">
         <section className="success-card" data-testid="report-success">
           <div className="success-card__icon">✓</div>
-          <p className="eyebrow">Thank you for helping your community</p>
-          <h1>Report submitted</h1>
+          <p className="eyebrow">আপনার এলাকাকে সুরক্ষিত রাখতে সহায়তার জন্য ধন্যবাদ</p>
+          <h1>রিপোর্ট সফলভাবে জমা হয়েছে</h1>
           <p>
-            Your report has been received and will help local teams understand
-            dengue risk in your area.
+            আপনার রিপোর্টটি গৃহীত হয়েছে এবং এটি সংশ্লিষ্ট স্বাস্থ্য দলকে এলাকার ডেঙ্গু ঝুঁকি মূল্যায়নে সাহায্য করবে।
           </p>
           <div className="report-id">
-            <span>Report ID</span>
+            <span>রিপোর্ট নম্বর</span>
             <strong>{mutation.data.id}</strong>
             <b>
               {mutation.data.flaggedForReview
-                ? "Flagged for review"
-                : "Under review"}
+                ? "পর্যালোচনার জন্য চিহ্নিত"
+                : "পর্যালোচনাধীন"}
             </b>
           </div>
           <button
             className="button button--primary"
             onClick={() => mutation.reset()}
           >
-            Submit another report <span>→</span>
+            আরেকটি রিপোর্ট জমা দিন <span>→</span>
           </button>
         </section>
       </main>
@@ -232,11 +231,10 @@ export default function Report() {
     <main className="inner-page report-page">
       <div className="inner-page__intro">
         <div>
-          <p className="eyebrow">Community action</p>
-          <h1>Report a breeding site</h1>
+          <p className="eyebrow">নাগরিক সহযোগিতা</p>
+          <h1>মশার প্রজনন ক্ষেত্র রিপোর্ট করুন</h1>
           <p className="inner-lede">
-            See standing water or a blocked drain? Your report can help make
-            your neighborhood safer.
+            জমে থাকা পানি বা বদ্ধ ড্রেন দেখছেন? আপনার একটি রিপোর্ট এলাকাকে নিরাপদ রাখতে সাহায্য করতে পারে।
           </p>
         </div>
       </div>
@@ -247,11 +245,11 @@ export default function Report() {
       >
         <div className="form-column">
           <label>
-            Description
+            বিবরণ (Description)
             <textarea
               rows={5}
               maxLength={REPORT_DESCRIPTION_MAX_CHARS}
-              placeholder="Tell us a little about the location or what you noticed..."
+              placeholder="স্থানের অবস্থান বা জমে থাকা পানি ও লার্ভার বিস্তারিত লিখুন..."
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               data-testid="report-description"
@@ -262,23 +260,23 @@ export default function Report() {
           </div>
           <div className="field">
             <span className="field__label">
-              Photo <span className="optional">(optional)</span>
+              ছবি <span className="optional">(ঐচ্ছিক)</span>
             </span>
             {photoPreviewUrl ? (
               <div className="upload-box upload-box--preview">
                 <img
                   src={photoPreviewUrl}
-                  alt="Selected breeding-site photo preview"
+                  alt="সংযুক্ত ছবির প্রিভিউ"
                   className="upload-preview"
                 />
                 <b>{photoFile?.name}</b>
                 <small>
                   {uploadPhoto.isPending
-                    ? "Uploading…"
+                    ? "আপলোড হচ্ছে…"
                     : uploadPhoto.isError
-                      ? "Upload failed. Please remove and try again."
+                      ? "আপলোড ব্যর্থ হয়েছে। অনুগ্রহ করে মুছে আবার চেষ্টা করুন।"
                       : uploadPhoto.isSuccess
-                        ? "Photo attached"
+                        ? "ছবি সংযুক্ত হয়েছে"
                         : ""}
                 </small>
                 <button
@@ -287,21 +285,21 @@ export default function Report() {
                   onClick={handleRemovePhoto}
                   disabled={mutation.isPending || uploadPhoto.isPending}
                 >
-                  ✕ Remove photo
+                  ✕ ছবি মুছে ফেলুন
                 </button>
               </div>
             ) : (
               <label className="upload-box">
                 <span aria-hidden="true">⌁</span>
-                <b>Add a photo</b>
-                <small>JPEG, PNG, or WebP — up to {PHOTO_MAX_MB} MB</small>
+                <b>ছবি সংযুক্ত করুন</b>
+                <small>JPEG, PNG, বা WebP — সর্বোচ্চ {PHOTO_MAX_MB} মেগাবাইট</small>
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept={PHOTO_ACCEPT}
                   onChange={handlePhotoChange}
                   disabled={mutation.isPending}
-                  aria-label="Add a photo of the breeding site (optional)"
+                  aria-label="মশার প্রজনন ক্ষেত্রের ছবি সংযুক্ত করুন (ঐচ্ছিক)"
                 />
               </label>
             )}
@@ -320,11 +318,10 @@ export default function Report() {
           </div>
         </div>
         <div className="pin-panel">
-          <p className="eyebrow">Location</p>
-          <h3>Share where you saw it</h3>
+          <p className="eyebrow">অবস্থান</p>
+          <h3>যেখানে দেখেছেন তা চিহ্নিত করুন</h3>
           <p>
-            We use your location only to understand local risk and route this
-            report for review.
+            এলাকার ডেঙ্গু ঝুঁকি মূল্যায়ন ও অনুসন্ধানের জন্যই কেবল আপনার অবস্থান ব্যবহার করা হয়।
           </p>
 
           <div
@@ -354,7 +351,7 @@ export default function Report() {
                   pointerEvents: "none",
                 }}
               >
-                <span className="pin-label">Location not set</span>
+                <span className="pin-label">অবস্থান নির্ধারিত হয়নি</span>
               </div>
             )}
             {hasLocation && (
@@ -390,38 +387,42 @@ export default function Report() {
             disabled={locating}
             data-testid="use-my-location"
           >
-            ⌖ {locating ? "Locating…" : "Use my location"}
+            ⌖ {locating ? "অবস্থান খোঁজা হচ্ছে…" : "আমার বর্তমান অবস্থান ব্যবহার করুন"}
           </button>
 
           <div className="location-grid">
             <label style={{ margin: '8px 0' }}>
-              Latitude
+              অক্ষাংশ (Latitude)
               <input
+                id="report-lat"
                 type="number"
                 inputMode="decimal"
                 step="any"
                 value={lat ?? ""}
+                disabled={locating}
                 onChange={(event) =>
                   updateManualCoordinate(event.target.value, "lat")
                 }
                 data-testid="report-lat"
-                aria-label="Latitude"
+                aria-label="অক্ষাংশ"
                 style={{ padding: '4px' }}
               />
             </label>
 
             <label>
-              Longitude
+              দ্রাঘিমাংশ (Longitude)
               <input
+                id="report-lng"
                 type="number"
                 inputMode="decimal"
                 step="any"
                 value={lng ?? ""}
+                disabled={locating}
                 onChange={(event) =>
                   updateManualCoordinate(event.target.value, "lng")
                 }
                 data-testid="report-lng"
-                aria-label="Longitude"
+                aria-label="দ্রাঘিমাংশ"
                 style={{ padding: '4px' }}
               />
             </label>
@@ -439,7 +440,7 @@ export default function Report() {
 
           {mutation.isError ? (
             <p className="field__error" role="alert">
-              Unable to submit your report right now. Please try again.
+              সার্ভারে রিপোর্ট জমা দেওয়া সম্ভব হচ্ছে না। অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।
             </p>
           ) : null}
 
@@ -449,7 +450,7 @@ export default function Report() {
             disabled={!canSubmit}
             data-testid="submit-report"
           >
-            {mutation.isPending ? "Submitting…" : "Submit report"}{" "}
+            {mutation.isPending ? "জমা দেওয়া হচ্ছে…" : "রিপোর্ট জমা দিন"}{" "}
             <span>↗</span>
           </button>
         </div>

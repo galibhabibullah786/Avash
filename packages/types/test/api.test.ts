@@ -216,18 +216,30 @@ describe('symptomChecklistSchema — round-trip', () => {
 });
 
 describe('symptomCheckRequestSchema — round-trip', () => {
-  test('accepts an empty body (both fields optional)', () => {
-    expect(() => symptomCheckRequestSchema.parse({})).not.toThrow();
+  test('accepts a valid request with qaPairs and checklist', () => {
+    expect(() =>
+      symptomCheckRequestSchema.parse({
+        qaPairs: [{ question: 'Do you have fever?', answer: 'Yes' }],
+        checklist: fullChecklist,
+      })
+    ).not.toThrow();
   });
 
-  test('accepts symptomText at the max length', () => {
-    const text = 'a'.repeat(SYMPTOM_TEXT_MAX_CHARS);
-    expect(() => symptomCheckRequestSchema.parse({ symptomText: text })).not.toThrow();
+  test('accepts empty qaPairs array with valid checklist', () => {
+    expect(() =>
+      symptomCheckRequestSchema.parse({
+        qaPairs: [],
+        checklist: fullChecklist,
+      })
+    ).not.toThrow();
   });
 
-  test('rejects symptomText over the max length', () => {
-    const text = 'a'.repeat(SYMPTOM_TEXT_MAX_CHARS + 1);
-    expect(() => symptomCheckRequestSchema.parse({ symptomText: text })).toThrow();
+  test('rejects a missing checklist', () => {
+    expect(() => symptomCheckRequestSchema.parse({ qaPairs: [] })).toThrow();
+  });
+
+  test('rejects missing qaPairs', () => {
+    expect(() => symptomCheckRequestSchema.parse({ checklist: fullChecklist })).toThrow();
   });
 });
 

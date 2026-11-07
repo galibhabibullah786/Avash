@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useSignOut } from './useSignOut';
 import { useSession } from './SessionProvider';
-import { SubmitButton } from '../../components/SubmitButton';
+import { SubmitButton } from '@avash/ui';
 
 /** Fixed, generic message only — never `useSignOut()`'s own `error` string, and never a raw rejection. */
 export const SIGN_OUT_GENERIC_ERROR = 'Unable to sign out. Please try again.';

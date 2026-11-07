@@ -1,30 +1,31 @@
 import { Link } from "react-router-dom";
 import { useHealth } from "../features/health/useHealth";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
+import { useInstallPrompt } from "../hooks/useInstallPrompt";
 
 const preventionCards = [
   [
     "01",
-    "Avoid bites",
-    "Wear long sleeves and use mosquito repellent, especially at dawn and dusk.",
+    "মশার কামড় এড়িয়ে চলুন",
+    "ফুল হাতা পোশাক পরিধান করুন এবং বিশেষ করে সকাল ও সন্ধ্যায় মশানিরোধক ব্যবহার করুন।",
     "◌",
   ],
   [
     "02",
-    "Remove standing water",
-    "Empty containers, plant trays, and anything that can collect rainwater.",
+    "জমে থাকা পানি অপসারণ করুন",
+    "টব, পাত্র, বালতি ও ডাবের খোসা পরিষ্কার রাখুন যাতে বৃষ্টির পানি জমতে না পারে।",
     "⌁",
   ],
   [
     "03",
-    "Protect your home",
-    "Keep doors and windows screened. Sleep under a mosquito net when needed.",
+    "ঘরবাড়ি সুরক্ষিত রাখুন",
+    "জানালা-দরজায় নেট লাগান এবং রাতে ঘুমানোর সময় অবশ্যই মশারি ব্যবহার করুন।",
     "⌂",
   ],
   [
     "04",
-    "Clean your community",
-    "Join a weekly 10-minute clean-up around your home and neighborhood.",
+    "এলাকা পরিচ্ছন্ন রাখুন",
+    "প্রতি সপ্তাহে অন্তত ১০ মিনিট সময় নিয়ে নিজের আঙিনা ও আশপাশের পরিবেশ পরিষ্কার করুন।",
     "♧",
   ],
 ];
@@ -32,55 +33,102 @@ const preventionCards = [
 export default function Home() {
   const isOnline = useOnlineStatus();
   const health = useHealth();
+  const { status: installStatus, promptInstall, isIos, dismissPrompt } = useInstallPrompt();
 
   return (
     <main className="home">
       <section className="home__hero">
         <div className="home__hero-copy">
           <p className="eyebrow">
-            <span className="eyebrow__dot" /> Bangladesh dengue intelligence
+            <span className="eyebrow__dot" /> বাংলাদেশ ডেঙ্গু পূর্বাভাস ও তথ্য
           </p>
 
           <h1>সুরক্ষার আগাম বার্তা</h1>
 
           <p className="home__lede">
-            Early warnings, local insight, and practical prevention for every
-            community in Bangladesh.
+            বাংলাদেশের প্রতিটি এলাকার জন্য আগাম সতর্কতা, স্থানীয় ঝুঁকি বিশ্লেষণ এবং কার্যকর প্রতিরোধ।
           </p>
 
           <div className="button-row">
             <Link className="button button--primary" to="/risk">
-              Explore risk map <span>↗</span>
+              ঝুঁকির মানচিত্র দেখুন <span>↗</span>
             </Link>
           </div>
 
           <div className="hero__trust">
-            <span>●</span> Updated daily from weather and health signals{" "}
+            <span>●</span> আবহাওয়া ও স্বাস্থ্য তথ্যের ভিত্তিতে প্রতিদিন হালনাগাদকৃত{" "}
             <strong>·</strong>
           </div>
         </div>
 
-        <img style={{ width: '550px', borderRadius: "50px" }} src="/img/mosquito.png" />
+        <img style={{ width: '550px', borderRadius: "50px" }} src="/img/mosquito.png" alt="ডেঙ্গু সচেতনতা" />
       </section>
+
+      {installStatus === 'available' ? (
+        <section className="px-6 py-4 mx-auto my-4 max-w-5xl bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/30 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4" data-testid="home-install-banner">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl" aria-hidden="true">📲</span>
+            <div>
+              <strong className="block text-[var(--color-text)]">আভাস অ্যাপ ইনস্টল করুন</strong>
+              <small className="text-[var(--color-text-muted)]">ব্রাউজার বন্ধ থাকলেও তাৎক্ষণিক ডেঙ্গু সতর্কতা পেতে আপনার ডিভাইসে ইনস্টল করুন।</small>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              className="button button--primary text-sm py-2 px-4"
+              onClick={() => void promptInstall()}
+              data-testid="home-install-btn"
+            >
+              ইনস্টল করুন
+            </button>
+            <button
+              type="button"
+              className="button button--quiet text-sm py-2 px-3 text-[var(--color-text-muted)]"
+              onClick={() => dismissPrompt?.()}
+              aria-label="বিজ্ঞপ্তি বন্ধ করুন"
+            >
+              ✕
+            </button>
+          </div>
+        </section>
+      ) : isIos && installStatus !== 'installed' && installStatus !== 'dismissed' ? (
+        <section className="px-6 py-4 mx-auto my-4 max-w-5xl bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4" data-testid="home-ios-banner">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl" aria-hidden="true">🍏</span>
+            <div>
+              <strong className="block text-[var(--color-text)]">আইফোনে ডেঙ্গু সতর্কতা সক্রিয় করুন</strong>
+              <small className="text-[var(--color-text-muted)]">আইফোনে সতর্কতা পেতে Safari-এর <b>Share ⎋</b> বোতাম চেপে <b>&apos;Add to Home Screen ⊞&apos;</b> নির্বাচন করুন।</small>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="button button--quiet text-sm py-2 px-3 text-[var(--color-text-muted)] shrink-0"
+            onClick={() => dismissPrompt?.()}
+            aria-label="বিজ্ঞপ্তি বন্ধ করুন"
+          >
+            ✕
+          </button>
+        </section>
+      ) : null}
 
       <section className="section ai-section">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">From signal to action</p>
-            <h2>Smarter warnings, sooner.</h2>
+            <p className="eyebrow">সংকেত থেকে তাৎক্ষণিক পদক্ষেপ</p>
+            <h2>আগেভাগেই নির্ভুল পূর্বাভাস</h2>
           </div>
           <p className="section-note">
-            AVASH brings together the signals that matter, turning complex data
-            into a clear next step.
+            আভাস প্রয়োজনীয় তথ্যসমূহ সমন্বয় করে জটিল স্বাস্থ্য ও আবহাওয়ার উপাত্তকে সহজ কার্যক্রমে রূপান্তর করে।
           </p>
         </div>
         <div className="ai-flow">
           {[
-            ["01", "Dengue data", "Cases & reports"],
-            ["02", "Weather", "Rainfall & humidity"],
-            ["03", "AI model", "Pattern detection"],
-            ["04", "Risk prediction", "2–4 week outlook"],
-            ["05", "Your map", "Local action"],
+            ["০১", "ডেঙ্গু তথ্য", "আক্রান্ত ও রিপোর্ট"],
+            ["০২", "আবহাওয়া", "বৃষ্টিপাত ও আর্দ্রতা"],
+            ["০৩", "এআই মডেল", "প্যাটার্ন শনাক্তকরণ"],
+            ["০৪", "ঝুঁকি পূর্বাভাস", "২–৪ সপ্তাহের আগাম বার্তা"],
+            ["০৫", "আপনার মানচিত্র", "স্থানীয় পদক্ষেপ"],
           ].map(([number, title, sub], index) => (
             <div className="ai-step" key={title}>
               <span>{number}</span>
@@ -97,11 +145,11 @@ export default function Home() {
       <section className="section prevention-section">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Small steps. Big impact.</p>
-            <h2>Prevention starts here.</h2>
+            <p className="eyebrow">ছোট পদক্ষেপ, বড় সুরক্ষা</p>
+            <h2>প্রতিরোধ শুরু হোক এখনই</h2>
           </div>
           <Link className="text-link" to="/prevention">
-            See all prevention tips <span>↗</span>
+            সকল প্রতিরোধ পরামর্শ দেখুন <span>↗</span>
           </Link>
         </div>
         <div className="prevention-grid">
@@ -111,8 +159,8 @@ export default function Home() {
               <div className="prevention-card__icon">{icon}</div>
               <h3>{title}</h3>
               <p>{text}</p>
-              <Link to="/prevention" aria-label={`Learn more about ${title}`}>
-                Learn more <span>↗</span>
+              <Link to="/prevention" aria-label={`${title} সম্পর্কে বিস্তারিত জানুন`}>
+                বিস্তারিত জানুন <span>↗</span>
               </Link>
             </article>
           ))}
@@ -120,24 +168,24 @@ export default function Home() {
       </section>
       <section
         className="status-panel home__status"
-        aria-label="API connection status"
+        aria-label="সিস্টেম সংযোগ অবস্থা"
       >
-        <h2 className="status-panel__title">System status</h2>
+        <h2 className="status-panel__title">সিস্টেম সংযোগ অবস্থা</h2>
         {!isOnline ? (
           <p className="status-panel__item" data-testid="status-offline">
-            You are offline
+            আপনি অফলাইনে আছেন
           </p>
         ) : health.isLoading ? (
           <p className="status-panel__item" data-testid="status-loading">
-            Checking live signals...
+            লাইভ সংকেত যাচাই করা হচ্ছে...
           </p>
         ) : health.isError ? (
           <p className="status-panel__item" data-testid="status-error">
-            API: unavailable right now. Please try again later.
+            সার্ভার সংযোগ এই মুহূর্তে অনুপলব্ধ। অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।
           </p>
         ) : (
           <p className="status-panel__item" data-testid="status-success">
-            Live signals connected: {health.data?.status ?? "unknown"}
+            লাইভ সংযোগ সক্রিয়: {health.data?.status ?? "স্বাভাবিক"}
           </p>
         )}
       </section>

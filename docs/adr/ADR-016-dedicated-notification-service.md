@@ -1,7 +1,11 @@
 # ADR-016: A third deployable app — `apps/notify` for announcement push
 
 **Date:** 2026-08-19
-**Status:** Accepted
+**Status:** Superseded / Amended
+
+> [!NOTE]
+> **Architectural Amendment:** The standalone `apps/notify` service on Vercel has been decommissioned.
+> Push notifications are modernized to run natively as **Supabase Edge Functions** (`supabase/functions/risk-alerts`) orchestrated by Inngest, using `packages/push`. This eliminates Vercel deployment overhead and extra Node-based app wrappers while keeping execution serverless and fully containerized in local development via Supabase CLI.
 
 ## Context
 

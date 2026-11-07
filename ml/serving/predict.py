@@ -1,29 +1,17 @@
 """Batch inference entry point (`docs/PROJECT_PLAN.md` §5.3, ADR-002).
 
-`cron-batch-predict.yml` runs this file directly inside a GitHub Actions
-runner every `BATCH_PREDICT_CADENCE` (24h, §14) — plain Python, no
-Cloudflare Worker involved, connecting straight to Supabase with the
-service-role key (ADR-007). The onnxruntime scoring pass that actually
-populates `risk_predictions` is a separate, already-landed concern; this
-module picks up from an existing `risk_predictions` table and owns only
-the delivery step described in §4: for any region whose latest prediction
-just crossed into `high`/`severe` risk, proximity-match against
+`cron-batch-predict.yml` runs this file directly inside a GitHub Actions runner
+every `BATCH_PREDICT_CADENCE` (24h, §14) connecting to Supabase (ADR-007).
+For any region crossing into `high`/`severe` risk, proximity-match against
 `alert_subscriptions` and send Web Push via `push_delivery.py`.
-
-Safety property (do not remove): `batch_predict()` returns early, with a
-clear log line, whenever `risk_predictions` has no rows. A cron guard
-(`.github/workflows/cron-batch-predict.yml`) only skips this file when it
-is completely empty — once it has real content, every scheduled run
-executes for real, including sending real pushes. An empty
-`risk_predictions` table is exactly the situation this early return
-exists to make safe: there is nothing to alert on, and nothing here may
-ever infer otherwise.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -43,6 +31,11 @@ from push_delivery import deliver_region_alert  # noqa: E402
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
+# Default Hugging Face repository for production dengue surge models.
+# Can be overridden via HF_MODEL_REPO_ID and HF_MODEL_TAG environment variables.
+DEFAULT_HF_MODEL_REPO = "avash-health/avash-dengue-models"
+DEFAULT_HF_MODEL_TAG = "v1.0.0"
+
 # Risk bands that trigger a push (docs/PROJECT_PLAN.md §4, RISK_LEVEL_BANDS
 # §14) — "moderate" and "low" never page a subscriber, only a crossing
 # into one of these two.
@@ -60,6 +53,102 @@ def _build_supabase_client() -> Client:
     if not url or not key:
         raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must both be set")
     return create_client(url, key)
+
+
+def verify_file_sha256(path: Path, expected_sha256: str) -> bool:
+    """Verifies that a file's SHA-256 matches the pinned expected hash."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest() == expected_sha256.lower()
+
+
+def fetch_model_from_hub(
+    repo_id: str | None = None,
+    filename: str = "model.onnx",
+    destination: Path | None = None,
+    tag: str | None = None,
+    expected_sha256: str | None = None,
+) -> Path | None:
+    """Retrieves a release-tagged ONNX artifact from Hugging Face Hub with disk cache fallback.
+
+    Strict tag resolution is enforced via `tag` (or HF_MODEL_TAG env var, default: v1.0.0).
+    If the file exists locally in disk cache, it is reused. If the network or Hugging Face Hub
+    is unreachable, it falls back to the local cached artifact if present, or logs a warning
+    and returns None cleanly without failing the batch job.
+    """
+    resolved_repo = repo_id or os.environ.get("HF_MODEL_REPO_ID", DEFAULT_HF_MODEL_REPO)
+    resolved_tag = tag or os.environ.get("HF_MODEL_TAG", DEFAULT_HF_MODEL_TAG)
+    resolved_sha = expected_sha256 or os.environ.get("HF_MODEL_SHA256")
+    dest_path = destination or (Path(__file__).resolve().parent / "models" / filename)
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if dest_path.exists():
+        if not resolved_sha or verify_file_sha256(dest_path, resolved_sha):
+            logger.info("Using cached model artifact: %s (tag: %s)", dest_path, resolved_tag)
+            return dest_path
+        logger.warning(
+            "Cached model %s checksum mismatch; attempting refresh from %s@%s",
+            dest_path,
+            resolved_repo,
+            resolved_tag,
+        )
+
+    try:
+        from huggingface_hub import hf_hub_download
+
+        logger.info(
+            "Downloading %s from Hugging Face repo %s (tag: %s)...",
+            filename,
+            resolved_repo,
+            resolved_tag,
+        )
+        downloaded_path = hf_hub_download(
+            repo_id=resolved_repo,
+            filename=filename,
+            revision=resolved_tag,
+            local_dir=str(dest_path.parent),
+        )
+        downloaded = Path(downloaded_path)
+
+        if resolved_sha and not verify_file_sha256(downloaded, resolved_sha):
+            raise RuntimeError(
+                f"Downloaded artifact {filename} failed SHA-256 checksum verification against expected hash."
+            )
+
+        logger.info("Successfully fetched model %s@%s to %s", resolved_repo, resolved_tag, downloaded)
+        return downloaded
+
+    except Exception as err:
+        logger.warning(
+            "Hugging Face Hub model fetch failed for %s@%s (%s); evaluating disk cache fallback...",
+            resolved_repo,
+            resolved_tag,
+            err,
+        )
+
+        if dest_path.exists():
+            logger.info("Disk cache fallback: using previously cached model artifact at %s", dest_path)
+            return dest_path
+
+        logger.warning(
+            "No cached local ONNX artifact found at %s; skipping inference pass gracefully without failing.",
+            dest_path,
+        )
+        return None
+
+
+def _refresh_materialized_views() -> None:
+    """Triggers refresh materialized view concurrently region_risk_summary (ADR-006)."""
+    script_path = Path(__file__).resolve().parents[2] / "scripts" / "refresh-materialized-views.ts"
+    if script_path.exists():
+        try:
+            logger.info("Triggering materialized view refresh: %s", script_path)
+            subprocess.run(["node", "--experimental-strip-types", str(script_path)], check=True, timeout=30)
+            logger.info("Materialized view region_risk_summary refreshed successfully")
+        except Exception as err:
+            logger.warning("Materialized view refresh script failed: %s", err)
 
 
 def _find_crossings(predictions: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -145,6 +234,7 @@ def batch_predict() -> None:
         len(crossings),
         total_sent,
     )
+    _refresh_materialized_views()
 
 
 if __name__ == "__main__":

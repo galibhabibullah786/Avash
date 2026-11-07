@@ -53,6 +53,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      '@avash/ui': fileURLToPath(new URL('../../packages/ui/index.tsx', import.meta.url)),
     },
   },
   build: {

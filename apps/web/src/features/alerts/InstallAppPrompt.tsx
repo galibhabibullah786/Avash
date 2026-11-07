@@ -13,13 +13,23 @@ import { useInstallPrompt } from '../../hooks/useInstallPrompt';
  * event is captured.
  */
 export function InstallAppPrompt() {
-  const { status, promptInstall } = useInstallPrompt();
+  const { status, promptInstall, isIos } = useInstallPrompt();
 
   if (status === 'installed') {
     return (
       <p className="status-panel__item" data-testid="install-prompt-installed">
-        Avash is installed on this device — alerts arrive even with the browser closed.
+        এই ডিভাইসে আভাস ইনস্টল করা আছে — ব্রাউজার বন্ধ থাকলেও সতর্কতা বার্তা পৌঁছাবে।
       </p>
+    );
+  }
+
+  if (isIos && status !== 'dismissed') {
+    return (
+      <div className="field" data-testid="install-prompt-ios">
+        <p className="page__description">
+          আইফোনে ডেঙ্গু সতর্কতা সক্রিয় করতে: Safari-এর <b>Share ⎋</b> বোতাম চেপে <b>&apos;Add to Home Screen ⊞&apos;</b> নির্বাচন করুন।
+        </p>
+      </div>
     );
   }
 
@@ -33,7 +43,7 @@ export function InstallAppPrompt() {
   return (
     <div className="field" data-testid="install-prompt">
       <p className="page__description">
-        Install Avash on this device to open it like an app and keep receiving alerts when your browser is closed.
+        ব্রাউজার বন্ধ থাকলেও তাৎক্ষণিক ডেঙ্গু সতর্কতা পেতে আপনার ডিভাইসে আভাস অ্যাপটি ইনস্টল করুন।
       </p>
       <button
         type="button"
@@ -41,7 +51,7 @@ export function InstallAppPrompt() {
         onClick={() => void promptInstall()}
         data-testid="install-prompt-button"
       >
-        Install Avash
+        আভাস ইনস্টল করুন
       </button>
     </div>
   );

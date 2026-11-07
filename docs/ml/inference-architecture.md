@@ -12,11 +12,14 @@ conflating them is the mistake ADR-002 exists to prevent.
 | **On-device (bonus UX)** | Browser, `onnxruntime-web` (WASM), inside the installed `apps/web` PWA | On-demand, fully offline | Lets a user re-score their own last-synced local feature snapshot instantly with zero network round-trip. This is where "0ms cold start / edge AI" is honestly true, because compute happens on the user's device, not a shared Worker with a CPU-time ceiling. |
 
 Both paths load the **same** checksum-pinned `.onnx` artifact —
-`ml/serving/predict.py` via the Python `onnxruntime` package, `apps/web`
+`ml/serving/predict.py` via the Python `onnxruntime` package (downloaded
+at scheduled runtime from the Hugging Face Model Hub repo
+`avash-health/avash-dengue-models` via `huggingface_hub`), `apps/web`
 via `packages/ml-inference`'s `onnxruntime-web` wrapper. There is exactly
 one model file, versioned once (`model_v{semver}.onnx`), consumed twice.
 Both paths verify the artifact's SHA256 against
-`ml/training/MODEL_MANIFEST.json` before running it.
+`ml/training/MODEL_MANIFEST.json` before running it. Zero model binaries
+are stored in the GitHub repository.
 
 ## Why per-request Worker inference is ruled out
 

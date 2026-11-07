@@ -20,10 +20,10 @@ export interface RiskBandStyle {
 }
 
 export const RISK_LEVEL_BAND_STYLES: Record<RiskLevel, RiskBandStyle> = {
-  low: { label: 'Low', range: '0 – 0.25', fillColor: '#2e7d5b', weight: 1, dashArray: null },
-  moderate: { label: 'Moderate', range: '0.25 – 0.50', fillColor: '#d9a441', weight: 2, dashArray: '6 3' },
-  high: { label: 'High', range: '0.50 – 0.75', fillColor: '#c9702e', weight: 3, dashArray: '3 2' },
-  severe: { label: 'Severe', range: '0.75 – 1.00', fillColor: '#c94a4a', weight: 4, dashArray: '2 2' },
+  low: { label: 'কম (Low)', range: '0 – 0.25', fillColor: '#2e7d5b', weight: 1, dashArray: null },
+  moderate: { label: 'মাঝারি (Moderate)', range: '0.25 – 0.50', fillColor: '#d9a441', weight: 2, dashArray: '6 3' },
+  high: { label: 'উচ্চ (High)', range: '0.50 – 0.75', fillColor: '#c9702e', weight: 3, dashArray: '3 2' },
+  severe: { label: 'মারাত্মক (Severe)', range: '0.75 – 1.00', fillColor: '#c94a4a', weight: 4, dashArray: '2 2' },
 };
 
 export const RISK_LEVEL_ORDER: RiskLevel[] = ['low', 'moderate', 'high', 'severe'];
