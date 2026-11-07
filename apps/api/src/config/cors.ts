@@ -2,6 +2,9 @@ import type { Bindings } from '../types';
 
 type CorsEnv = Pick<Bindings, 'CORS_ALLOWED_ORIGINS' | 'CORS_PREVIEW_ORIGIN_SUFFIX'>;
 
+/** `CORS_PREFLIGHT_MAX_AGE_S` (§14) — 24h preflight cache max-age header. */
+export const CORS_PREFLIGHT_MAX_AGE_S = 86400;
+
 function escapeForRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -16,12 +19,14 @@ function escapeForRegExp(value: string): string {
 export function isAllowedOrigin(origin: string | undefined, env: CorsEnv): boolean {
   if (!origin) return false;
 
-  const exactOrigins = env.CORS_ALLOWED_ORIGINS.split(',')
+  const rawOrigins = env?.CORS_ALLOWED_ORIGINS ?? '';
+  const exactOrigins = rawOrigins
+    .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
   if (exactOrigins.includes(origin)) return true;
 
-  const suffix = env.CORS_PREVIEW_ORIGIN_SUFFIX?.trim();
+  const suffix = env?.CORS_PREVIEW_ORIGIN_SUFFIX?.trim();
   if (suffix) {
     const previewPattern = new RegExp(`^https://[a-z0-9-]+\\.${escapeForRegExp(suffix)}$`);
     if (previewPattern.test(origin)) return true;

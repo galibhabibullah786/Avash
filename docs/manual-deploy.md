@@ -577,37 +577,88 @@ images, a bad one affects only whoever pulled it.
 
 ---
 
-## Service 7 — Notifications (`supabase/functions/risk-alerts`, Supabase Edge Functions + Inngest)
+## Service 7 — Notifications (`packages/db/supabase/functions/risk-alerts`, Supabase Edge Functions + Inngest)
 
-Automated dengue risk notifications are delivered via native **Supabase Edge Functions** orchestrated by Inngest.
-The Edge Function uses `packages/push` (`deliverAnnouncement.ts`, `webPush.ts`) to deliver Web Push notifications directly to subscribers. It talks to Supabase directly with the service-role key and runs serverlessly.
+Automated dengue surge risk notifications and announcement dispatches are executed via native **Supabase Edge Functions** (Deno runtime) orchestrated by Inngest. The Edge Function runs serverlessly, accesses PostGIS directly with the service-role key, and delivers signed Web Push payloads via WebCrypto primitives (`packages/push/`).
 
 ### Preconditions
 
-- Supabase CLI installed and authenticated via `supabase login`.
-- Linked project via `supabase link --project-ref <project-ref>`.
-- Edge Function secrets configured:
-  ```bash
-  supabase secrets set \
-    VAPID_PUBLIC_KEY="<public-key>" \
-    VAPID_PRIVATE_KEY="<private-key>" \
-    INNGEST_EVENT_KEY="<inngest-event-key>" \
-    INNGEST_SIGNING_KEY="<inngest-signing-key>"
-  ```
+1. **Supabase CLI**: Authenticated via personal access token (`supabase login` or set `SUPABASE_ACCESS_TOKEN`).
+2. **Project Link**: Linked to the target project via `pnpm --filter @avash/db exec supabase link --project-ref <project-ref>`.
+3. **Edge Function Secrets**: Configured in Supabase's vault (persists across deploys, never stored in repository code):
+   ```bash
+   pnpm --filter @avash/db exec supabase secrets set --project-ref <project-ref> \
+     SUPABASE_URL="https://<project-ref>.supabase.co" \
+     SUPABASE_SERVICE_ROLE_KEY="<service-role-key>" \
+     VAPID_PUBLIC_KEY="<vapid-public-key>" \
+     VAPID_PRIVATE_KEY="<vapid-private-key>" \
+     INNGEST_EVENT_KEY="<inngest-event-key>" \
+     INNGEST_SIGNING_KEY="<inngest-signing-key>"
+   ```
+   Verify current configured secrets:
+   ```bash
+   pnpm --filter @avash/db exec supabase secrets list --project-ref <project-ref>
+   ```
 
-### Deploy — Edge Function
+### Local Development & Simulation
 
+Test the Edge Function locally against your local or preview database:
 ```bash
-supabase functions deploy risk-alerts --no-verify-jwt
+pnpm --filter @avash/db exec supabase functions serve risk-alerts --env-file .env --no-verify-jwt
+```
+In a separate terminal, test the local HTTP endpoint:
+```bash
+curl -i "http://127.0.0.1:54321/functions/v1/risk-alerts"
 ```
 
-### Verify
+### Manual Deploy — Preview (`dev` environment)
 
 ```bash
-curl -sS "https://<project-ref>.supabase.co/functions/v1/risk-alerts"
+pnpm --filter @avash/db exec supabase functions deploy risk-alerts \
+  --project-ref <preview-project-ref> \
+  --no-verify-jwt
 ```
 
-Expect a successful response. The Inngest dashboard will automatically reflect function registration and subscriber notification runs.
+### Manual Deploy — Production (`main` environment)
+
+```bash
+pnpm --filter @avash/db exec supabase functions deploy risk-alerts \
+  --project-ref <production-project-ref> \
+  --no-verify-jwt
+```
+
+### Verification
+
+1. **Endpoint Reachability**: Send an unauthenticated GET probe:
+   ```bash
+   curl -sS -o /dev/null -w "%{http_code}\n" "https://<project-ref>.supabase.co/functions/v1/risk-alerts"
+   ```
+   Expect HTTP status `200` or `401` (Inngest SDK returns 401 on unauthenticated non-sync requests, confirming the handler is mounted and healthy).
+2. **Inngest Function Registration**:
+   Open [Inngest Dashboard](https://app.inngest.com) → Apps → `avash-risk-alerts`. Verify `send-dengue-risk-alert` function is registered and listening for `dengue/risk-alert.triggered` events.
+3. **Execution Logs**:
+   Stream real-time function logs during a test dispatch:
+   ```bash
+   pnpm --filter @avash/db exec supabase functions logs risk-alerts --project-ref <project-ref>
+   ```
+
+### Rollback
+
+If a deployed function fails:
+1. Revert to the known-good git commit:
+   ```bash
+   git checkout <prior-stable-commit-sha> -- packages/db/supabase/functions/risk-alerts
+   ```
+2. Immediately redeploy the Edge Function:
+   ```bash
+   pnpm --filter @avash/db exec supabase functions deploy risk-alerts \
+     --project-ref <project-ref> \
+     --no-verify-jwt
+   ```
+3. Discard the working tree checkout:
+   ```bash
+   git restore packages/db/supabase/functions/risk-alerts
+   ```
 
 
 

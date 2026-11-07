@@ -54,7 +54,8 @@ ENVIRONMENT=development
 # http://localhost:5173 call the local Worker — without ever touching
 # wrangler.toml's [env.preview]/[env.production] blocks, which stay
 # production-domain-only. Never add a localhost origin to wrangler.toml.
-CORS_ALLOWED_ORIGINS=https://avash.pages.dev,http://localhost:5173
+CORS_ALLOWED_ORIGINS=https://avash.pages.dev,http://localhost:5173,http://localhost:4173,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:4173,http://127.0.0.1:8080
+CORS_PREVIEW_ORIGIN_SUFFIX=avash.pages.dev
 
 # Cloudinary — signs direct-to-Cloudinary uploads server-side (ADR-015).
 # The browser learns the cloud name from the signature response, never

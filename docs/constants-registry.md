@@ -33,7 +33,8 @@ only once the constant is actually wired into the code location listed.
 | `MAP_TILE_URL_TEMPLATE` | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` | `apps/web/src/features/map/tileLayer.ts` | basemap tile source; the one value to change when swapping tile providers (ADR-013) | implemented |
 | `MAP_TILE_ATTRIBUTION` | `© OpenStreetMap contributors` | `apps/web/src/features/map/tileLayer.ts` | attribution control — required by the OSM tile usage policy, not optional styling | implemented |
 | `MAP_TILE_MAX_ZOOM` | 19 | `apps/web/src/features/map/tileLayer.ts` | highest zoom the OSM standard style serves; requesting past it returns blank tiles | implemented |
-| `CORS_ALLOWED_ORIGINS` | production Pages domain + PR preview pattern | `apps/api/wrangler.toml` (`CORS_ALLOWED_ORIGINS`, `CORS_PREVIEW_ORIGIN_SUFFIX` vars), read in `apps/api/src/config/cors.ts` | cross-origin write protection | implemented |
+| `CORS_ALLOWED_ORIGINS` | production Pages domain + PR preview pattern (+ localhost:5173/4173/8080 and 127.0.0.1 equivalents in local .dev.vars) | `apps/api/wrangler.toml` (`CORS_ALLOWED_ORIGINS`, `CORS_PREVIEW_ORIGIN_SUFFIX` vars), read in `apps/api/src/config/cors.ts` | cross-origin write protection | implemented |
+| `CORS_PREFLIGHT_MAX_AGE_S` | 86400 | `apps/api/src/config/cors.ts` | preflight cache max-age (24h) | implemented |
 | `API_CLIENT_TIMEOUT_MS` | 8000 | `apps/web/src/lib/apiClient.ts` | aborts a hung `apps/api` request instead of leaving a query pending indefinitely | implemented |
 | `POSTGIS_LOCAL_IMAGE` | `supabase/postgres:17.6` | `supabase/config.toml`, `compose.yaml` | local + CI database parity with Supabase's Postgres 17 / PostGIS 3.4 | implemented |
 | `ML_PYTHON_IMAGE` | `python:3.11-slim-bookworm` | `docker/ml.Dockerfile`, cron workflow `python-version` | reproducible ML runtime — identical dependency tree locally and on schedule | implemented (`ml.Dockerfile`, `cron-batch-predict.yml`) |

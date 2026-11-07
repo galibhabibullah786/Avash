@@ -50,15 +50,23 @@ to the pipeline could never be tested by the pull request making it.
 `supabase/functions/risk-alerts` delivers automated Web Push notifications orchestrated by Inngest.
 Deployments are executed conditionally via `pipeline.yml`'s `deploy-functions` job using the official `supabase/setup-cli` action only when changes occur under `supabase/functions/` or `packages/push/`.
 
-#### Supabase Edge Function Deployment
+#### Supabase Edge Function Deployment (`risk-alerts`)
 
-The workflow runs `supabase functions deploy risk-alerts --no-verify-jwt`.
-Dependencies from `packages/push` and `@avash/types` are vendored and shared cleanly via Deno-compatible imports or esbuild bundle step.
+Automated Web Push risk alerts and subscriber notifications are deployed as a Supabase Edge Function (`packages/db/supabase/functions/risk-alerts`) orchestrated by Inngest.
 
-Three gates ensure reliable execution:
-1. **Secrets configured in Supabase:** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `INNGEST_EVENT_KEY`, and `INNGEST_SIGNING_KEY` must be configured via `supabase secrets set`.
-2. **Change Detection:** Deploys run on `main` and `dev` only when notification code changes.
-3. **Inngest Sync:** Function updates register with Inngest automatically via the Edge Function endpoint.
+The CI/CD deployment runs conditionally via `pipeline.yml` (`deploy-functions` job):
+1. **Change Detection**: The job triggers on pushes to `main` or `dev` (and manual `workflow_dispatch`) whenever file changes are detected under:
+   - `packages/db/supabase/functions/**`
+   - `packages/push/**`
+2. **Authentication**: Authenticates using the `SUPABASE_ACCESS_TOKEN` secret and targets `SUPABASE_PROJECT_REF` (configured in GitHub Repository Secrets / Variables).
+3. **Deployment Step**:
+   ```bash
+   pnpm --filter @avash/db exec supabase functions deploy risk-alerts \
+     --project-ref "${SUPABASE_PROJECT_REF:-kdklmbqkczkaakgswlix}" \
+     --no-verify-jwt
+   ```
+4. **Environment Secrets**: Edge Function secrets (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`) reside in the Supabase vault and persist independently across CI deploys without needing to be re-uploaded on every commit.
+5. **Inngest Synchronization**: Following deployment, the Inngest platform synchronizes the `avash-risk-alerts` app and function schemas via webhook introspection at `https://<project-ref>.supabase.co/functions/v1/risk-alerts`. Note that unauthenticated external GET requests return `401` by design, confirming active signature verification.
 
 A cloud-mode `GET /api/inngest` returns `401`, not `200` — the SDK
 requires a signed introspection request. Do not "fix" a smoke test by
