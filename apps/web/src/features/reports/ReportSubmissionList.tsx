@@ -23,7 +23,7 @@ export function ReportSubmissionList() {
   return (
     <section className="card" data-testid="report-submission-list" style={{ marginTop: '2rem' }}>
       <div className="page__title-row">
-        <h2 className="page__title">Local report submissions</h2>
+        <h2 className="page__title">এলাকাভিত্তিক নাগরিক রিপোর্টসমূহ</h2>
         {hasLocation ? (
           <button
             type="button"
@@ -32,7 +32,7 @@ export function ReportSubmissionList() {
             disabled={isRefreshing}
             data-testid="report-submission-list-refresh"
           >
-            {isRefreshing ? 'Refreshing…' : 'Refresh'}
+            {isRefreshing ? 'হালনাগাদ হচ্ছে…' : 'হালনাগাদ'}
           </button>
         ) : null}
       </div>
@@ -40,7 +40,7 @@ export function ReportSubmissionList() {
       {!hasLocation ? (
         <div className="field">
           <p className="page__description">
-            Share your location to see report submissions around your location.
+            আপনার আশপাশের নাগরিক রিপোর্ট দেখতে অবস্থান অনুমতি প্রদান করুন।
           </p>
           <button
             type="button"
@@ -49,23 +49,23 @@ export function ReportSubmissionList() {
             disabled={geolocation?.status === 'requesting'}
             data-testid="report-submission-list-locate"
           >
-            {geolocation?.status === 'requesting' ? 'Locating…' : 'Show reports around my location'}
+            {geolocation?.status === 'requesting' ? 'অবস্থান খোঁজা হচ্ছে…' : 'আমার আশপাশের রিপোর্ট দেখুন'}
           </button>
           {locationFailed ? (
             <p className="field__error" data-testid="report-submission-list-location-error">
-              Unable to determine your location right now.
+              এই মুহূর্তে আপনার অবস্থান শনাক্ত করা যায়নি।
             </p>
           ) : null}
         </div>
       ) : submissions?.isLoading ? (
-        <p data-testid="report-submission-list-loading">Loading…</p>
+        <p data-testid="report-submission-list-loading">তথ্য লোড হচ্ছে…</p>
       ) : submissions?.isError ? (
         <p className="field__error" data-testid="report-submission-list-error">
-          Unable to load report submissions right now.
+          এই মুহূর্তে রিপোর্ট তালিকা লোড করা যায়নি।
         </p>
       ) : items.length === 0 ? (
         <p className="status-panel__item" data-testid="report-submission-list-empty">
-          No reports around your area right now.
+          আপনার এলাকায় এই মুহূর্তে কোনো নাগরিক রিপোর্ট নেই।
         </p>
       ) : (
         <ul className="announcement-list" data-testid="report-submission-list-items">
@@ -73,13 +73,13 @@ export function ReportSubmissionList() {
             <li key={item?.id} className="card" data-testid="report-submission-item">
               <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
                 {item.photoUrl && (
-                  <img src={item.photoUrl} alt="Report site" style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8 }} />
+                  <img src={item.photoUrl} alt="রিপোর্ট প্রজনন ক্ষেত্র" style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8 }} />
                 )}
                 <div>
-                  <h3 style={{ margin: 0, textTransform: 'capitalize' }}>{item.status} Report</h3>
-                  <p style={{ margin: '0.5rem 0' }}>{item.description || 'No description provided.'}</p>
+                  <h3 style={{ margin: 0, textTransform: 'capitalize' }}>নাগরিক রিপোর্ট ({item.status})</h3>
+                  <p style={{ margin: '0.5rem 0' }}>{item.description || 'কোনো বিবরণ দেওয়া হয়নি।'}</p>
                   <p className="field__label">
-                    Reported {new Date(item.createdAt).toLocaleString()} • {Math.round(item.distance * 111)}km away
+                    রিপোর্টের সময়: {new Date(item.createdAt).toLocaleString('bn-BD')} • {Math.round(item.distance * 111)} কিমি দূরে
                   </p>
                 </div>
               </div>

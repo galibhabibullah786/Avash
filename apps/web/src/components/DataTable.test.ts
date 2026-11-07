@@ -2,7 +2,7 @@ import { describe, test, expect, afterEach, vi } from 'vitest';
 import { createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { act } from 'react';
-import { DataTable, type DataTableColumn } from './DataTable';
+import { DataTable, type DataTableColumn } from '@avash/ui';
 import type { PageMeta } from '@avash/types';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

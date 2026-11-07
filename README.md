@@ -91,22 +91,23 @@ flowchart LR
 ├── .cursor/           # Cursor MCP server config
 ├── .github/           # CI/CD workflows + Dependabot
 ├── apps/
-│   ├── web/           # React 18 + Vite PWA — static SPA, Cloudflare Pages (+ Dockerfile: nginx image)
+│   ├── web/           # React 19 + Vite PWA — static SPA, Cloudflare Pages (+ Dockerfile: nginx image)
 │   └── api/           # Hono on Cloudflare Workers — all secret-touching logic (+ Dockerfile: Node image)
 ├── ml/                # Offline Python pipeline — training, evaluation, batch serving
 ├── packages/
 │   ├── types/         # Single canonical source for shared TS types/schemas
 │   ├── config/        # eslint-config, tsconfig base, tailwind-preset
-│   ├── ui/             # Shared React design system
-│   ├── db/             # Supabase migrations, RLS policies, generated types
-│   ├── geo/             # PostGIS query builders
-│   ├── ml-inference/    # ONNX model artifact + onnxruntime-web wrapper
-│   ├── security/        # Rate limiter, Turnstile verifier, zod schemas
-│   └── logger/           # Structured logger + PII redaction
-├── scripts/            # setup.sh, seed-db.ts, refresh-materialized-views.ts, jobs/
-├── docker/             # Shared infra images (ADR-011): ML runtime + PostGIS init SQL
-├── docs/               # Architecture, standards, schema, ML, security docs
-├── compose.yaml        # db + ml (infra), web + api behind the `apps` profile (ADR-012)
+│   ├── ui/            # Shared React design system (Button, Spinner, ErrorBoundary, DataTable)
+│   ├── db/            # Supabase migrations, RLS policies, generated types
+│   ├── geo/           # PostGIS query builders
+│   ├── push/          # Web Push delivery & WebCrypto signing
+│   ├── security/      # Rate limiter, Turnstile verifier, RBAC, audit log
+│   └── logger/        # Structured logger + PII redaction
+├── supabase/          # Supabase CLI config, migrations & Edge Functions (risk-alerts)
+├── scripts/           # setup.sh, seed-db.ts, env-sync.mjs, jobs/
+├── docker/            # Shared infra images (ADR-011): ML runtime + PostGIS init SQL
+├── docs/              # Architecture, standards, schema, ML, security docs
+├── compose.yaml       # Supabase CLI stack + ml (infra), web + api behind the `apps` profile
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── CONTRIBUTING.md
@@ -118,21 +119,15 @@ flowchart LR
 
 ## Quickstart
 
-**Prerequisites:** Node 20+, `pnpm` (`packageManager: pnpm@9.1.0`),
-Python 3.11+ (for `ml/`), a Supabase project (for anything beyond the
-static frontend/backend scaffold). Docker (Engine 25+ / Desktop 4.27+)
-is **optional** — it provides a local PostGIS database and a pinned
-Python runtime, and substitutes for the last two prerequisites; nothing
-below needs it.
+**Prerequisites:** Node 22 LTS, `pnpm` (`packageManager: pnpm@9.1.0`),
+Python 3.11+ (for `ml/`), Docker for the local Supabase CLI stack.
 
 ```bash
 # install workspace dependencies
 pnpm install
 
-# create the three local environment files from their tracked templates
-cp .env.example .env                                  # job scripts + ml/
-cp apps/api/.dev.vars.example apps/api/.dev.vars      # Worker secrets
-cp apps/web/.env.example apps/web/.env                # VITE_PUBLIC_* only
+# synchronize local environment files across target stacks
+pnpm env:sync:dev
 
 # run both apps concurrently (via turbo)
 pnpm dev
@@ -202,13 +197,13 @@ DB migrations, ML training/export/inference).
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 18, Vite, React Router, TanStack Query, Leaflet (OpenStreetMap tiles) |
-| Backend | Hono, Cloudflare Workers |
-| Database | Supabase Postgres + PostGIS |
-| ML | LightGBM, ONNX Runtime (Python + WASM), SHAP |
+| Frontend | React 19, Vite, React Router, TanStack Query, Leaflet (OpenStreetMap tiles) |
+| Backend | Hono on Cloudflare Workers, Supabase Edge Functions + Inngest |
+| Database | Supabase Postgres 17 + PostGIS |
+| ML | LightGBM, ONNX Runtime (Python + WASM), Hugging Face Hub, SHAP |
 | Auth | Supabase Auth, local HS256 JWT verification (`jose`) |
 | Infra | Cloudflare Pages/Workers, GitHub Actions, Upstash Redis (rate limiting only) |
-| Containers | Docker Compose — PostGIS + Python ML runtime (ADR-011); per-app images, nginx for web and Node for api, published to GHCR (ADR-012) |
+| Containers | Docker Compose — Supabase CLI stack (Postgres 17) + Python ML runtime (ADR-011); per-app images for web (nginx) and api (Node) |
 | LLM | Google Gemini (structured-output only, never the decision-maker) |
 
 ## Status

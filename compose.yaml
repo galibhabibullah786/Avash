@@ -24,40 +24,6 @@
 name: avash
 
 services:
-  # Postgres 15 + PostGIS 3.4 — parity with Supabase's managed Postgres.
-  # Pinned via POSTGIS_LOCAL_IMAGE (docs/PROJECT_PLAN.md §14).
-  db:
-    image: postgis/postgis:15-3.4
-    container_name: avash-db
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      # Local-only throwaway credential. This database is bound to
-      # localhost, holds no production data, and is never reachable from a
-      # deployed environment. Real Supabase credentials live in `.env` /
-      # GitHub Actions secrets and never appear here (docs/PROJECT_PLAN.md §7.1).
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-avash}
-    ports:
-      # 54322, not 5432 — leaves a host-installed Postgres alone and
-      # matches the Supabase CLI's local port convention.
-      - "127.0.0.1:${POSTGRES_PORT:-54322}:5432"
-    volumes:
-      - db-data:/var/lib/postgresql/data
-      # Runs once, on first initialization of an empty data volume.
-      - ./docker/postgis/initdb:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-avash}",
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 15s
-    shm_size: 256mb
-    restart: unless-stopped
-
   # Offline ML pipeline (ADR-002) — training, evaluation, ONNX export, and
   # the same batch inference pass `cron-batch-predict.yml` runs. Batch job,
   # not a server: it has no ports and exits when its command finishes.
@@ -81,8 +47,6 @@ services:
       # Source is mounted, not baked, so an edit is picked up without a
       # rebuild. Rebuild only when requirements.txt changes.
       - ./ml:/app/ml
-      # export_onnx.py writes the versioned model artifact here.
-      - ./packages/ml-inference:/app/packages/ml-inference
     command:
       - python
       - -c
@@ -147,49 +111,8 @@ services:
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
     restart: unless-stopped
 
-  # apps/notify — announcement push delivery (ADR-016), on Node through
-  # apps/notify/server/node-server.ts. Production is Vercel + Inngest;
-  # this container is local-testing only, not a deploy target. Talks to
-  # Supabase directly with the service-role key (ADR-007) — never through
-  # the api container.
-  notify:
-    profiles: ["apps"]
-    build:
-      context: .
-      dockerfile: apps/notify/Dockerfile
-    image: avash-notify:local
-    ports:
-      - "127.0.0.1:${NOTIFY_PORT:-8788}:8788"
-    environment:
-      SUPABASE_URL: ${SUPABASE_URL:-}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
-      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
-      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
-      # Shared secret the Supabase Database Webhook must present on every
-      # call (docs/manual-deploy.md). Left unset locally means every
-      # webhook call 401s until you set it — the sweep still delivers.
-      ANNOUNCEMENT_WEBHOOK_SECRET: ${ANNOUNCEMENT_WEBHOOK_SECRET:-}
-      # Inngest's SDK defaults to "cloud mode" and 500s every /api/inngest
-      # call without a signing key. INNGEST_DEV, set to a URL rather than
-      # bare "1", switches it to local dev mode AND points event sends at
-      # the inngest-dev service below by its Compose DNS name — "1" alone
-      # would make the SDK default to http://localhost:8288/, which inside
-      # this container's own network namespace is itself, not a sibling
-      # container. Leave INNGEST_EVENT_KEY/INNGEST_SIGNING_KEY unset to
-      # stay in dev mode; set all three (and unset INNGEST_DEV) to test
-      # against a real Inngest Cloud environment instead.
-      INNGEST_DEV: ${INNGEST_DEV:-http://inngest-dev:8288}
-      INNGEST_EVENT_KEY: ${INNGEST_EVENT_KEY:-}
-      INNGEST_SIGNING_KEY: ${INNGEST_SIGNING_KEY:-}
-    restart: unless-stopped
-
-  # Inngest Dev Server — durable-execution engine for apps/notify's
-  # functions, local-testing only (same status as `notify` itself: no
-  # Inngest account, never a production deploy target). Auto-discovers
-  # notify's /api/inngest endpoint on startup (`-u`) and re-syncs on every
-  # event, so a `notify` rebuild does not require restarting this one.
-  # Depends on `notify` (not the reverse) so its startup autodiscovery
-  # call has something to actually find on the first try.
+  # Inngest Dev Server — durable-execution engine for automated risk alerts.
+  # Auto-discovers the local Supabase Edge Function endpoint on startup.
   inngest-dev:
     profiles: ["apps"]
     image: inngest/inngest:latest
@@ -197,17 +120,13 @@ services:
       - inngest
       - dev
       - -u
-      - http://notify:8788/api/inngest
+      - http://host.docker.internal:54321/functions/v1/risk-alerts
       - --host
       - "0.0.0.0"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       # The dev server's own UI + API — inspect runs, replay events, etc.
       - "127.0.0.1:${INNGEST_DEV_PORT:-8288}:8288"
-    depends_on:
-      notify:
-        condition: service_healthy
     restart: unless-stopped
 
-volumes:
-  db-data:
-    name: avash-db-data

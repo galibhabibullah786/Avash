@@ -45,12 +45,12 @@ describe('ROLE_DASHBOARDS', () => {
     }
   });
 
-  test('the announcements tile is offered exactly to the roles that can author one', () => {
+  test('the moderation tile is offered exactly to the roles that can moderate', () => {
     for (const role of appRoleSchema.options) {
-      const offersAnnouncements = (ROLE_DASHBOARDS[role]?.tiles ?? []).some((tile) => tile.to === '/announcements');
+      const offersModeration = (ROLE_DASHBOARDS[role]?.tiles ?? []).some((tile) => tile.to === '/moderation');
       // Same capability the route guard and the server both check, so a
       // role can never be shown a tile leading to a 403.
-      expect(offersAnnouncements).toBe(can(role, 'reports:moderate'));
+      expect(offersModeration).toBe(can(role, 'reports:moderate'));
     }
   });
 

@@ -254,6 +254,7 @@ describe('GET /risk/:regionId', () => {
       { path: '/rest/v1/risk_predictions', body: [predictionRow4Weeks, predictionRow2Weeks] },
       { path: '/rest/v1/regions', body: [regionRow] },
       { path: '/rest/v1/region_latest_weather', body: [weatherRow] },
+      { path: '/rest/v1/rpc/verified_reports_in_region', body: [] },
     ]);
     vi.stubGlobal('fetch', fake.fetch);
 
@@ -278,6 +279,7 @@ describe('GET /risk/:regionId', () => {
       { path: '/rest/v1/risk_predictions', body: [predictionRow2Weeks] },
       { path: '/rest/v1/regions', body: [regionRow] },
       { path: '/rest/v1/region_latest_weather', body: [] },
+      { path: '/rest/v1/rpc/verified_reports_in_region', body: [] },
     ]);
     vi.stubGlobal('fetch', fake.fetch);
 
@@ -293,6 +295,7 @@ describe('GET /risk/:regionId', () => {
       { path: '/rest/v1/risk_predictions', body: [badPrediction] },
       { path: '/rest/v1/regions', body: [regionRow] },
       { path: '/rest/v1/region_latest_weather', body: [] },
+      { path: '/rest/v1/rpc/verified_reports_in_region', body: [] },
     ]);
     vi.stubGlobal('fetch', fake.fetch);
 

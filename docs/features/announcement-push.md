@@ -1,5 +1,9 @@
 # Announcement Push
 
+> [!NOTE]
+> **Modernization Status:** The standalone `apps/notify` service and manual moderator broadcast push have been superseded.
+> Web Push notifications are dedicated to automated dengue risk alerts via native **Supabase Edge Functions** (`supabase/functions/risk-alerts`) and Inngest, utilizing `packages/push`. This document is retained for historical design reference.
+
 Follows the mandatory template from `docs/PROJECT_PLAN.md` §12.
 
 **Gist:** A published `announcements` row is now pushed to matching

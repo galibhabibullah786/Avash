@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { can, type Capability } from '@avash/security';
 import { useSession } from '../features/auth/SessionProvider';
 import { SignOutButton } from '../features/auth/SignOutButton';
+import { useInstallPrompt } from '../hooks/useInstallPrompt';
 
 // Every page currently routed (router.tsx). Add a link here when a new
 // page is wired into the router so navigation stays complete without
@@ -20,13 +21,13 @@ const NAV_LINKS: readonly {
   capability?: Capability;
   authenticatedOnly?: boolean;
 }[] = [
-    { to: '/', label: 'Home' },
-    { to: '/weather', label: 'Weather' },
-    { to: '/prevention', label: 'Prevention' },
-    { to: '/report', label: 'Report Site' },
-    { to: '/risk', label: 'Risk Map' },
-    { to: '/symptoms', label: 'Symptoms-checker' },
-    { to: '/resources', label: 'Resources' },
+    { to: '/', label: 'হোম' },
+    { to: '/weather', label: 'আবহাওয়া' },
+    { to: '/prevention', label: 'প্রতিরোধ' },
+    { to: '/report', label: 'রিপোর্ট করুন' },
+    { to: '/risk', label: 'ঝুঁকির মানচিত্র' },
+    { to: '/symptoms', label: 'লক্ষণ পরীক্ষা' },
+    { to: '/resources', label: 'চিকিৎসা ও রক্ত' },
     { to: '/dashboard', label: 'Dashboard', authenticatedOnly: true },
     { to: '/moderation', label: 'Moderation', capability: 'reports:moderate' },
     { to: '/admin/users', label: 'Users', capability: 'roles:manage' },
@@ -39,6 +40,7 @@ export const Header = () => {
   const { status, role } = useSession();
   const isAuthenticated = status === 'authenticated';
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const { status: installStatus, promptInstall } = useInstallPrompt();
 
   const visibleLinks = NAV_LINKS.filter((link) => {
     if (link?.authenticatedOnly && !isAuthenticated) return false;
@@ -54,12 +56,12 @@ export const Header = () => {
             <button
               onClick={() => setIsDrawerOpen(true)}
               className="lg:hidden p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-              aria-label="Open menu"
+              aria-label="মেনু খুলুন"
             >
               <img src='/icons/menu.svg' />
             </button>
             <NavLink to="/" end className="navbar__brand">
-              <img src="/icons/brand.svg" alt="Avas Brand Icon" style={{ width: "27px", height: "27px" }} aria-hidden="true" />
+              <img src="/icons/brand.svg" alt="আভাস লোগো" style={{ width: "27px", height: "27px" }} aria-hidden="true" />
               <span>আভাস</span>
             </NavLink>
           </div>
@@ -75,12 +77,23 @@ export const Header = () => {
           </ul>
 
           <div className="navbar__auth flex items-center gap-4">
+            {installStatus === 'available' ? (
+              <button
+                type="button"
+                onClick={() => void promptInstall()}
+                className="hidden sm:inline-flex button button--secondary text-xs py-1.5 px-3 items-center gap-1.5"
+                data-testid="header-install-btn"
+              >
+                <span>📲</span>
+                <span>অ্যাপ ইনস্টল</span>
+              </button>
+            ) : null}
             <div className="hidden lg:block">
               {isAuthenticated ? (
                 <SignOutButton />
               ) : (
                 <NavLink to="/login" className="navbar__link">
-                  Login
+                  লগইন
                 </NavLink>
               )}
             </div>
@@ -107,6 +120,7 @@ export const Header = () => {
           <button
             onClick={() => setIsDrawerOpen(false)}
             className="p-1 text-[var(--color-text-muted)]"
+            aria-label="মেনু বন্ধ করুন"
           >
             ❌
           </button>
@@ -132,6 +146,22 @@ export const Header = () => {
             ))}
           </ul>
         </div>
+        {installStatus === 'available' ? (
+          <div className="p-3 border-t border-[var(--color-border)]">
+            <button
+              type="button"
+              onClick={() => {
+                setIsDrawerOpen(false);
+                void promptInstall();
+              }}
+              className="w-full py-2 px-3 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-sm font-semibold flex items-center justify-center gap-2"
+              data-testid="mobile-install-btn"
+            >
+              <span>📲</span>
+              <span>আভাস অ্যাপ ইনস্টল করুন</span>
+            </button>
+          </div>
+        ) : null}
         <div className="p-4 border-t border-[var(--color-border)]">
           {isAuthenticated ? (
             <div onClick={() => setIsDrawerOpen(false)}>
@@ -143,7 +173,7 @@ export const Header = () => {
               className="block w-full text-center px-4 py-2 bg-[var(--color-primary)] text-white rounded-lg font-bold"
               onClick={() => setIsDrawerOpen(false)}
             >
-              Login
+              লগইন
             </NavLink>
           )}
         </div>

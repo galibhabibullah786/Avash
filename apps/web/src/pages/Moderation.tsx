@@ -8,7 +8,7 @@ import {
 } from '../features/reports/usePendingReports';
 import { useVerifyReport } from '../features/reports/useVerifyReport';
 import { useListQuery } from '../hooks/useListQuery';
-import { DataTable, type DataTableColumn } from '../components/DataTable';
+import { DataTable, type DataTableColumn } from '@avash/ui';
 import '../features/dashboard/dashboard.css';
 
 const SORTABLE = ['createdAt', 'status'] as const;

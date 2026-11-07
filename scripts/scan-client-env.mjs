@@ -71,5 +71,3 @@ if (violations.length > 0) {
   for (const v of violations) console.error(`  - ${v}`);
   process.exit(1);
 }
-
-console.log(`PASS: scanned ${files.length} built asset(s) under ${distDir} — no non-VITE_PUBLIC_ env references found.`);

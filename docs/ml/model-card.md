@@ -82,18 +82,23 @@ and lose the public's trust in the signal.
 
 SHAP values are computed at inference time; the top 3 contributing
 features per prediction are stored in `risk_predictions.top_factors`
-(`jsonb`) and rendered in the UI, e.g.: *"high risk mainly due to: 14-day
-humidity 86%, rising case trend, favorable breeding temperature window."*
+(`jsonb`) as an array of structured objects `[{"factor": string, "label": string, "importance": number}]`
+(`TopFactors` in `packages/types/ml.ts`) and rendered in the UI, e.g.:
+*"high risk mainly due to: 14-day humidity 86%, rising case trend, favorable breeding temperature window."*
 This lets a viewer understand *why* a region is flagged, not just that it
 is.
 
-## Export
+## Export & Distribution
 
 `skl2onnx`/`onnxmltools` → **ONNX opset 17**. Model artifact versioned as
 `model_v{semver}.onnx`, target size budget **< 2 MB**
 (`ONNX_MODEL_SIZE_BUDGET`, §14; quantized if needed) so it can ship inside
-the PWA's offline cache for on-device inference (§5.3, ADR-002). The
-exported artifact is checksum-verified (SHA256 against
+the PWA's offline cache for on-device inference (§5.3, ADR-002).
+
+Model artifacts and checkpoints are hosted on the public **Hugging Face Model Hub**
+(`avash-health/avash-dengue-models`) and datasets on the **Hugging Face Dataset Hub**
+(`avash-health/avash-dengue-dataset`). Zero binary weights are stored in the GitHub repository.
+The exported artifact is checksum-verified (SHA256 against
 `ml/training/MODEL_MANIFEST.json`) before every batch inference run — a
 mismatch aborts the job rather than running an unverified model.
 

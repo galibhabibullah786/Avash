@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
+import { type ReactNode } from 'react';
 
-interface SubmitButtonProps {
+export interface SubmitButtonProps {
   pending: boolean;
   disabled?: boolean;
   pendingLabel?: string;

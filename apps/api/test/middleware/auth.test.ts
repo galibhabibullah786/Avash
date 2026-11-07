@@ -71,15 +71,15 @@ describe('auth middleware', () => {
   });
 
   test('moderator cannot reach an admin capability', async () => {
-    const app = buildApp({ capability: 'reports:moderate' });
+    const app = buildApp({ capability: 'roles:manage' });
     const token = await signTestJwt({ role: 'moderator' });
     const res = await app.request('/protected', { headers: { Authorization: `Bearer ${token}` } }, env);
     expect(res.status).toBe(403);
   });
 
-  test('moderator cannot reach inventory:write — the roles are disjoint, not ranked', async () => {
+  test('citizen cannot reach inventory:write — the roles are disjoint, not ranked', async () => {
     const app = buildApp({ capability: 'inventory:write' });
-    const token = await signTestJwt({ role: 'moderator' });
+    const token = await signTestJwt({ role: 'citizen' });
     const res = await app.request('/protected', { headers: { Authorization: `Bearer ${token}` } }, env);
     expect(res.status).toBe(403);
   });

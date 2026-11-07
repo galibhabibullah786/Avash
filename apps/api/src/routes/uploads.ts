@@ -65,7 +65,7 @@ export function createUploads(options?: CreateUploadsOptions) {
       }
 
       // Rate limit logic
-      if (c.env.UPSTASH_REDIS_REST_URL && c.env.UPSTASH_REDIS_REST_TOKEN) {
+      if (options?.redisFactory || (c.env.UPSTASH_REDIS_REST_URL && c.env.UPSTASH_REDIS_REST_TOKEN)) {
         const redis = (options?.redisFactory ?? defaultRedisFactory)(c.env);
         const guard = parsed.data.purpose === 'report-photo' ? 'report-photo-upload' : 'upload-signature';
         const limitConfig = parsed.data.purpose === 'report-photo' ? REPORT_PHOTO_UPLOAD_RATE_LIMIT : UPLOAD_SIGNATURE_RATE_LIMIT;

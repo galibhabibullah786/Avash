@@ -1,7 +1,10 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { buildAuditEntry, writeAuditEntry } from '@avash/security';
 import { rateLimit } from '../middleware/rate-limit';
 import { GEMINI_MODEL_ID } from '../lib/geminiClient';
+import { createSupabaseAdmin } from '../lib/supabaseAdmin';
+import { createAuditSink } from '../lib/auditSink';
 import type { AppEnv } from '../types';
 
 export const chat = new Hono<AppEnv>().post(
@@ -14,6 +17,7 @@ export const chat = new Hono<AppEnv>().post(
     keyStrategy: 'ip',
   }),
   async (c) => {
+    const requestId = c.get('requestId') ?? crypto.randomUUID();
     const schema = z.object({
       messages: z.array(
         z.object({
@@ -44,14 +48,34 @@ export const chat = new Hono<AppEnv>().post(
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Gemini API Error:', errorText);
+
+        try {
+          const supabase = createSupabaseAdmin(c.env);
+          const sink = createAuditSink(supabase);
+          const user = c.get('user');
+          const entry = buildAuditEntry({
+            action: 'chat.query',
+            entityType: 'chat',
+            entityId: requestId,
+            actorId: user?.id ?? null,
+            actorRole: user?.role ?? null,
+            outcome: 'failure',
+            requestId,
+            detail: { error: 'gemini_error', model: GEMINI_MODEL_ID },
+          });
+          await writeAuditEntry(sink, entry);
+        } catch {
+          // Best-effort audit logging
+        }
+
         return c.json({ error: 'Failed to generate response' }, 502);
       }
 
-      const data = await response.json() as unknown;
-      
+      const data = (await response.json()) as unknown;
+
       // Extract the text from Gemini response structure
       let replyText = 'Sorry, I could not generate a response.';
-      
+
       if (
         typeof data === 'object' &&
         data !== null &&
@@ -64,6 +88,25 @@ export const chat = new Hono<AppEnv>().post(
         if (candidateText) {
           replyText = candidateText;
         }
+      }
+
+      try {
+        const supabase = createSupabaseAdmin(c.env);
+        const sink = createAuditSink(supabase);
+        const user = c.get('user');
+        const entry = buildAuditEntry({
+          action: 'chat.query',
+          entityType: 'chat',
+          entityId: requestId,
+          actorId: user?.id ?? null,
+          actorRole: user?.role ?? null,
+          outcome: 'success',
+          requestId,
+          detail: { messageCount: parsed.messages.length, model: GEMINI_MODEL_ID },
+        });
+        await writeAuditEntry(sink, entry);
+      } catch {
+        // Best-effort audit logging
       }
 
       return c.json({ text: replyText });

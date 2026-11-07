@@ -9,8 +9,6 @@
       "@avash/geo/*": ["./packages/geo/*"],
       "@avash/logger": ["./packages/logger/index.ts"],
       "@avash/logger/*": ["./packages/logger/*"],
-      "@avash/ml-inference": ["./packages/ml-inference/index.ts"],
-      "@avash/ml-inference/*": ["./packages/ml-inference/*"],
       "@avash/push": ["./packages/push/index.ts"],
       "@avash/push/*": ["./packages/push/*"],
       "@avash/security": ["./packages/security/index.ts"],

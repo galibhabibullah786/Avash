@@ -321,8 +321,3 @@ if (problems.length) {
   );
   process.exit(1);
 }
-
-console.log(
-  `PASS: agent config in sync — ${POINTERS.length} pointers stamped, ${onDisk.length} skills, ` +
-    `${routing.length} routing rows, eager tier ${eager}/${EAGER_LINE_BUDGET} lines (AGENTS.md: ${agentsLines}/${AGENTS_LINE_BUDGET_MAX}).`,
-);

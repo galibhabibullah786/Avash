@@ -3,7 +3,7 @@
 This document defines standard conventions, architectural standards, and development protocols for agents working in this repository.
 
 Canon for every AI agent. **Applies unprompted** — "just add the endpoint" waives nothing. If another config disagrees, this file wins. Source of truth for system: `docs/PROJECT_PLAN.md`. Conflict -> stop and flag.
-Stack: `apps/web` = React 18 + Vite PWA (zero server secrets, no SSR); `apps/api` = Hono on Cloudflare Workers; Jobs = scheduled GitHub Actions -> Supabase/PostGIS directly. Shared types live only in `packages/types`.
+Stack: `apps/web` = React 19 + Vite PWA (zero server secrets, no SSR); `apps/api` = Hono on Cloudflare Workers; Notifications = Supabase Edge Functions + Inngest; Jobs = scheduled GitHub Actions -> Supabase/PostGIS directly. Shared types live only in `packages/types`.
 
 ---
 
@@ -30,10 +30,9 @@ Stack: `apps/web` = React 18 + Vite PWA (zero server secrets, no SSR); `apps/api
   - `packages/geo`: PostGIS geospatial primitives, BBox utilities, GeoJSON calculations, and spatial query builders.
   - `packages/security`: Role-based access control (`roles.ts`), audit logging (`auditLog.ts`), rate limits, deterministic triage, and quota guards.
   - `packages/push`: Web Push delivery (`webPush.ts`), announcement dispatch (`deliverAnnouncement.ts`) via WebCrypto.
-  - `packages/ml-inference`: Client-side / Worker-side ONNX dengue risk forecast inference runtime interfaces.
+  - `packages/ui`: Shared UI primitives and design system components (`Button`, `Spinner`, `ErrorBoundary`, `DataTable`).
   - `packages/logger`: Structured JSON logging with request correlation IDs (`packages/logger/index.ts`).
   - `packages/db`: Supabase migrations, seed fixtures, and DB schema clients.
-  - `packages/ui`: Shared UI primitives and components.
 - **Application Orchestration**: Coordinates routing, Leaflet viewport mounts, symptom checker flows, and offline sync.
 - **Dependency Flow**: Strict downward flow from `apps/*` into `packages/*`. Packages never import `apps/*`. Link with `"workspace:*"`.
 
@@ -181,7 +180,7 @@ Stack: `apps/web` = React 18 + Vite PWA (zero server secrets, no SSR); `apps/api
 ## 18. Geospatial (Leaflet & PostGIS) & Batch ML Inference Protocols
 
 - **Spatial Queries Over PostGIS**: Use PostGIS geography types for spatial calculations (`ST_DWithin`, spatial indexes) rather than raw lat/long math (ADR-003). Materialized views for map reads (ADR-006).
-- **Batch ML Inference, Never Edge**: ML dengue risk forecasts run as scheduled batch jobs (GitHub Actions -> Supabase directly), never per-request in Workers (ADR-002, ADR-007).
+- **Batch ML Inference & Dynamic Model Serving**: ML dengue risk forecasts run as scheduled batch jobs (GitHub Actions -> Supabase directly), never per-request in Workers (ADR-002, ADR-007). Models are fetched dynamically from Hugging Face Hub (`HF_MODEL_REPO_ID`, `HF_MODEL_TAG_OR_COMMIT`) with deterministic local fallback scoring.
 - **Leaflet Performance**: Vector tile/GeoJSON clustering, cleanup markers and map instances on unmount (`map.remove()`) to avoid memory leaks.
 
 ---
@@ -196,7 +195,7 @@ Stack: `apps/web` = React 18 + Vite PWA (zero server secrets, no SSR); `apps/api
 ## 20. Accessibility & Universal Usability Standards
 
 - **Accessible Semantics**: Semantic `<main>`, `<header>`, `<nav>` landmarks, ARIA live region announcements for incoming alerts, keyboard focus trapping in modal dialogs with instant `Escape` key support.
-- **Multilingual Localization**: English and Bangla (বাংলা) localization for all public citizen screens; >= 4.5:1 text contrast ratios against backgrounds.
+- **Multilingual Localization**: Direct Bangla (বাংলা) localization for all public citizen screens; English admin/moderator surfaces; >= 4.5:1 text contrast ratios against backgrounds.
 
 ---
 

@@ -1,4 +1,4 @@
-<!-- agentsMdSha256: d504c51a5f0bb33ea98c76d668cfa0127edf26a677701dd08bdc983de8f2394d -->
+<!-- agentsMdSha256: fc518ca0c332b892e39d9bc0ab239af3adb34370c4fb0eeb98c20348581d93d1 -->
 
 # Copilot Instructions — Avash
 

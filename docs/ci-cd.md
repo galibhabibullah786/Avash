@@ -21,7 +21,7 @@ scheduled cron job.
 ```
 context ─┬─ ci ──────────┬─ images ───┬─ deploy-web
          └─ codeql ──────┴─ ml-image ─┼─ deploy-api
-                                      ├─ deploy-notify
+                                      ├─ deploy-functions
                                       └─ cve-report (weekly only)
 ```
 
@@ -47,56 +47,18 @@ to the pipeline could never be tested by the pull request making it.
 | Push to `main` | ✅ | published, tagged `sha-<short>` + `latest` | production (`--branch=main`) | `--env production` | production (`--environment=production` `--prod`) |
 | Weekly schedule | ✅ | built + scanned, not published | — | — | — |
 
-`apps/notify` (ADR-016) has no Cloudflare Pages/Worker equivalent — it
-ships no container image and is never touched by a pull request, because a
-pull request has no environment of its own for it to deploy into (same
-reasoning as the missing Worker deploy above).
+`supabase/functions/risk-alerts` delivers automated Web Push notifications orchestrated by Inngest.
+Deployments are executed conditionally via `pipeline.yml`'s `deploy-functions` job using the official `supabase/setup-cli` action only when changes occur under `supabase/functions/` or `packages/push/`.
 
-#### `apps/notify` deploys PREBUILT, and why
+#### Supabase Edge Function Deployment
 
-The workflow does **not** run `vercel build`. Vercel's zero-config `api/`
-detection transpiles each `api/*.ts` and then relies on its own
-node_modules tracing to ship the dependencies — tracing that does not
-follow this repo's pnpm layout, where first-party deps are `workspace:*`
-symlinks into `packages/` and third-party ones live in the root-hoisted
-store. That produced two separate failures:
+The workflow runs `supabase functions deploy risk-alerts --no-verify-jwt`.
+Dependencies from `packages/push` and `@avash/types` are vendored and shared cleanly via Deno-compatible imports or esbuild bundle step.
 
-- `vercel deploy --prebuilt` refused to upload at all:
-  `Error: Please ensure project dependencies have been installed: File
-  does not exist: "apps/notify/node_modules/@avash/types"`.
-- When it did upload, the deployed function crashed on first invocation
-  with `ERR_MODULE_NOT_FOUND: Cannot find package 'inngest' imported from
-  /var/task/api/inngest.js` — nothing had been traced in, so
-  `/api/inngest` returned `FUNCTION_INVOCATION_FAILED` and Inngest could
-  neither register nor invoke anything.
-
-`apps/notify/scripts/build-vercel.mjs` esbuilds each function into a
-self-contained bundle in the Build Output API v3 layout, leaving Vercel
-no resolution to get wrong — the same technique `apps/notify/Dockerfile`
-already used for the container. A build **on** Vercel (git integration,
-or `vercel deploy` without `--prebuilt`) cannot work for the same reason
-and fails fast with a pointer, via `buildCommand` in
-`apps/notify/vercel.json`.
-
-Three things gate a working deploy that a green workflow run alone does
-not prove, and all three have bitten this project:
-
-1. **Inngest plan limits are enforced at registration, app-wide.** A
-   function declaring more concurrency than the account allows makes
-   `PUT /api/inngest` answer `400 {"message":"The function ... has higher
-   concurrency limits (10) than your plan limit of 5","modified":false}`
-   and **no** function registers — not the one at fault, not the sweep.
-   See `ANNOUNCEMENT_PUSH_RUN_CONCURRENCY`.
-2. **Vercel Deployment Protection blocks the machines that matter.** With
-   protection on, deployment URLs `302` to `vercel.com/sso-api`. Inngest
-   cannot register or invoke functions and Supabase's Database Webhook
-   cannot deliver — both fail silently from the app's point of view. The
-   environment `apps/notify` serves must be reachable unauthenticated.
-3. **Runtime env vars live on the Vercel project, not in this repo.** The
-   GitHub secrets below authenticate the *deploy*; `SUPABASE_URL`,
-   `SUPABASE_SERVICE_ROLE_KEY`, `VAPID_*`, `ANNOUNCEMENT_WEBHOOK_SECRET`
-   and `INNGEST_*` must also be set on the Vercel project itself or every
-   delivery fails closed at runtime.
+Three gates ensure reliable execution:
+1. **Secrets configured in Supabase:** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `INNGEST_EVENT_KEY`, and `INNGEST_SIGNING_KEY` must be configured via `supabase secrets set`.
+2. **Change Detection:** Deploys run on `main` and `dev` only when notification code changes.
+3. **Inngest Sync:** Function updates register with Inngest automatically via the Edge Function endpoint.
 
 A cloud-mode `GET /api/inngest` returns `401`, not `200` — the SDK
 requires a signed introspection request. Do not "fix" a smoke test by
@@ -187,7 +149,7 @@ Record it).
 | `docker-image-scan.yml` | called | hadolint + Trivy on the ML image (ADR-011) |
 | `deploy-web.yml` | called | Cloudflare Pages deploy for `apps/web`; target branch passed in as `pages_branch` |
 | `deploy-api.yml` | called | `wrangler deploy` for `apps/api` + post-deploy smoke test (`/health` **and** `/health/db`); environment passed in as `wrangler_env` — given to wrangler-action as *both* `--env` on the command and its `environment:` input, because that input alone is what scopes the secret upload (see below) |
-| `deploy-notify.yml` | called | Vercel deploy for `apps/notify` (`vercel pull` → `pnpm --filter notify build:vercel` → `vercel deploy --prebuilt`) + Inngest app registration sync (`PUT /api/inngest`, whose response body is the deploy's real correctness gate) + post-deploy smoke test asserting the stable origin serves both functions; target passed in as `vercel_target` (ADR-016) |
+| `deploy-functions` (in `pipeline.yml`) | called | Supabase CLI deploy for `supabase/functions/risk-alerts` (`supabase functions deploy risk-alerts --no-verify-jwt`), triggered on change detection under `supabase/functions/` or `packages/push/` |
 | `cron-weather-ingest.yml` | schedule (every 3h), manual | Runs `scripts/jobs/weather-ingest.ts` directly against Supabase (ADR-007) |
 | `cron-batch-predict.yml` | schedule (every 24h), manual | Runs `ml/serving/predict.py` directly against Supabase (ADR-002, ADR-007) |
 | `cron-news-scan.yml` | schedule (every 6h), manual | Runs `scripts/jobs/news-scan.ts` directly against Supabase (ADR-007) |
@@ -269,13 +231,10 @@ lacking a credential it was never given.
 | `TURNSTILE_SECRET_KEY` | secret | `deploy-api.yml` | API deploy |
 | `SUPABASE_URL` | secret | `deploy-api.yml`, `cron-weather-ingest.yml`, `cron-batch-predict.yml`, `cron-news-scan.yml` | API deploy — `apps/api/src/lib/supabaseAdmin.ts` needs it at runtime exactly like the service-role key, a Worker missing this secret fails every request with "supabaseUrl is required"; also weather-ingest cron, the other two cron jobs once implemented |
 | `OPENWEATHERMAP_API_KEY` | secret | `cron-weather-ingest.yml` | Weather-ingest cron — read directly by `scripts/jobs/weather-ingest.ts`, never logged (the key rides in the request query string) |
-| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | secret | `cron-batch-predict.yml`, `deploy-notify.yml` | Web Push delivery from the batch predict job; also `apps/notify`'s Vercel deploy (ADR-016 — a second home for the same keypair) |
-| `INNGEST_EVENT_KEY` | secret | `deploy-notify.yml` | Authenticates event sends to Inngest from `apps/notify` (the announcement-published trigger and the sweep) |
-| `INNGEST_SIGNING_KEY` | secret | `deploy-notify.yml` | Verifies an inbound Inngest function invocation actually came from Inngest, not a forged request |
-| `ANNOUNCEMENT_WEBHOOK_SECRET` | secret | `deploy-notify.yml` | Shared-secret header `apps/notify`'s Supabase Database Webhook receiver compares in constant time |
-| `VERCEL_TOKEN` | secret | `deploy-notify.yml` | Authenticates `vercel pull` / `vercel build` / `vercel deploy` |
-| `VERCEL_ORG_ID` | secret | `deploy-notify.yml` | Identifies the Vercel org/team `apps/notify` deploys under |
-| `VERCEL_PROJECT_ID` | secret | `deploy-notify.yml` | Identifies the Vercel project `apps/notify` deploys to |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | secret | `cron-batch-predict.yml`, Supabase Edge Function | Web Push delivery from the batch predict job and Edge Function |
+| `INNGEST_EVENT_KEY` | secret | Supabase Edge Function | Authenticates event sends to Inngest |
+| `INNGEST_SIGNING_KEY` | secret | Supabase Edge Function | Verifies an inbound Inngest function invocation |
+| `SUPABASE_ACCESS_TOKEN` | secret | `pipeline.yml` (`deploy-functions`) | Authenticates Supabase CLI to deploy Edge Functions |
 | `GITHUB_TOKEN` | built-in | `build-images.yml` | Publishing images to GHCR (no manual setup) |
 | `VITE_PUBLIC_API_BASE_URL` | repository **variable** | `deploy-web.yml` | Building `apps/web` for Pages — the deployed Worker's origin |
 | `VITE_PUBLIC_SUPABASE_URL` | repository **variable** | `deploy-web.yml` | Building `apps/web` for Pages |
@@ -284,8 +243,6 @@ lacking a credential it was never given.
 | `VITE_PUBLIC_VAPID_PUBLIC_KEY` | repository **variable** | `deploy-web.yml` | Building `apps/web` for Pages |
 | `PRODUCTION_API_ORIGIN` | repository **variable** | `deploy-api.yml` | Post-deploy smoke test target for `main` |
 | `PREVIEW_API_ORIGIN` | repository **variable** | `deploy-api.yml` | Post-deploy smoke test target for `dev` — the `avash-api-preview` Worker's origin |
-| `PRODUCTION_NOTIFY_ORIGIN` | repository **variable** | `deploy-notify.yml` | Post-deploy smoke test target for `main` — the production `apps/notify` Vercel deployment's origin |
-| `PREVIEW_NOTIFY_ORIGIN` | repository **variable** | `deploy-notify.yml` | Post-deploy smoke test target for `dev` — the preview `apps/notify` Vercel deployment's origin |
 | `PUBLIC_API_BASE_URL` | repository **variable** | `build-images.yml` | Build arg for the *published* web image — see the gap noted below |
 | `CORS_ALLOWED_ORIGINS` | repository **variable**, optional | `deploy-api.yml` | Overrides `apps/api/wrangler.toml`'s fallback via `wrangler deploy --var`; unset means the committed value still deploys (§14, `docs/constants-registry.md`). Same value for `preview` and `production` today, so repository scope — not per-environment — is correct |
 | `CORS_PREVIEW_ORIGIN_SUFFIX` | repository **variable**, optional | `deploy-api.yml` | Same mechanism and scope as above — a bare domain suffix, never a glob (`apps/api/src/config/cors.ts` builds the subdomain wildcard itself) |
@@ -308,10 +265,8 @@ set each one per § Setting these in GitHub, below.
 | *(map tiles)* | Nothing to obtain — the map uses credential-free OpenStreetMap tiles (secrets-matrix.md § 6, ADR-013). Listed here so its absence reads as deliberate, not as an omission |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VITE_PUBLIC_VAPID_PUBLIC_KEY` | secrets-matrix.md § 7 Web Push VAPID keypair |
 | `VITE_PUBLIC_API_BASE_URL`, `PRODUCTION_API_ORIGIN`, `PREVIEW_API_ORIGIN`, `PUBLIC_API_BASE_URL` | secrets-matrix.md § 8 — not a third-party credential, it's your own deployed Worker's origin |
-| `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY` | [Inngest dashboard](https://app.inngest.com) → environment dropdown → view all environments → **Key icon** → **Manage Signing key**/**Event keys** page, one keypair per Inngest environment (preview and production are separate environments — see the deploy-notify job's comment in `pipeline.yml`) |
-| `ANNOUNCEMENT_WEBHOOK_SECRET` | Generate your own (e.g. `openssl rand -hex 32`); it's a shared secret between the Supabase Database Webhook and `apps/notify`'s receiver, not issued by a provider |
-| `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` | [Vercel dashboard](https://vercel.com) → **Account Settings → Tokens** for the token; **Project Settings → General** for the org and project IDs, or `vercel link` locally in `apps/notify` and read `.vercel/project.json` |
-| `PRODUCTION_NOTIFY_ORIGIN`, `PREVIEW_NOTIFY_ORIGIN` | Not a third-party credential — the `apps/notify` Vercel deployment's own origin, read back from the Vercel dashboard once deployed once |
+| `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY` | [Inngest dashboard](https://app.inngest.com) → environment dropdown → view all environments → **Key icon** → **Manage Signing key**/**Event keys** page |
+| `SUPABASE_ACCESS_TOKEN` | [Supabase dashboard](https://supabase.com/dashboard/account/tokens) → Access Tokens |
 | `GITHUB_TOKEN` | Built in; GitHub injects it automatically, nothing to obtain |
 
 `VITE_PUBLIC_*` repository variables need no separate provider trip beyond
@@ -805,14 +760,4 @@ consumer to a specific `sha-` tag if rollback matters to it; there is no
 in-repo rollback action for GHCR beyond re-tagging a prior `sha-` image as
 `latest` manually.
 
-**`apps/notify` (Vercel):** every Vercel deployment is immutable and
-independently addressable by its own `*.vercel.app` deployment URL —
-`vercel rollback` (run from `apps/notify`, or via **Vercel dashboard →
-apps/notify → Deployments → find the last known-good deployment → Promote
-to Production**) re-points the production alias at a previous deployment
-without a rebuild, the same instant-rollback shape as Cloudflare Pages
-above. After rolling back, re-run the "Sync Inngest app registration" step
-by hand (`curl -X PUT <rolled-back-deployment-url>/api/inngest`, or
-dispatch `deploy-notify.yml` again once the offending commit is reverted)
-— rolling back the Vercel deployment does not by itself tell Inngest to
-stop invoking the function versions the bad deploy registered.
+**Supabase Edge Functions:** redeploy the prior commit via `supabase functions deploy risk-alerts --no-verify-jwt`, or revert the offending commit on `main` to trigger the change-detected `deploy-functions` workflow.

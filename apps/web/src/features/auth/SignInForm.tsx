@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useSignIn } from "./useSignIn";
-import { PasswordInput } from "@/components/PasswordInput";
+import { PasswordInput } from '../../components/PasswordInput';
 
 interface LocationState {
   from?: string;
@@ -28,11 +28,11 @@ export function SignInForm() {
       className="form"
       onSubmit={handleSubmit}
       noValidate
-      aria-label="Sign in"
+      aria-label="লগইন"
     >
       <div className="field">
         <label className="field__label" htmlFor="signin-email">
-          Email
+          ইমেইল (Email)
         </label>
         <input
           id="signin-email"
@@ -46,7 +46,7 @@ export function SignInForm() {
       </div>
       <div className="field">
         <label className="field__label" htmlFor="signin-password">
-          Password
+          পাসওয়ার্ড (Password)
         </label>
         <PasswordInput
           id="signin-password"
@@ -63,7 +63,7 @@ export function SignInForm() {
         type="submit"
         disabled={status === "submitting"}
       >
-        {status === "submitting" ? "Signing in…" : "Sign in"}
+        {status === "submitting" ? "লগইন হচ্ছে…" : "লগইন"}
       </button>
       <div
         className={error ? "alert alert--error" : undefined}

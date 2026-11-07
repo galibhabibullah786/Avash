@@ -1,5 +1,5 @@
 import { useRouteError } from 'react-router-dom';
-import { ErrorFallback } from './ErrorFallback';
+import { ErrorFallback } from '@avash/ui';
 
 export function RouteError() {
   const error = useRouteError();

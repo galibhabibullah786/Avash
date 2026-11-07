@@ -24,7 +24,7 @@ describe('Spinner', () => {
   });
 
   test('renders role="status" with a visually-hidden label', async () => {
-    const { Spinner } = await import('./Spinner');
+    const { Spinner } = await import('@avash/ui');
 
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -41,7 +41,7 @@ describe('Spinner', () => {
   });
 
   test('defaults to a generic "Loading…" label', async () => {
-    const { Spinner } = await import('./Spinner');
+    const { Spinner } = await import('@avash/ui');
 
     container = document.createElement('div');
     document.body.appendChild(container);

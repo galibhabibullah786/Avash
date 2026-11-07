@@ -5,7 +5,7 @@ import { useManagedUsers } from '../../features/admin/useManagedUsers';
 import { useAssignRole } from '../../features/admin/useAssignRole';
 import { ROLE_LABELS } from '../../features/dashboard/roleDashboards';
 import { useListQuery } from '../../hooks/useListQuery';
-import { DataTable, type DataTableColumn } from '../../components/DataTable';
+import { DataTable, type DataTableColumn } from '@avash/ui';
 import '../../features/dashboard/dashboard.css';
 
 const ROLE_OPTIONS: readonly AppRole[] = appRoleSchema.options;

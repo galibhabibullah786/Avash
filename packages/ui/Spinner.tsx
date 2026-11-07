@@ -1,4 +1,5 @@
-interface SpinnerProps {
+
+export interface SpinnerProps {
   /** Announced to assistive tech; visually hidden by default. */
   label?: string;
   className?: string;

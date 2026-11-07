@@ -10,10 +10,10 @@ name: build-images
 # workflow with two sources of truth.
 
 on:
-  workflow_call:
+  workflow_dispatch:
     inputs:
       publish:
-        description: Push the built images to GHCR. False for pull requests.
+        description: Push the built images to GHCR.
         type: boolean
         required: false
         default: false

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useState } from 'react';
+import { InstallPromptContext } from '../features/alerts/InstallPromptContext';
 
 /**
  * Chromium's `beforeinstallprompt` event. Not in TypeScript's DOM lib
@@ -24,6 +25,8 @@ export interface UseInstallPromptResult {
   status: InstallPromptStatus;
   /** Shows the held browser prompt. No-op unless `status === 'available'`. */
   promptInstall: () => Promise<void>;
+  isIos?: boolean;
+  dismissPrompt?: () => void;
 }
 
 /**
@@ -42,29 +45,20 @@ function isRunningInstalled(): boolean {
  * installation from its own UI at a moment that makes sense, instead of
  * leaving it buried in the browser menu.
  *
- * WHY AN IN-APP CONTROL MATTERS HERE, beyond convenience: an installed
- * PWA is the only context where Web Push works on iOS/iPadOS at all, and
- * on Android an installed app is what keeps notification delivery working
- * once the browser is closed. So the install affordance is part of the
- * alerting feature, not decoration.
- *
- * The event must be captured the moment it fires and it fires ONCE, early
- * — a component that mounts later has already missed it. `preventDefault`
- * stops Chromium's own mini-infobar so the browser does not race this
- * app's UI with a competing prompt.
- *
- * Every browser API touched here is optional-chained (R4): Safari and
- * Firefox never fire `beforeinstallprompt` at all, and this hook must
- * degrade to `status: 'idle'` there rather than throw.
+ * If wrapped in an `InstallPromptProvider`, reads the hoisted root-level
+ * state so the prompt is never missed on route transitions. Falls back to
+ * direct window listening for standalone test environments.
  */
 export function useInstallPrompt(): UseInstallPromptResult {
+  const context = useContext(InstallPromptContext);
+
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [status, setStatus] = useState<InstallPromptStatus>('idle');
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return undefined;
-    }
+    // If running within an active InstallPromptProvider, the provider manages the listeners.
+    if (context) return undefined;
+    if (typeof window === 'undefined') return undefined;
 
     if (isRunningInstalled()) {
       setStatus('installed');
@@ -77,9 +71,6 @@ export function useInstallPrompt(): UseInstallPromptResult {
       setStatus('available');
     };
 
-    // Fires when the install completes through ANY route — this app's
-    // button, the browser menu, or an OS-level install. Without it the UI
-    // keeps offering to install an app the user already has.
     const onAppInstalled = () => {
       setDeferredPrompt(null);
       setStatus('installed');
@@ -91,9 +82,12 @@ export function useInstallPrompt(): UseInstallPromptResult {
       window.removeEventListener?.('beforeinstallprompt', onBeforeInstallPrompt);
       window.removeEventListener?.('appinstalled', onAppInstalled);
     };
-  }, []);
+  }, [context]);
 
   const promptInstall = useCallback(async () => {
+    if (context) {
+      return context.promptInstall();
+    }
     if (!deferredPrompt) {
       return;
     }
@@ -102,16 +96,15 @@ export function useInstallPrompt(): UseInstallPromptResult {
       const choice = await deferredPrompt.userChoice;
       setStatus(choice?.outcome === 'accepted' ? 'installed' : 'dismissed');
     } catch {
-      // A prompt can only be shown once; a second call rejects. Treat any
-      // failure as dismissal rather than surfacing a browser-internal
-      // error to someone who just wanted a home screen icon.
       setStatus('dismissed');
     } finally {
-      // Single-use either way — the browser discards the event after
-      // prompt(), so holding it would let the UI offer a dead button.
       setDeferredPrompt(null);
     }
-  }, [deferredPrompt]);
+  }, [context, deferredPrompt]);
+
+  if (context) {
+    return context;
+  }
 
   return { status, promptInstall };
 }

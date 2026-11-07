@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import pg from 'pg';
 
 /**
@@ -90,7 +90,14 @@ const adminClaims = { sub: ADMIN_ID, app_metadata: { role: 'admin' } };
 describe('audit_log RLS (20260817000015_audit_log.sql)', () => {
   let seededId: number;
 
+  beforeEach((ctx) => {
+    if (!client) {
+      ctx.skip();
+    }
+  });
+
   beforeAll(async () => {
+    if (!client) return;
     const db = requireDb();
     const { rows } = await db.query(
       `insert into audit_log (actor_id, actor_role, action, entity_type, entity_id, outcome, request_id, detail)
@@ -102,6 +109,7 @@ describe('audit_log RLS (20260817000015_audit_log.sql)', () => {
   });
 
   afterAll(async () => {
+    if (!client || !seededId) return;
     const db = requireDb();
     // Cleans up as postgres, which bypasses RLS entirely.
     await db.query('delete from audit_log where id = $1', [seededId]);

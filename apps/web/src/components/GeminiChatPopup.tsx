@@ -11,7 +11,7 @@ interface Message {
 export function GeminiChatPopup() {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', text: 'Hi there! I am Aavash AI. How can I help you today?', sender: 'bot' }
+    { id: '1', text: 'স্বাগতম! আমি আভাস এআই সহকারী। ডেঙ্গুর লক্ষণ বা প্রতিরোধ বিষয়ে আপনাকে কীভাবে সাহায্য করতে পারি?', sender: 'bot' }
   ]);
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -56,7 +56,7 @@ export function GeminiChatPopup() {
         onError: () => {
           const errorMessage: Message = {
             id: Date.now().toString(),
-            text: "Sorry, I'm having trouble connecting to the server.",
+            text: "দুঃখিত, সার্ভারের সাথে সংযোগ স্থাপনে সমস্যা হচ্ছে। অনুগ্রহ করে একটু পর আবার চেষ্টা করুন।",
             sender: 'bot',
           };
           setMessages((prev) => [...prev, errorMessage]);
@@ -77,7 +77,7 @@ export function GeminiChatPopup() {
         <button
           className="gemini-fab"
           onClick={toggleChat}
-          aria-label="Open Chat"
+          aria-label="চ্যাটবট খুলুন"
         >
           {/* Gemini Sparkle Icon */}
           <img src="/icons/gemini.svg" alt="Gemini" style={{ width: "40px" }} />
@@ -89,9 +89,9 @@ export function GeminiChatPopup() {
           <div className="gemini-header">
             <div className="gemini-header-title">
               <img src="/icons/gemini-2.svg" alt="Gemini" style={{ width: "27px", height: "27px" }} aria-hidden="true" />
-              Aavash AI Assistant
+              আভাস এআই সহকারী
             </div>
-            <button className="gemini-close-btn" onClick={toggleChat} aria-label="Close Chat">
+            <button className="gemini-close-btn" onClick={toggleChat} aria-label="চ্যাটবট বন্ধ করুন">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -119,7 +119,7 @@ export function GeminiChatPopup() {
             <input
               type="text"
               className="gemini-input"
-              placeholder="Ask Gemini..."
+              placeholder="ডেঙ্গু সম্পর্কে যেকোনো প্রশ্ন লিখুন..."
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -128,7 +128,7 @@ export function GeminiChatPopup() {
               type="submit"
               className="gemini-send-btn"
               disabled={!inputValue.trim()}
-              aria-label="Send message"
+              aria-label="বার্তা পাঠান"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="22" y1="2" x2="11" y2="13"></line>
