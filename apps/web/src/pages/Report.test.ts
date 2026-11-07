@@ -43,11 +43,11 @@ vi.mock('../features/reports/useUploadReportPhoto', () => ({
   }),
 }));
 
-vi.mock('../features/reports/TurnstileWidget', () => ({
+vi.mock('../features/reports/components/TurnstileWidget', () => ({
   TurnstileWidget: () => null,
 }));
 
-vi.mock('../features/reports/ReportSubmissionList', () => ({
+vi.mock('../features/reports/components/ReportSubmissionList', () => ({
   ReportSubmissionList: () => null,
 }));
 

@@ -4,6 +4,15 @@ import App from './App';
 import { ensureServiceWorkerRegistration } from './lib/serviceWorker';
 import './styles/global.css';
 
+// Pre-hydration zero-flash theme attribute application
+try {
+  const storedTheme = localStorage?.getItem('avash-theme');
+  const initialTheme = storedTheme === 'dark' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', initialTheme);
+} catch {
+  // Storage access blocked or unavailable
+}
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <App />

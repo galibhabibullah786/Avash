@@ -1,6 +1,6 @@
-import { useGeolocation } from '../../hooks/useGeolocation';
-import { useSession } from '../auth/SessionProvider';
-import { useReportSubmissions } from './useReportSubmissions';
+import { useGeolocation } from '../../../hooks/useGeolocation';
+import { useSession } from '../../auth/SessionProvider';
+import { useReportSubmissions } from '../useReportSubmissions';
 
 export function ReportSubmissionList() {
   const { accessToken } = useSession();

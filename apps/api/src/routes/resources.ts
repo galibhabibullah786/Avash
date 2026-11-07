@@ -142,7 +142,7 @@ export function createResources(options?: CreateResourcesOptions) {
           }
 
           return c.json(toHospitalDto(viewData), 201);
-        } catch (error) {
+        } catch {
           logger.error('resources/hospitals POST: unexpected failure', { requestId });
           return c.json(buildGenericErrorBody(requestId), 503);
         }
@@ -163,7 +163,7 @@ export function createResources(options?: CreateResourcesOptions) {
         try {
           const supabase = createSupabaseAdmin(c.env);
           
-          const updateData: any = {};
+          const updateData: Record<string, unknown> = {};
           if (parsed.data.name !== undefined) updateData.name = parsed.data.name;
           if (parsed.data.address !== undefined) updateData.address = parsed.data.address;
           if (parsed.data.phone !== undefined) updateData.phone = parsed.data.phone;
@@ -191,7 +191,7 @@ export function createResources(options?: CreateResourcesOptions) {
           if (viewError || !viewData) return c.json(buildGenericErrorBody(requestId), 404);
 
           return c.json(toHospitalDto(viewData), 200);
-        } catch (error) {
+        } catch {
           logger.error('resources/hospitals PATCH: unexpected failure', { requestId });
           return c.json(buildGenericErrorBody(requestId), 503);
         }
@@ -217,7 +217,7 @@ export function createResources(options?: CreateResourcesOptions) {
             return c.json(buildGenericErrorBody(requestId), 503);
           }
           return c.body(null, 204);
-        } catch (error) {
+        } catch {
           logger.error('resources/hospitals DELETE: unexpected failure', { requestId });
           return c.json(buildGenericErrorBody(requestId), 503);
         }
@@ -239,7 +239,7 @@ export function createResources(options?: CreateResourcesOptions) {
         if (error) return c.json(buildGenericErrorBody(requestId), 503);
         
         return c.json({ inventory: data }, 200);
-      } catch (error) {
+      } catch {
         return c.json(buildGenericErrorBody(requestId), 503);
       }
     })

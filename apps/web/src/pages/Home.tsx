@@ -61,7 +61,7 @@ export default function Home() {
           </div>
         </div>
 
-        <img style={{ width: '550px', borderRadius: "50px" }} src="/img/mosquito.png" alt="ডেঙ্গু সচেতনতা" />
+        <img style={{ maxWidth: '100%', width: '550px', height: 'auto', borderRadius: "24px" }} src="/img/mosquito.png" alt="ডেঙ্গু সচেতনতা" />
       </section>
 
       {installStatus === 'available' ? (

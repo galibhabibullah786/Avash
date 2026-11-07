@@ -22,7 +22,6 @@ declare global {
 
 let scriptLoadPromise: Promise<void> | null = null;
 
-/** Loads the Turnstile script-tag widget exactly once per page, however many widgets mount. */
 function loadTurnstileScript(): Promise<void> {
   if (window?.turnstile) {
     return Promise.resolve();
@@ -48,13 +47,6 @@ export interface TurnstileWidgetProps {
   onExpire?: () => void;
 }
 
-/**
- * Renders Cloudflare Turnstile via its plain script-tag widget API rather
- * than a React SDK — there is no Turnstile React wrapper installed in
- * this workspace (`apps/web/package.json`), and pulling one in was a
- * judgment call this slice opted against to avoid a lockfile conflict
- * with sibling workers building in parallel.
- */
 export function TurnstileWidget({ siteKey, onVerify, onExpire }: TurnstileWidgetProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
@@ -76,9 +68,7 @@ export function TurnstileWidget({ siteKey, onVerify, onExpire }: TurnstileWidget
         });
       })
       .catch(() => {
-        // A blocked/unreachable Turnstile script leaves the widget absent;
-        // the submit button stays disabled (no token ever arrives) rather
-        // than throwing into the page.
+        // A blocked/unreachable Turnstile script leaves the widget absent
       });
 
     return () => {
@@ -88,9 +78,6 @@ export function TurnstileWidget({ siteKey, onVerify, onExpire }: TurnstileWidget
         window.turnstile.remove(widgetId);
       }
     };
-    // Intentionally keyed on `siteKey` alone — `onVerify`/`onExpire` are
-    // event-callback props read fresh via optional chaining at call time
-    // (R7), not values this effect needs to re-run for.
   }, [siteKey]);
 
   return <div ref={containerRef} data-testid="turnstile-widget" />;

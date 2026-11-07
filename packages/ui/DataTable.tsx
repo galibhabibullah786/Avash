@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { PageMeta } from '@avash/types';
 
 export interface DataTableColumn<T> {
@@ -15,7 +15,7 @@ export interface DataTableProps<T> {
   page: PageMeta;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
-  /** Omitted entirely for a source that cannot sort (baseline fact 3). */
+  /** Omitted entirely for a source that cannot sort. */
   onSortChange?: (key: string) => void;
   emptyMessage?: string;
   /** Shown under the table when a source cannot filter/sort/count at all. */
@@ -26,10 +26,9 @@ export interface DataTableProps<T> {
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 
 /**
- * The shared paginated-table primitive (B-T06). Transport-agnostic — it
+ * The shared paginated-table primitive. Transport-agnostic — it
  * only knows about `PageMeta`, so the Hono-query-param transport and the
- * PostgREST `.range()` transport are indistinguishable from here (baseline
- * fact 2).
+ * PostgREST `.range()` transport are indistinguishable from here.
  */
 export function DataTable<T>({
   columns,

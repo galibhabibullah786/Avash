@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { resolveAppRole } from '@avash/security';
+import { resolveAppRole } from '@avash/security/roles';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabaseClient';
 import { SessionContext, initialSessionValue, type SessionContextValue } from './useSession';

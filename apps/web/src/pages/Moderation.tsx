@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { SPAM_LIKELIHOOD_REJECT_THRESHOLD } from '@avash/types';
+import { SPAM_LIKELIHOOD_REJECT_THRESHOLD, type BreedingReportVerifyRequest } from '@avash/types';
 import { useSession } from '../features/auth/SessionProvider';
 import {
   usePendingReports,
@@ -28,9 +28,9 @@ export default function Moderation() {
   });
   const verify = useVerifyReport();
 
-  const handleDecision = (id: string, decision: ModerationStatus) => {
+  const handleDecision = (id: string, decision: BreedingReportVerifyRequest['status']) => {
     if (!accessToken) return;
-    verify?.mutate?.({ id, status: decision as any, accessToken });
+    verify?.mutate?.({ id, status: decision, accessToken });
   };
 
   const rows: PendingReportRow[] = queue?.data?.items ?? [];

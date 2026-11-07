@@ -39,10 +39,10 @@
   height: 550px;
   max-width: calc(100vw - 48px);
   max-height: calc(100vh - 120px);
-  background-color: var(--color-surface, #131c2e);
-  border: 1px solid var(--color-border, #263048);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -62,8 +62,8 @@
 
 .gemini-header {
   padding: var(--space-3, 16px);
-  background: linear-gradient(90deg, #1a253c, #131c2e);
-  border-bottom: 1px solid var(--color-border, #263048);
+  background: var(--color-surface-subtle);
+  border-bottom: 1px solid var(--color-border);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -74,19 +74,19 @@
   align-items: center;
   gap: var(--space-2, 8px);
   font-weight: 600;
-  color: var(--color-text, #f5f7fa);
+  color: var(--color-text);
 }
 
 .gemini-header-title svg {
   width: 20px;
   height: 20px;
-  color: #a46cf5;
+  color: var(--color-primary);
 }
 
 .gemini-close-btn {
   background: none;
   border: none;
-  color: var(--color-text-muted, #b8c2d1);
+  color: var(--color-text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -97,8 +97,8 @@
 }
 
 .gemini-close-btn:hover {
-  background-color: rgba(255, 255, 255, 0.1);
-  color: var(--color-text, #f5f7fa);
+  background-color: var(--color-border);
+  color: var(--color-text);
 }
 
 .gemini-messages {
@@ -109,6 +109,7 @@
   flex-direction: column;
   gap: var(--space-3, 16px);
   scroll-behavior: smooth;
+  background-color: var(--color-surface);
 }
 
 .gemini-message {
@@ -122,15 +123,16 @@
 
 .gemini-message.user {
   align-self: flex-end;
-  background-color: var(--color-primary, #0b6e4f);
+  background-color: var(--color-primary);
   color: white;
   border-bottom-right-radius: 4px;
 }
 
 .gemini-message.bot {
   align-self: flex-start;
-  background-color: #212d43;
-  color: var(--color-text, #f5f7fa);
+  background-color: var(--color-surface-subtle);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
   border-bottom-left-radius: 4px;
 }
 
@@ -144,7 +146,7 @@
 .gemini-dot {
   width: 6px;
   height: 6px;
-  background-color: var(--color-text-muted, #b8c2d1);
+  background-color: var(--color-text-muted);
   border-radius: 50%;
   animation: pulse 1.5s infinite;
 }
@@ -169,19 +171,19 @@
 
 .gemini-input-area {
   padding: var(--space-3, 16px);
-  border-top: 1px solid var(--color-border, #263048);
+  border-top: 1px solid var(--color-border);
   display: flex;
   gap: var(--space-2, 8px);
-  background-color: var(--color-surface, #131c2e);
+  background-color: var(--color-surface);
 }
 
 .gemini-input {
   flex: 1;
-  background-color: #0b1220;
-  border: 1px solid var(--color-border, #263048);
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
   border-radius: 20px;
   padding: 10px 16px;
-  color: var(--color-text, #f5f7fa);
+  color: var(--color-text);
   font-family: inherit;
   font-size: 14px;
   outline: none;
@@ -189,14 +191,14 @@
 }
 
 .gemini-input:focus {
-  border-color: #a46cf5;
+  border-color: var(--color-primary);
 }
 
 .gemini-send-btn {
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  background-color: #a46cf5;
+  background-color: var(--color-primary);
   border: none;
   color: white;
   display: flex;
@@ -208,11 +210,12 @@
 }
 
 .gemini-send-btn:hover:not(:disabled) {
-  background-color: #9258e6;
+  background-color: var(--color-primary-hover);
 }
 
 .gemini-send-btn:disabled {
-  background-color: #4a4a4a;
+  background-color: var(--color-border);
+  color: var(--color-text-muted);
   cursor: not-allowed;
   opacity: 0.7;
 }
@@ -225,6 +228,6 @@
   background: transparent;
 }
 .gemini-messages::-webkit-scrollbar-thumb {
-  background-color: var(--color-border, #263048);
+  background-color: var(--color-border);
   border-radius: 10px;
 }
