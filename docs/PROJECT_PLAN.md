@@ -900,14 +900,15 @@ Waterfall governs the *project timeline* (mapped below to the original 10-week p
 | `MAP_TILE_URL_TEMPLATE` | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` | `apps/web/src/features/map/tileLayer.ts` | basemap tile source; the one value to change when swapping tile providers (ADR-013) |
 | `MAP_TILE_ATTRIBUTION` | `© OpenStreetMap contributors` | `apps/web/src/features/map/tileLayer.ts` | attribution control — required by the OSM tile usage policy, not optional styling |
 | `MAP_TILE_MAX_ZOOM` | 19 | `apps/web/src/features/map/tileLayer.ts` | highest zoom the OSM standard style serves; requesting past it returns blank tiles |
-| `CORS_ALLOWED_ORIGINS` | production Pages domain + PR preview pattern | `apps/api/wrangler.toml` (`CORS_ALLOWED_ORIGINS`, `CORS_PREVIEW_ORIGIN_SUFFIX` vars), read in `apps/api/src/config/cors.ts` | cross-origin write protection |
+| `CORS_ALLOWED_ORIGINS` | production Pages domain + PR preview pattern (+ localhost:5173/4173/8080 and 127.0.0.1 equivalents in local .dev.vars) | `apps/api/wrangler.toml` (`CORS_ALLOWED_ORIGINS`, `CORS_PREVIEW_ORIGIN_SUFFIX` vars), read in `apps/api/src/config/cors.ts` | cross-origin write protection |
+| `CORS_PREFLIGHT_MAX_AGE_S` | 86400 | `apps/api/src/config/cors.ts` | preflight cache max-age (24h) |
 | `API_CLIENT_TIMEOUT_MS` | 8000 | `apps/web/src/lib/apiClient.ts` | aborts a hung `apps/api` request instead of leaving a query pending indefinitely |
-| `POSTGIS_LOCAL_IMAGE` | `postgis/postgis:15-3.4` | `compose.yaml`, CI `services:` container | local + CI database parity with Supabase's Postgres 15 / PostGIS 3 (ADR-011) |
+| `POSTGIS_LOCAL_IMAGE` | `supabase/postgres:17.6` | `packages/db/supabase/config.toml`, `compose.yaml` | local + CI database parity with Supabase's Postgres 17 / PostGIS 3.4 |
 | `ML_PYTHON_IMAGE` | `python:3.11-slim-bookworm` | `docker/ml.Dockerfile`, cron workflow `python-version` | reproducible ML runtime — identical dependency tree locally and on schedule |
-| `POSTGRES_LOCAL_PORT` | 54322 (host) → 5432 (container) | `compose.yaml` | avoids collision with a host-installed Postgres; matches the Supabase CLI convention |
+| `POSTGRES_LOCAL_PORT` | 54321 (Supabase API) / 54322 (host direct) | `packages/db/supabase/config.toml`, `compose.yaml` | avoids collision with a host-installed Postgres; matches the Supabase CLI convention |
 | `WEB_IMAGE_BASE` | `nginxinc/nginx-unprivileged:1.27.2-alpine` | `apps/web/Dockerfile` | runtime base for the web image — non-root, listens on 8080 (ADR-012) |
 | `API_IMAGE_BASE` | `node:20.17.0-alpine3.20` | `apps/api/Dockerfile` (both stages) | build + runtime base for the API image; Node 20 matches the Worker's `nodejs_compat` baseline |
-| `APP_CONTAINER_PORTS` | web 8080, api 8787, notify 8788 (in-container) | `apps/web/docker/default.conf.template`, `apps/api/server/node-server.ts`, `apps/notify/server/node-server.ts`, `compose.yaml` | fixed in-container ports; host ports are overridable via `WEB_PORT`/`API_PORT`/`NOTIFY_PORT` |
+| `APP_CONTAINER_PORTS` | web 8080, api 8787 (in-container) | `apps/web/docker/default.conf.template`, `apps/api/server/node-server.ts`, `compose.yaml` | fixed in-container ports; host ports are overridable via `WEB_PORT`/`API_PORT` |
 | `CONTAINER_REGISTRY` | `ghcr.io/<owner>/avash-web`, `ghcr.io/<owner>/avash-api` | `.github/workflows/build-images.yml` | published image names; tagged `sha-<short>`, plus `latest` on `main` |
 | `WEATHER_CACHE_TTL_S` | `s-maxage=900, swr=1800` | `apps/api/src/routes/weather.ts` | edge cache for weather reads; 15 min against a 3 h ingest cadence never serves a value the source could have refreshed |
 | `WEATHER_HISTORY_WINDOW_DAYS` | 14 | `apps/api/src/routes/weather.ts` | dashboard history window; matches the 14-day rolling features in §5.1 so the chart shows what the model will consume |
@@ -946,10 +947,15 @@ Waterfall governs the *project timeline* (mapped below to the original 10-week p
 | `ALERT_SUBSCRIBE_RATE_LIMIT` | 5/min per user | `packages/security/rateLimit.ts` | §6's `POST /api/alerts/subscribe` and `POST /api/alerts/push-subscription` rows |
 | `ANNOUNCEMENT_CREATE_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | §6's `POST /api/announcements` row |
 | `AUDIT_LOG_PAGE_SIZE_DEFAULT` | 50 | `apps/api/src/routes/audit-log.ts` | default page size for `GET /api/admin/audit-log` |
+| `AppRole` | `citizen \| hospital_staff \| moderator \| admin` | `packages/types/api.ts`, mirrored by `role_assignments`' check constraint | the four roles every layer recognizes |
+| `DEFAULT_APP_ROLE` | `citizen` | `packages/types/api.ts`, `public.app_role()` | what a verified token with no role claim resolves to |
+| `ROLE_CAPABILITIES` | see `docs/features/rbac.md` § grant table | `packages/security/roles.ts`, mirrored by `public.has_capability()` | authorization grant table across roles |
+| `ROLE_ASSIGNMENT_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | role admin rate limit ceiling |
+| `SUPABASE_LOCAL_API_PORT` | 54321 (db 54329, studio 54323, inbucket 54324) | `packages/db/supabase/config.toml` | containerized local Supabase stack (ADR-014) |
 | `ANNOUNCEMENT_PUSH_LEASE_SECONDS` | 300 | `packages/types/alerts.ts` | how long one delivery claim is held before the sweep may reclaim it |
-| `ANNOUNCEMENT_PUSH_SWEEP_CADENCE` | every 5 min | `apps/notify` Inngest cron | safety-net scan for undelivered announcements |
+| `ANNOUNCEMENT_PUSH_SWEEP_CADENCE` | every 5 min | `supabase/functions/risk-alerts` Inngest cron | safety-net scan for undelivered announcements |
 | `ANNOUNCEMENT_PUSH_CONCURRENCY` | 10 | `packages/push` | simultaneous in-flight sends per delivery run |
-| `ANNOUNCEMENT_PUSH_RUN_CONCURRENCY` | 5 | `packages/types/alerts.ts`, `apps/notify` Inngest function config | simultaneous Inngest function RUNS — distinct from the in-flight-sends number above, and bounded by the Inngest plan |
+| `ANNOUNCEMENT_PUSH_RUN_CONCURRENCY` | 5 | `packages/types/alerts.ts`, `supabase/functions/risk-alerts` Inngest config | simultaneous Inngest function RUNS — distinct from the in-flight-sends number above, and bounded by the Inngest plan |
 | `INNGEST_PLAN_CONCURRENCY_LIMIT` | 5 | `packages/types/alerts.ts` | the Inngest account's concurrent-run ceiling; declaring more makes Inngest reject the whole app registration |
 | `ANNOUNCEMENT_PUSH_BATCH_SIZE` | 100 | `packages/push` | targets per Inngest step, keeping each invocation inside the function time limit |
 | `ANNOUNCEMENT_PUSH_MAX_PER_USER_PER_HOUR` | 6 | `packages/push` | anti-spam ceiling per subscriber (applied per-user rather than as a global cadence) |

@@ -24,13 +24,15 @@ export function useReportSubmissions(
   return useQuery({
     queryKey: ['report-submissions', query?.lat, query?.lng],
     queryFn: async () => {
-      if (!query) throw new Error('Missing query');
-      const search = new URLSearchParams({
-        lat: String(query.lat),
-        lng: String(query.lng)
-      });
+      const search = new URLSearchParams();
+      if (query) {
+        search.set('lat', String(query.lat));
+        search.set('lng', String(query.lng));
+      }
+      const qs = search.toString();
+      const endpoint = qs ? `/api/reports?${qs}` : '/api/reports';
       const result = await fetchApi(
-        `/api/reports?${search.toString()}`,
+        endpoint,
         reportSubmissionListResponseSchema,
         { accessToken: accessToken || undefined }
       );
@@ -39,7 +41,7 @@ export function useReportSubmissions(
       }
       return result.data;
     },
-    enabled: Boolean(accessToken && query),
+    enabled: true,
     staleTime: 60 * 1000,
   });
 }

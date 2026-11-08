@@ -1,11 +1,11 @@
 import { lazy, Suspense } from 'react';
 import { createBrowserRouter } from 'react-router-dom';
-import Home from './pages/Home';
-import NotFound from './pages/NotFound';
 import { Layout } from './components/Layout';
 import { RouteError } from './components/RouteError';
 import { ProtectedRoute } from './features/auth/ProtectedRoute';
 
+const NotFound = lazy(() => import('./pages/NotFound'));
+const Home = lazy(() => import('./pages/Home'));
 const Login = lazy(() => import('./pages/Login'));
 const Weather = lazy(() => import('./pages/Weather'));
 const RiskMap = lazy(() => import('./pages/RiskMap'));
@@ -26,7 +26,11 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <Home />,
+        element: (
+          <Suspense fallback={null}>
+            <Home />
+          </Suspense>
+        ),
         errorElement: <RouteError />,
       },
       {
@@ -143,7 +147,11 @@ export const router = createBrowserRouter([
       },
       {
         path: '*',
-        element: <NotFound />,
+        element: (
+          <Suspense fallback={null}>
+            <NotFound />
+          </Suspense>
+        ),
         errorElement: <RouteError />,
       },
     ],

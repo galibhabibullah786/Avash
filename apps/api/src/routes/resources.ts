@@ -98,8 +98,8 @@ export function createResources(options?: CreateResourcesOptions) {
         try {
           const supabase = createSupabaseAdmin(c.env);
           
-          // PostGIS formatting
-          const geom = `POINT(${parsed.data.lng} ${parsed.data.lat})`;
+          // PostGIS formatting (GeoJSON standard format accepted by Supabase/PostgREST)
+          const geom = { type: 'Point', coordinates: [parsed.data.lng, parsed.data.lat] };
           
           const { data, error } = await supabase
             .from('hospitals')
@@ -120,15 +120,27 @@ export function createResources(options?: CreateResourcesOptions) {
 
           // Also insert 8 blood groups initialized to 0
           const bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+          const updatedBy = UUID_PATTERN.test(user.id) ? user.id : null;
           const inventoryRows = bloodGroups.map(bg => ({
             hospital_id: data.id,
             blood_group: bg,
             units_available: 0,
             platelet_units: 0,
-            updated_by: user.id
+            updated_by: updatedBy,
           }));
           
-          await supabase.from('blood_inventory').insert(inventoryRows);
+          const { error: invErr } = await supabase.from('blood_inventory').insert(inventoryRows);
+          if (invErr && updatedBy !== null) {
+            await supabase.from('blood_inventory').insert(
+              bloodGroups.map((bg) => ({
+                hospital_id: data.id,
+                blood_group: bg,
+                units_available: 0,
+                platelet_units: 0,
+                updated_by: null,
+              }))
+            );
+          }
 
           // We query from hospital_locations view to get lat/lng correctly formatted
           const { data: viewData, error: viewError } = await supabase
@@ -137,12 +149,20 @@ export function createResources(options?: CreateResourcesOptions) {
             .eq('id', data.id)
             .single();
             
-          if (viewError) {
-             return c.json(buildGenericErrorBody(requestId), 503);
+          if (viewError || !viewData) {
+            return c.json({
+              id: String(data.id),
+              name: parsed.data.name,
+              address: parsed.data.address ?? null,
+              phone: parsed.data.phone ?? null,
+              verified: parsed.data.verified,
+              lat: parsed.data.lat,
+              lng: parsed.data.lng,
+            }, 201);
           }
 
           return c.json(toHospitalDto(viewData), 201);
-        } catch (error) {
+        } catch {
           logger.error('resources/hospitals POST: unexpected failure', { requestId });
           return c.json(buildGenericErrorBody(requestId), 503);
         }
@@ -163,22 +183,23 @@ export function createResources(options?: CreateResourcesOptions) {
         try {
           const supabase = createSupabaseAdmin(c.env);
           
-          const updateData: any = {};
+          const updateData: Record<string, unknown> = {};
           if (parsed.data.name !== undefined) updateData.name = parsed.data.name;
           if (parsed.data.address !== undefined) updateData.address = parsed.data.address;
           if (parsed.data.phone !== undefined) updateData.phone = parsed.data.phone;
           if (parsed.data.verified !== undefined) updateData.verified = parsed.data.verified;
           if (parsed.data.lat !== undefined && parsed.data.lng !== undefined) {
-             updateData.geom = `POINT(${parsed.data.lng} ${parsed.data.lat})`;
+            updateData.geom = { type: 'Point', coordinates: [parsed.data.lng, parsed.data.lat] };
           }
 
-          const { error } = await supabase
+          const { error: updateError, data: updatedData } = await supabase
             .from('hospitals')
             .update(updateData)
-            .eq('id', id);
+            .eq('id', id)
+            .select('*');
 
-          if (error) {
-            logger.error('resources/hospitals PATCH: update failed', { requestId, error });
+          if (updateError) {
+            logger.error('resources/hospitals PATCH: update failed', { requestId, error: updateError });
             return c.json(buildGenericErrorBody(requestId), 503);
           }
 
@@ -188,10 +209,24 @@ export function createResources(options?: CreateResourcesOptions) {
             .eq('id', id)
             .single();
             
-          if (viewError || !viewData) return c.json(buildGenericErrorBody(requestId), 404);
+          if (viewError || !viewData) {
+            const row = (updatedData ?? [])[0] as Record<string, unknown> | undefined;
+            if (!row && (!updatedData || (updatedData as unknown[]).length === 0)) {
+              return c.json(buildGenericErrorBody(requestId), 404);
+            }
+            return c.json({
+              id,
+              name: parsed.data.name ?? String(row?.name ?? ''),
+              address: (parsed.data.address !== undefined ? parsed.data.address : row?.address as string) ?? null,
+              phone: (parsed.data.phone !== undefined ? parsed.data.phone : row?.phone as string) ?? null,
+              verified: (parsed.data.verified !== undefined ? parsed.data.verified : row?.verified as boolean) ?? false,
+              lat: parsed.data.lat ?? 0,
+              lng: parsed.data.lng ?? 0,
+            }, 200);
+          }
 
           return c.json(toHospitalDto(viewData), 200);
-        } catch (error) {
+        } catch {
           logger.error('resources/hospitals PATCH: unexpected failure', { requestId });
           return c.json(buildGenericErrorBody(requestId), 503);
         }
@@ -217,7 +252,7 @@ export function createResources(options?: CreateResourcesOptions) {
             return c.json(buildGenericErrorBody(requestId), 503);
           }
           return c.body(null, 204);
-        } catch (error) {
+        } catch {
           logger.error('resources/hospitals DELETE: unexpected failure', { requestId });
           return c.json(buildGenericErrorBody(requestId), 503);
         }
@@ -231,25 +266,46 @@ export function createResources(options?: CreateResourcesOptions) {
 
       try {
         const supabase = createSupabaseAdmin(c.env);
-        const { data, error } = await supabase
+        const { data: initialData, error } = await supabase
           .from('blood_inventory')
           .select('*')
           .eq('hospital_id', id);
 
         if (error) return c.json(buildGenericErrorBody(requestId), 503);
         
-        return c.json({ inventory: data }, 200);
-      } catch (error) {
+        let data = initialData ?? [];
+        // If hospital has no inventory rows yet, initialize 8 blood groups
+        if (data.length === 0) {
+          const bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+          const inventoryRows = bloodGroups.map((bg) => ({
+            hospital_id: id,
+            blood_group: bg,
+            units_available: 0,
+            platelet_units: 0,
+            updated_by: null,
+          }));
+          await supabase.from('blood_inventory').insert(inventoryRows);
+          const refetch = await supabase
+            .from('blood_inventory')
+            .select('*')
+            .eq('hospital_id', id);
+          data = refetch.data ?? [];
+        }
+
+        return c.json({ inventory: data ?? [] }, 200);
+      } catch {
         return c.json(buildGenericErrorBody(requestId), 503);
       }
     })
 
     .get('/blood', async (c) => {
       const requestId = c.get('requestId');
+      const latQuery = c.req.query('lat');
+      const lngQuery = c.req.query('lng');
       const parsed = bloodSearchQuerySchema.safeParse({
         bloodGroup: c.req.query('bloodGroup'),
-        lat: Number(c.req.query('lat')),
-        lng: Number(c.req.query('lng')),
+        lat: latQuery !== undefined && latQuery !== '' ? Number(latQuery) : undefined,
+        lng: lngQuery !== undefined && lngQuery !== '' ? Number(lngQuery) : undefined,
         radiusM: c.req.query('radius') ? Number(c.req.query('radius')) : undefined,
       });
       if (!parsed.success) {
@@ -258,20 +314,68 @@ export function createResources(options?: CreateResourcesOptions) {
 
       try {
         const supabase = createSupabaseAdmin(c.env);
-        const { data, error } = await supabase.rpc('blood_within_radius', {
-          p_blood_group: parsed.data.bloodGroup,
-          p_lat: parsed.data.lat,
-          p_lon: parsed.data.lng,
-          p_radius_m: parsed.data.radiusM,
-        });
+        let results: ReturnType<typeof toBloodAvailabilityDto>[] = [];
 
-        if (error) {
-          logger.error('resources/blood: RPC failed', { requestId });
-          return c.json(buildGenericErrorBody(requestId), 503);
+        if (parsed.data.lat !== undefined && parsed.data.lng !== undefined) {
+          const { data, error } = await supabase.rpc('blood_within_radius', {
+            p_blood_group: parsed.data.bloodGroup,
+            p_lat: parsed.data.lat,
+            p_lon: parsed.data.lng,
+            p_radius_m: parsed.data.radiusM,
+          });
+
+          if (error) {
+            logger.error('resources/blood: RPC failed', { requestId });
+            return c.json(buildGenericErrorBody(requestId), 503);
+          }
+
+          const rows = (data ?? []) as Record<string, unknown>[];
+          results = rows.map((row) => toBloodAvailabilityDto(row));
+        } else {
+          const [invRes, hospRes] = await Promise.all([
+            supabase
+              .from('blood_inventory')
+              .select('*')
+              .eq('blood_group', parsed.data.bloodGroup)
+              .order('units_available', { ascending: false }),
+            supabase
+              .from('hospital_locations')
+              .select('*')
+              .limit(HOSPITAL_RESULT_LIMIT),
+          ]);
+
+          if (invRes.error || hospRes.error) {
+            logger.error('resources/blood: all-records read failed', { requestId });
+            return c.json(buildGenericErrorBody(requestId), 503);
+          }
+
+          const hospMap = new Map<string, Record<string, unknown>>();
+          for (const h of (hospRes.data ?? []) as Record<string, unknown>[]) {
+            hospMap.set(String(h.id), h);
+          }
+
+          const rows: Record<string, unknown>[] = [];
+          for (const inv of (invRes.data ?? []) as Record<string, unknown>[]) {
+            const h = hospMap.get(String(inv.hospital_id));
+            if (!h) continue;
+            rows.push({
+              inventory_id: inv.id,
+              hospital_id: h.id,
+              hospital_name: h.name,
+              hospital_address: h.address,
+              hospital_phone: h.phone,
+              hospital_verified: h.verified,
+              hospital_lat: h.lat,
+              hospital_lon: h.lon,
+              blood_group: inv.blood_group,
+              units_available: inv.units_available,
+              platelet_units: inv.platelet_units,
+              updated_at: inv.updated_at,
+              distance_m: null,
+            });
+          }
+          results = rows.map((row) => toBloodAvailabilityDto(row));
         }
-
-        const rows = (data ?? []) as Record<string, unknown>[];
-        const results = rows.map((row) => toBloodAvailabilityDto(row));
 
         const body = bloodSearchResponseSchema.parse({
           results,
@@ -306,7 +410,8 @@ export function createResources(options?: CreateResourcesOptions) {
       async (c) => {
         const requestId = c.get('requestId');
         const id = c.req.param('id');
-        if (!UUID_PATTERN.test(id)) {
+        const ID_PATTERN = /^(?:\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+        if (!ID_PATTERN.test(id)) {
           return c.json(buildGenericErrorBody(requestId), 400);
         }
         const body = await c.req.json().catch(() => undefined);
@@ -344,20 +449,34 @@ export function createResources(options?: CreateResourcesOptions) {
           }
           const hospitalId = String(invRow.hospital_id);
 
-          
-
           // Step 3 — only now write.
           const nowIso = new Date().toISOString();
-          const { data: updatedRows, error: updateError } = await supabase
+          const updatedBy = UUID_PATTERN.test(user.id) ? user.id : null;
+          let { data: updatedRows, error: updateError } = await supabase
             .from('blood_inventory')
             .update({
               units_available: parsed.data.unitsAvailable,
               platelet_units: parsed.data.plateletUnits,
-              updated_by: user.id,
+              updated_by: updatedBy,
               updated_at: nowIso,
             })
             .eq('id', id)
             .select('*');
+
+          if (updateError && updatedBy !== null) {
+            const retry = await supabase
+              .from('blood_inventory')
+              .update({
+                units_available: parsed.data.unitsAvailable,
+                platelet_units: parsed.data.plateletUnits,
+                updated_by: null,
+                updated_at: nowIso,
+              })
+              .eq('id', id)
+              .select('*');
+            updatedRows = retry.data;
+            updateError = retry.error;
+          }
 
           if (updateError) {
             logger.error('resources/blood PATCH: update failed', { requestId });

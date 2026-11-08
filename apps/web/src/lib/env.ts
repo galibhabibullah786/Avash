@@ -24,7 +24,10 @@ export const env = {
   apiBaseUrl: requireVar('VITE_PUBLIC_API_BASE_URL', apiBaseUrl),
   supabaseUrl: requireVar('VITE_PUBLIC_SUPABASE_URL', supabaseUrl),
   supabaseAnonKey: requireVar('VITE_PUBLIC_SUPABASE_ANON_KEY', supabaseAnonKey),
-  turnstileSiteKey: requireVar('VITE_PUBLIC_TURNSTILE_SITE_KEY', turnstileSiteKey),
+  turnstileSiteKey:
+    import.meta.env.DEV && !turnstileSiteKey
+      ? '1x00000000000000000000AA'
+      : requireVar('VITE_PUBLIC_TURNSTILE_SITE_KEY', turnstileSiteKey),
   /**
    * Optional, deliberately — unlike the four above, a missing VAPID key
    * degrades one feature (Web Push registration) rather than breaking the

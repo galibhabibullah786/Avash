@@ -15,7 +15,7 @@ export function toHospitalDto(row: Record<string, unknown>): HospitalDto {
     phone: row.phone === null || row.phone === undefined ? null : String(row.phone),
     verified: Boolean(row.verified),
     lat: toNumberOrNull(row.lat) ?? 0,
-    lng: toNumberOrNull(row.lon) ?? 0,
+    lng: toNumberOrNull(row.lon ?? row.lng) ?? 0,
   };
 }
 

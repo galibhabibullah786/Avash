@@ -1,0 +1,72 @@
+name: deploy-functions
+
+# Deploys Supabase Edge Functions (risk-alerts) using the Supabase CLI
+# (docs/PROJECT_PLAN.md §11, docs/ci-cd.md § Supabase Edge Function Deployment).
+#
+# Called by pipeline.yml after all quality gates (ci, codeql) pass, or triggered
+# standalone via workflow_dispatch for direct/emergency Edge Function deploys.
+#
+# This workflow must be safe when Supabase credentials are not configured:
+# the deploy step is guarded on SUPABASE_ACCESS_TOKEN and no-ops cleanly with
+# a notice otherwise.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: >-
+          GitHub Environment ("preview" or "production") to draw secrets
+          and variables from (docs/security/github-environments.md).
+        type: string
+        required: true
+    secrets:
+      SUPABASE_ACCESS_TOKEN:
+        required: false
+      SUPABASE_PROJECT_REF:
+        required: false
+  # A direct, standalone trigger for an urgent Edge Function deploy without
+  # needing the full pipeline.yml graph rebuilt.
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment to draw secrets and variables from.
+        type: choice
+        options: [preview, production]
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-workspace
+
+      - name: Check Supabase credentials
+        id: sb-check
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          if [ -n "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SUPABASE_ACCESS_TOKEN secret not set — skipping Edge Function deploy. See docs/ci-cd.md."
+          fi
+
+      - name: Deploy risk-alerts Edge Function
+        if: steps.sb-check.outputs.configured == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          pnpm --filter @avash/db exec supabase functions deploy risk-alerts \
+            --project-ref "${SUPABASE_PROJECT_REF:-kdklmbqkczkaakgswlix}" \
+            --no-verify-jwt

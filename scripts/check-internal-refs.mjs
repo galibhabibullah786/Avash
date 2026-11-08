@@ -36,6 +36,14 @@ const RULE_DEFINING_FILES = new Set([
   'scripts/check-internal-refs.mjs',
 ]);
 
+/**
+ * Vendored third-party assets and scripts that contain legitimate SVG path tokens (e.g. M17, M5).
+ */
+const ALLOWLISTED_FILES = new Set([
+  '.agents/skills/impeccable/scripts/live-browser.js',
+  '.claude/skills/impeccable/scripts/live-browser.js',
+]);
+
 const FORBIDDEN = [
   {
     pattern: /\bM[1-9]\d?-T\d+/g,
@@ -91,7 +99,7 @@ function isScannable(path) {
 const violations = [];
 
 for (const file of filesToScan()) {
-  if (RULE_DEFINING_FILES.has(file) || !isScannable(file)) continue;
+  if (RULE_DEFINING_FILES.has(file) || ALLOWLISTED_FILES.has(file) || !isScannable(file)) continue;
 
   let contents;
   try {

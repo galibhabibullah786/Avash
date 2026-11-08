@@ -171,13 +171,12 @@ export function createReports(options?: CreateReportsOptions) {
     )
     .get(
       '/',
-      auth(),
       rateLimit({
         guard: 'breeding-report',
         window: 'minute',
         windowSeconds: 60,
         limit: BREEDING_REPORT_RATE_LIMIT.perMinute,
-        keyStrategy: 'user',
+        keyStrategy: 'ip',
         redisFactory: options?.redisFactory,
       }),
       async (c) => handleReportsList(c)

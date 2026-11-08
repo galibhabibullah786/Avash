@@ -48,17 +48,27 @@ to the pipeline could never be tested by the pull request making it.
 | Weekly schedule | ✅ | built + scanned, not published | — | — | — |
 
 `supabase/functions/risk-alerts` delivers automated Web Push notifications orchestrated by Inngest.
-Deployments are executed conditionally via `pipeline.yml`'s `deploy-functions` job using the official `supabase/setup-cli` action only when changes occur under `supabase/functions/` or `packages/push/`.
+Deployments are executed via `.github/workflows/deploy-functions.yml`, called conditionally by `pipeline.yml` when changes occur under `packages/db/supabase/functions/`, `packages/push/`, `packages/types/`, or `.github/workflows/deploy-functions.yml`, or dispatched manually via `workflow_dispatch`.
 
-#### Supabase Edge Function Deployment
+#### Supabase Edge Function Deployment (`risk-alerts`)
 
-The workflow runs `supabase functions deploy risk-alerts --no-verify-jwt`.
-Dependencies from `packages/push` and `@avash/types` are vendored and shared cleanly via Deno-compatible imports or esbuild bundle step.
+Automated Web Push risk alerts and subscriber notifications are deployed as a Supabase Edge Function (`packages/db/supabase/functions/risk-alerts`) orchestrated by Inngest.
 
-Three gates ensure reliable execution:
-1. **Secrets configured in Supabase:** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `INNGEST_EVENT_KEY`, and `INNGEST_SIGNING_KEY` must be configured via `supabase secrets set`.
-2. **Change Detection:** Deploys run on `main` and `dev` only when notification code changes.
-3. **Inngest Sync:** Function updates register with Inngest automatically via the Edge Function endpoint.
+The CI/CD deployment runs conditionally via `pipeline.yml` (`deploy-functions` job calling `deploy-functions.yml`) or directly via `workflow_dispatch`:
+1. **Change Detection**: The job triggers on pushes to `main` or `dev` (and manual `workflow_dispatch`) whenever file changes are detected under:
+   - `packages/db/supabase/functions/**`
+   - `packages/push/**`
+   - `packages/types/**`
+   - `.github/workflows/deploy-functions.yml`
+2. **Authentication**: Authenticates using the `SUPABASE_ACCESS_TOKEN` secret and targets `SUPABASE_PROJECT_REF` (configured in GitHub Repository Secrets / Variables).
+3. **Deployment Step**:
+   ```bash
+   pnpm --filter @avash/db exec supabase functions deploy risk-alerts \
+     --project-ref "${SUPABASE_PROJECT_REF:-kdklmbqkczkaakgswlix}" \
+     --no-verify-jwt
+   ```
+4. **Environment Secrets**: Edge Function secrets (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY`) reside in the Supabase vault and persist independently across CI deploys without needing to be re-uploaded on every commit.
+5. **Inngest Synchronization**: Following deployment, the Inngest platform synchronizes the `avash-risk-alerts` app and function schemas via webhook introspection at `https://<project-ref>.supabase.co/functions/v1/risk-alerts`. Note that unauthenticated external GET requests return `401` by design, confirming active signature verification.
 
 A cloud-mode `GET /api/inngest` returns `401`, not `200` — the SDK
 requires a signed introspection request. Do not "fix" a smoke test by
@@ -79,14 +89,14 @@ the same per-environment secret resolution, and deploys if `ci`/`codeql`
 are green. This is the normal path for a manual re-run — nothing is
 skipped.
 
-**2. Dispatch `deploy-web.yml`/`deploy-api.yml` directly**, for a deploy
+**2. Dispatch `deploy-web.yml`/`deploy-api.yml`/`deploy-functions.yml` directly**, for a deploy
 that doesn't need a fresh image build/scan at all — e.g. re-pushing a
 build that already passed CI once:
 
 ```bash
 gh workflow run deploy-web.yml --ref dev -f environment=preview -f pages_branch=dev
 gh workflow run deploy-api.yml --ref dev -f environment=preview -f wrangler_env=preview -f smoke_test_origin_var=PREVIEW_API_ORIGIN
-gh workflow run deploy-notify.yml --ref dev -f environment=preview -f vercel_target=preview -f smoke_test_origin_var=PREVIEW_NOTIFY_ORIGIN
+gh workflow run deploy-functions.yml --ref dev -f environment=preview
 ```
 
 All three workflows declare `environment: ${{ inputs.environment }}` on their
@@ -148,11 +158,10 @@ Record it).
 | `build-images.yml` | called | hadolint + build + Trivy + smoke test + publish for `apps/web`/`apps/api` images (ADR-012) |
 | `docker-image-scan.yml` | called | hadolint + Trivy on the ML image (ADR-011) |
 | `deploy-web.yml` | called | Cloudflare Pages deploy for `apps/web`; target branch passed in as `pages_branch` |
-| `deploy-api.yml` | called | `wrangler deploy` for `apps/api` + post-deploy smoke test (`/health` **and** `/health/db`); environment passed in as `wrangler_env` — given to wrangler-action as *both* `--env` on the command and its `environment:` input, because that input alone is what scopes the secret upload (see below) |
-| `deploy-functions` (in `pipeline.yml`) | called | Supabase CLI deploy for `supabase/functions/risk-alerts` (`supabase functions deploy risk-alerts --no-verify-jwt`), triggered on change detection under `supabase/functions/` or `packages/push/` |
+| `deploy-api.yml` | called, manual | `wrangler deploy` for `apps/api` + post-deploy smoke test (`/health` **and** `/health/db`); environment passed in as `wrangler_env` — given to wrangler-action as *both* `--env` on the command and its `environment:` input, because that input alone is what scopes the secret upload (see below) |
+| `deploy-functions.yml` | called, manual | Supabase CLI deploy for `supabase/functions/risk-alerts` (`supabase functions deploy risk-alerts --no-verify-jwt`), triggered on change detection under `packages/db/supabase/functions/`, `packages/push/`, or `packages/types/`, or manual `workflow_dispatch` |
 | `cron-weather-ingest.yml` | schedule (every 3h), manual | Runs `scripts/jobs/weather-ingest.ts` directly against Supabase (ADR-007) |
 | `cron-batch-predict.yml` | schedule (every 24h), manual | Runs `ml/serving/predict.py` directly against Supabase (ADR-002, ADR-007) |
-| `cron-news-scan.yml` | schedule (every 6h), manual | Runs `scripts/jobs/news-scan.ts` directly against Supabase (ADR-007) |
 | `dependabot.yml` | scheduled by GitHub | One grouped weekly PR per ecosystem: npm (root + `apps/*` + `packages/*`), pip (`ml/`), github-actions, docker |
 
 `.github/actions/setup-workspace` is the composite action every Node job uses

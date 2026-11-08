@@ -1,0 +1,273 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-08T22:06:00.000Z",
+  "title": "Design System: Avash (আভাস)",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Clinical Sentinel Teal",
+        "canonical": "#0f766e",
+        "tonalRamp": [
+          "#042f2c",
+          "#084c47",
+          "#0f766e",
+          "#14968c",
+          "#2dd4bf",
+          "#5eead4",
+          "#99f6e4",
+          "#d8f7ec"
+        ]
+      },
+      "safe": {
+        "role": "secondary",
+        "displayName": "Clear Emerald",
+        "canonical": "#10b981",
+        "tonalRamp": [
+          "#064e3b",
+          "#065f46",
+          "#047857",
+          "#10b981",
+          "#34d399",
+          "#6ee7b7",
+          "#a7f3d0",
+          "#d1fae5"
+        ]
+      },
+      "warning": {
+        "role": "tertiary",
+        "displayName": "Outbreak Warning Amber",
+        "canonical": "#f59e0b",
+        "tonalRamp": [
+          "#451a03",
+          "#78350f",
+          "#b45309",
+          "#d97706",
+          "#f59e0b",
+          "#fbbf24",
+          "#fde68a",
+          "#fef3c7"
+        ]
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "Surge Crimson",
+        "canonical": "#ef4444",
+        "tonalRamp": [
+          "#450a0a",
+          "#7f1d1d",
+          "#b91c1c",
+          "#dc2626",
+          "#ef4444",
+          "#f87171",
+          "#fca5a5",
+          "#fee2e2"
+        ]
+      },
+      "neutral-bg": {
+        "role": "neutral",
+        "displayName": "Slate Canvas",
+        "canonical": "#f8fafc",
+        "tonalRamp": [
+          "#0b1220",
+          "#0f172a",
+          "#1e293b",
+          "#334155",
+          "#64748b",
+          "#94a3b8",
+          "#cbd5e1",
+          "#f8fafc"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display Hero",
+        "purpose": "Hero headlines and primary public announcements."
+      },
+      "headline": {
+        "displayName": "Section Headline",
+        "purpose": "H2 section landmarks and major feature headings."
+      },
+      "title": {
+        "displayName": "Component Title",
+        "purpose": "Card titles, modal dialog headers, and panel labels."
+      },
+      "body": {
+        "displayName": "Body Prose",
+        "purpose": "Instructional text, prevention guidance, and symptom checklist items."
+      },
+      "label": {
+        "displayName": "Eyebrow & Metric Label",
+        "purpose": "Status pills, timestamps, and category badges."
+      }
+    },
+    "shadows": [
+      {
+        "name": "ambient-low",
+        "value": "0 4px 12px rgba(15, 23, 42, 0.04)",
+        "purpose": "Subtle resting depth for cards on white surfaces."
+      },
+      {
+        "name": "primary-glow",
+        "value": "0 8px 20px rgba(15, 118, 110, 0.17)",
+        "purpose": "Soft tinted glow under primary action buttons."
+      },
+      {
+        "name": "floating-overlay",
+        "value": "0 10px 25px rgba(15, 23, 42, 0.08)",
+        "purpose": "Modals, floating telemetry tooltips, and mobile drawers."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-standard",
+        "value": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Default easing for color and layout transitions."
+      },
+      {
+        "name": "press-scale",
+        "value": "scale(0.98)",
+        "purpose": "Immediate tactile compression on mobile tap and button active state."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "480px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Primary call to action with Clinical Sentinel Teal and soft ambient glow.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">ঝুঁকির মানচিত্র দেখুন <span>↗</span></button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px; font-family: inherit; font-size: 1rem; font-weight: 600; border-radius: 8px; border: 1px solid transparent; cursor: pointer; text-decoration: none; transition: background-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease; } .ds-btn-primary { background-color: #0f766e; color: #ffffff; box-shadow: 0 8px 20px rgba(15, 118, 110, 0.17); } .ds-btn-primary:hover { background-color: #0d655e; } .ds-btn-primary:active { transform: scale(0.98); } .ds-btn-primary:focus-visible { outline: 2px solid #0f766e; outline-offset: 2px; }"
+    },
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Subtle border-only action for secondary navigation and dismissals.",
+      "html": "<button class=\"ds-btn ds-btn-quiet\">সকল পরামর্শ দেখুন <span>↗</span></button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px; font-family: inherit; font-size: 1rem; font-weight: 600; border-radius: 8px; border: 1px solid transparent; cursor: pointer; text-decoration: none; transition: background-color 0.15s ease, transform 0.1s ease; } .ds-btn-quiet { background-color: transparent; color: #0f766e; border-color: #b4dcd5; } .ds-btn-quiet:hover { background-color: #d8f7ec; } .ds-btn-quiet:active { transform: scale(0.98); } .ds-btn-quiet:focus-visible { outline: 2px solid #0f766e; outline-offset: 2px; }"
+    },
+    {
+      "name": "Risk Badge (Severe)",
+      "kind": "chip",
+      "refersTo": "badge-danger",
+      "description": "High-visibility critical outbreak warning badge with indicator dot.",
+      "html": "<span class=\"ds-badge ds-badge-severe\"><span class=\"ds-badge-dot\"></span>মারাত্মক (Severe)</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 700; line-height: 1; font-family: inherit; } .ds-badge-severe { background-color: #fee2e2; color: #ef4444; border: 1px solid #ef4444; } .ds-badge-dot { width: 6px; height: 6px; border-radius: 50%; background-color: currentColor; }"
+    },
+    {
+      "name": "Risk Badge (Safe)",
+      "kind": "chip",
+      "refersTo": "badge-safe",
+      "description": "Calm green indicator for normal or low-risk status.",
+      "html": "<span class=\"ds-badge ds-badge-safe\"><span class=\"ds-badge-dot\"></span>কম (Low)</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 700; line-height: 1; font-family: inherit; } .ds-badge-safe { background-color: #d1fae5; color: #10b981; border: 1px solid #10b981; } .ds-badge-dot { width: 6px; height: 6px; border-radius: 50%; background-color: currentColor; }"
+    },
+    {
+      "name": "Organic Glass Card",
+      "kind": "card",
+      "refersTo": "card-base",
+      "description": "Translucent frosted panel for prevention steps and resource cards.",
+      "html": "<div class=\"ds-card\"><span class=\"ds-card-eyebrow\">০২ · প্রতিরোধ</span><h3 class=\"ds-card-title\">জমে থাকা পানি অপসারণ করুন</h3><p class=\"ds-card-desc\">টব, পাত্র, বালতি ও ডাবের খোসা পরিষ্কার রাখুন যাতে বৃষ্টির পানি জমতে না পারে।</p><a class=\"ds-card-link\" href=\"#\">বিস্তারিত জানুন <span>↗</span></a></div>",
+      "css": ".ds-card { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(8px); border: 1px solid #e2e8f0; border-radius: 13px; padding: 22px; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04); font-family: inherit; } .ds-card-eyebrow { font-size: 0.75rem; font-weight: 700; color: #0f766e; letter-spacing: 0.05em; text-transform: uppercase; } .ds-card-title { margin: 8px 0; font-size: 1.15rem; font-weight: 700; color: #0f172a; } .ds-card-desc { margin: 0 0 16px 0; font-size: 0.9rem; color: #64748b; line-height: 1.55; } .ds-card-link { color: #0f766e; font-size: 0.85rem; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; } .ds-card-link:hover { text-decoration: underline; }"
+    },
+    {
+      "name": "Form Input Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Standard form input with high contrast label and accessible focus outline.",
+      "html": "<div class=\"ds-field\"><label class=\"ds-label\">এলাকার নাম বা ঠিকানা</label><input type=\"text\" class=\"ds-input\" placeholder=\"যেমন: ধানমন্ডি, ঢাকা\" /><span class=\"ds-helper\">সঠিক এলাকা নির্বাচন করলে নির্ভুল ঝুঁকি প্রদর্শন করা হবে।</span></div>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 6px; font-family: inherit; } .ds-label { font-size: 0.85rem; font-weight: 600; color: #0f172a; } .ds-input { background: #ffffff; color: #0f172a; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; font-size: 1rem; font-family: inherit; transition: border-color 0.15s ease, outline 0.15s ease; } .ds-input:focus { outline: 2px solid #0f766e; outline-offset: 2px; border-color: #0f766e; } .ds-helper { font-size: 0.75rem; color: #64748b; }"
+    },
+    {
+      "name": "Live Telemetry Status Indicator",
+      "kind": "custom",
+      "refersTo": "status-panel",
+      "description": "Status indicator with pulsing green dot and live connection status.",
+      "html": "<div class=\"ds-status-panel\"><div class=\"ds-live-indicator\"><span class=\"ds-live-dot\"></span><span class=\"ds-live-text\">লাইভ সংযোগ সক্রিয়: স্বাভাবিক</span></div></div>",
+      "css": ".ds-status-panel { display: flex; align-items: center; padding: 12px 18px; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(8px); border: 1px solid #e2e8f0; border-radius: 12px; font-family: inherit; } .ds-live-indicator { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 600; color: #0f172a; } .ds-live-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 0 4px #d8f7ec; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Civic Sentinel",
+    "overview": "Avash balances authoritative public health clarity with compassionate civic vigilance. Designed for the high-stakes reality of seasonal dengue outbreaks in Bangladesh, the interface acts as a calm, trustworthy beacon in times of community vulnerability. It rejects both panic-inducing alarms and emotionless, sterile clinical grids. The visual world blends biological vitality with modern civic technology: deep botanical teals, living leaf emeralds, and translucent surfaces that feel organic, protective, and human.\n\nThe system communicates respect for the user's situation through visual restraint and tactile immediacy. Rather than burying essential facts in dense hospital EMR spreadsheets or flashy consumer graphics, Avash brings actionable truths forward: predictive outbreak horizons, live hospital bed tallies, and community breeding site reports. Translucency and ambient light create a breathable atmosphere, keeping distressed citizens calm and focused when minutes matter.",
+    "keyCharacteristics": [
+      "Organic Civic Translucency: Frosted glass panels (backdrop-filter: blur(8px)) with hairline borders elevate content gently over the ambient canvas.",
+      "Biophilic Public Health Palette: Deep medicinal teals and restorative emeralds anchor interface authority and emotional calm.",
+      "Tactile Responsiveness: Active press states (transform: scale(0.98)) and high-contrast focus rings ensure certainty under emergency mobile conditions.",
+      "Dual-Layer Information Architecture: Large, friendly touch surfaces for citizens on mobile devices; dense, modular telemetry grids for hospital and municipal operators.",
+      "Anti-Reference Rejection: No sterile EMR spreadsheets, no screaming alarmist sirens, and no corporate SaaS card fatigue."
+    ],
+    "rules": [
+      {
+        "name": "The Signal-to-Noise Rule",
+        "body": "Severity colors (Surge Crimson, Outbreak Amber) are strictly reserved for genuine epidemiological risk, critical health triage, or active errors. Never use red or amber as generic decorative accents.",
+        "section": "colors"
+      },
+      {
+        "name": "The Living Foliage Rule",
+        "body": "Restorative greens and deep medicinal teals anchor the baseline visual world, keeping the app emotionally grounding rather than intimidating.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Integrity Rule",
+        "body": "All numerical readouts — bed counts, blood units, temperatures, coordinates, case counts, and dates — must use font-variant-numeric: tabular-nums to eliminate layout jitter during live updates.",
+        "section": "typography"
+      },
+      {
+        "name": "The Bilingual Parity Rule",
+        "body": "English numerals and Bengali text inside the same container must match baseline alignment and optical weight. Never render oversized Latin numbers next to condensed Bengali script.",
+        "section": "typography"
+      },
+      {
+        "name": "The Zero Horizontal Overflow Rule",
+        "body": "The application shell enforces overflow-x: hidden globally. Canvases, maps, and tables must reflow, wrap, or horizontally scroll within dedicated child containers; the main window never scrolls horizontally.",
+        "section": "layout"
+      },
+      {
+        "name": "The 48-Pixel Thumb Rule",
+        "body": "Any interactive element on mobile touch screens must provide at least a 48px by 48px effective touch target box, including padding.",
+        "section": "layout"
+      },
+      {
+        "name": "The Ambient Living Canvas Rule",
+        "body": "Surfaces use soft organic translucency with subtle natural tints rather than heavy black cast shadows or harsh opaque card barriers.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Tactile Confirmation Rule",
+        "body": "All buttons and pressable cards compress on active tap (transform: scale(0.98)), providing immediate confirmation before async requests fire.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Organic Corner Rule",
+        "body": "Reject brutalist 0px sharp corners. Every card, button, and input carries curved radii reflecting natural, biophilic forms.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do preserve the canonical biophilic public health palette (Teal #0f766e, Emerald #10b981, Amber #f59e0b, Crimson #ef4444).",
+      "Do ensure all text maintains at least a 4.5:1 contrast ratio against its background (and 3:1 for large display headers).",
+      "Do apply font-variant-numeric: tabular-nums to every dynamic number, counter, timestamp, and metric.",
+      "Do provide non-color indicators (border thickness, dash patterns, text labels) alongside color ramps on risk maps and charts.",
+      "Do maintain minimum 48px touch targets on all interactive mobile buttons and links.",
+      "Do support light and dark modes through CSS custom properties with smooth 0.2s color transitions."
+    ],
+    "donts": [
+      "Don't use Surge Crimson (#ef4444) or Outbreak Amber (#f59e0b) for decorative flourishes or branding elements.",
+      "Don't construct cold, unpadded EMR spreadsheet tables devoid of human warmth or breathing room.",
+      "Don't use sharp 0px corners or harsh black drop shadows.",
+      "Don't trigger horizontal scrolling (overflow-x: auto is only permitted inside localized scroll containers).",
+      "Don't render un-memoized map polygon layers or heavy animations that stutter on low-end Android mobile devices.",
+      "Don't display raw English error codes to citizens in distress; translate all public notifications and alerts into empathetic Bengali."
+    ]
+  }
+}

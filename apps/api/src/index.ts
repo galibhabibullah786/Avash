@@ -4,6 +4,7 @@ import type { AppEnv } from './types';
 import { requestId } from './middleware/request-id';
 import { securityHeaders } from './middleware/security-headers';
 import { corsMiddleware } from './middleware/cors';
+import { isAllowedOrigin } from './config/cors';
 import { health } from './routes/health';
 import { weather } from './routes/weather';
 import { riskMap, riskDetail } from './routes/risk-map';
@@ -49,9 +50,23 @@ app.route('/api/alerts', alerts); // auth+rate-limit; CRUD only, push send lives
 app.route('/api/admin/audit-log', auditLog); // auth(roles:manage)+rate-limit
 app.route('/api/chat', chat);
 
-app.notFound((c) => c.json(buildGenericErrorBody(c.get('requestId')), 404));
+app.notFound((c) => {
+  const origin = c.req.header('Origin');
+  if (isAllowedOrigin(origin, c.env)) {
+    c.header('Access-Control-Allow-Origin', origin as string);
+    c.header('Access-Control-Expose-Headers', 'X-Request-Id');
+    c.header('Vary', 'Origin');
+  }
+  return c.json(buildGenericErrorBody(c.get('requestId')), 404);
+});
 
 app.onError((error, c) => {
+  const origin = c.req.header('Origin');
+  if (isAllowedOrigin(origin, c.env)) {
+    c.header('Access-Control-Allow-Origin', origin as string);
+    c.header('Access-Control-Expose-Headers', 'X-Request-Id');
+    c.header('Vary', 'Origin');
+  }
   const body = handleError(error, c.get('requestId'));
   return c.json(body, 500);
 });

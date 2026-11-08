@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { can, type AppRole, type Capability } from '@avash/security';
+import { can, type AppRole, type Capability } from '@avash/security/roles';
 import { useSession } from './useSession';
 
 export interface ProtectedRouteProps {

@@ -38,3 +38,7 @@ playwright/.cache/
 # or by the agent itself. These are never (and should never be) tracked.
 temp/*
 tmp/*
+
+# Impeccable local runtime & session caches
+.impeccable/config.local.json
+.impeccable/live/sessions/

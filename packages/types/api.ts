@@ -173,12 +173,8 @@ export type RiskDetailResponse = z.infer<typeof riskDetailResponseSchema>;
  * rather than an absence, so revoking a role is an assignment and shows
  * up in the audit trail like any other.
  */
-export const appRoleSchema = z.enum(['citizen', 'moderator', 'admin']);
-
-export type AppRole = z.infer<typeof appRoleSchema>;
-
-/** What a signed-in user with no `app_metadata.role` claim is treated as. */
-export const DEFAULT_APP_ROLE = 'citizen' satisfies AppRole;
+import { appRoleSchema, DEFAULT_APP_ROLE, type AppRole } from './roles';
+export { appRoleSchema, DEFAULT_APP_ROLE, type AppRole };
 
 // ── Role administration (admin-only) ──────────────────────────────────────
 
@@ -349,8 +345,8 @@ export const hospitalsResponseSchema = z.object({
 
 export const bloodSearchQuerySchema = z.object({
   bloodGroup: bloodGroupSchema,
-  lat: latitudeSchema,
-  lng: longitudeSchema,
+  lat: latitudeSchema.optional(),
+  lng: longitudeSchema.optional(),
   radiusM: z.number().int().min(500).max(RESOURCE_SEARCH_RADIUS_MAX_M).default(RESOURCE_SEARCH_RADIUS_DEFAULT_M),
 });
 
@@ -360,7 +356,7 @@ export const bloodAvailabilityDtoSchema = z.object({
   bloodGroup: bloodGroupSchema,
   unitsAvailable: z.number().int().min(0),
   plateletUnits: z.number().int().min(0),
-  distanceM: z.number(),
+  distanceM: z.number().nullable().default(0),
   updatedAt: z.string(),
 });
 

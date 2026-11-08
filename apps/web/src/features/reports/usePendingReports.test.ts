@@ -20,7 +20,7 @@ function wireChain(result: { data: unknown; error: unknown; count: number | null
   rangeMock.mockResolvedValue(result);
 }
 
-describe('fetchPendingReports (PostgREST pagination transport, baseline fact 2)', () => {
+describe('fetchPendingReports (PostgREST pagination transport)', () => {
   beforeEach(() => {
     vi.resetModules();
     rangeMock.mockReset();

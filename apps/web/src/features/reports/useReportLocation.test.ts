@@ -1,7 +1,6 @@
 import { describe, test, expect, afterEach, vi } from 'vitest';
-import { createElement } from 'react';
+import { createElement, act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { act } from 'react';
 import { useReportLocation, type ReportLocationState } from './useReportLocation';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

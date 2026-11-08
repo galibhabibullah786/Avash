@@ -190,9 +190,36 @@ describe('GET /api/resources/blood', () => {
     expect(res.status).toBe(400);
   });
 
-  test('a missing lat/lng → 400', async () => {
+  test('a missing lat/lng returns all records without distance filtering', async () => {
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/blood_inventory',
+        body: [
+          {
+            id: 1,
+            hospital_id: HOSPITAL_X,
+            blood_group: 'O+',
+            units_available: 12,
+            platelet_units: 3,
+            updated_at: '2026-08-14T00:00:00.000Z',
+          },
+        ],
+      },
+      {
+        path: '/rest/v1/hospital_locations',
+        body: [hospitalRow],
+      },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
     const res = await buildApp().request('/blood?bloodGroup=O%2B', {}, fakeBindings());
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as unknown;
+    expect(() => bloodSearchResponseSchema.parse(body)).not.toThrow();
+    const parsed = bloodSearchResponseSchema.parse(body);
+    expect(parsed.results).toHaveLength(1);
+    expect(parsed.results[0]?.hospital.id).toBe(HOSPITAL_X);
+    expect(parsed.results[0]?.unitsAvailable).toBe(12);
   });
 
   test('an RPC error → 503, generic body', async () => {
@@ -354,6 +381,45 @@ describe('PATCH /api/resources/blood/:id', () => {
     expect(parsed.hospital.id).toBe(HOSPITAL_X);
 
     expect(fake.calls.some((u) => u.pathname === '/rest/v1/audit_log')).toBe(true);
+  });
+
+  test('valid staff update with numeric inventory id → 200', async () => {
+    const token = await signTestJwt({ role: 'moderator' });
+    const fake = createFakeSupabase([
+      { path: '/rest/v1/blood_inventory', match: (_sp, m) => m === 'GET', body: [{ id: 42, hospital_id: HOSPITAL_X }] },
+      {
+        path: '/rest/v1/blood_inventory',
+        match: (_sp, m) => m === 'PATCH',
+        body: [
+          {
+            id: 42,
+            hospital_id: HOSPITAL_X,
+            blood_group: 'O+',
+            units_available: 7,
+            platelet_units: 2,
+            updated_by: '11111111-1111-4111-8111-111111111111',
+            updated_at: '2026-08-16T00:00:00.000Z',
+          },
+        ],
+      },
+      { path: '/rest/v1/hospital_locations', body: [hospitalRow] },
+      { path: '/rest/v1/audit_log', match: (_sp, m) => m === 'POST', body: [{ id: 'audit-1' }] },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      '/blood/42',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ unitsAvailable: 7, plateletUnits: 2 }),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(200);
+    const parsed = bloodAvailabilityDtoSchema.parse(await res.json());
+    expect(parsed.inventoryId).toBe(42);
+    expect(parsed.unitsAvailable).toBe(7);
   });
 
   test('a staff id that is not a UUID makes buildAuditEntry throw — still 200, isolated from the response', async () => {
@@ -696,5 +762,322 @@ describe('PATCH /api/resources/blood/:id', () => {
       );
     }
     expect(last?.status).toBe(429);
+  });
+});
+
+describe('POST /api/resources/hospitals', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('no token → 401', async () => {
+    const res = await buildApp().request(
+      '/hospitals',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Hospital A', lat: 23.8, lng: 90.4, verified: true }),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test('unauthorized role (citizen) → 403', async () => {
+    const token = await signTestJwt({ role: 'citizen' });
+    const res = await buildApp().request(
+      '/hospitals',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: 'Hospital A', lat: 23.8, lng: 90.4, verified: true }),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(403);
+  });
+
+  test('admin role creates hospital with GeoJSON Point and initializes blood inventory', async () => {
+    const token = await signTestJwt({ role: 'admin' });
+    const insertedHospitals: unknown[] = [];
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/hospitals',
+        match: (_sp, method) => method === 'POST',
+        body: { id: HOSPITAL_X, name: 'New Care', address: 'Road 1', phone: '01700000000', verified: true },
+      },
+      {
+        path: '/rest/v1/blood_inventory',
+        match: (_sp, method) => method === 'POST',
+        body: [{ id: 1 }],
+      },
+      {
+        path: '/rest/v1/hospital_locations',
+        match: (_sp, method) => method === 'GET',
+        body: { id: HOSPITAL_X, name: 'New Care', address: 'Road 1', phone: '01700000000', verified: true, lat: 23.8, lon: 90.4 },
+      },
+    ]);
+
+    const origFetch = fake.fetch;
+    const trackedFetch: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url.includes('/rest/v1/hospitals') && init?.method === 'POST' && init?.body) {
+        insertedHospitals.push(JSON.parse(String(init.body)));
+      }
+      return origFetch(input, init);
+    };
+    vi.stubGlobal('fetch', trackedFetch);
+
+    const res = await buildApp().request(
+      '/hospitals',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: 'New Care', lat: 23.8, lng: 90.4, address: 'Road 1', phone: '01700000000', verified: true }),
+      },
+      fakeBindings()
+    );
+
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { id: string; name: string; lat: number; lng: number };
+    expect(body.id).toBe(HOSPITAL_X);
+    expect(body.name).toBe('New Care');
+    expect(body.lat).toBe(23.8);
+    expect(body.lng).toBe(90.4);
+
+    expect(insertedHospitals.length).toBe(1);
+    const hospitalPayload = insertedHospitals[0] as {
+      geom: { type: string; coordinates: [number, number] };
+      name: string;
+    };
+    expect(hospitalPayload.geom).toEqual({ type: 'Point', coordinates: [90.4, 23.8] });
+    expect(hospitalPayload.name).toBe('New Care');
+  });
+
+  test('admin role creates hospital with fallback DTO if hospital_locations view query errors', async () => {
+    const token = await signTestJwt({ role: 'admin' });
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/hospitals',
+        match: (_sp, method) => method === 'POST',
+        body: { id: HOSPITAL_X, name: 'New Care', address: 'Road 1', phone: '01700000000', verified: true },
+      },
+      {
+        path: '/rest/v1/blood_inventory',
+        match: (_sp, method) => method === 'POST',
+        body: [{ id: 1 }],
+      },
+      {
+        path: '/rest/v1/hospital_locations',
+        match: (_sp, method) => method === 'GET',
+        body: postgrestErrorBody(),
+        status: 500,
+      },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      '/hospitals',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: 'New Care', lat: 23.8, lng: 90.4, address: 'Road 1', phone: '01700000000', verified: true }),
+      },
+      fakeBindings()
+    );
+
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { id: string; name: string; lat: number; lng: number };
+    expect(body.id).toBe(HOSPITAL_X);
+    expect(body.name).toBe('New Care');
+    expect(body.lat).toBe(23.8);
+    expect(body.lng).toBe(90.4);
+  });
+});
+
+describe('PATCH /api/resources/hospitals/:id', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('no token → 401', async () => {
+    const res = await buildApp().request(
+      `/hospitals/${HOSPITAL_X}`,
+      { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Updated' }) },
+      fakeBindings()
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test('citizen role → 403', async () => {
+    const token = await signTestJwt({ role: 'citizen' });
+    const res = await buildApp().request(
+      `/hospitals/${HOSPITAL_X}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: 'Updated' }),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(403);
+  });
+
+  test('malformed uuid → 400', async () => {
+    const token = await signTestJwt({ role: 'admin' });
+    const res = await buildApp().request(
+      '/hospitals/not-a-uuid',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: 'Updated' }),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(400);
+  });
+
+  test('admin role updates hospital and returns updated hospital DTO', async () => {
+    const token = await signTestJwt({ role: 'admin' });
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/hospitals',
+        match: (_sp, method) => method === 'PATCH',
+        body: [{ id: HOSPITAL_X, name: 'Updated Hospital', address: 'Updated Addr', phone: '01800000000', verified: true }],
+      },
+      {
+        path: '/rest/v1/hospital_locations',
+        match: (_sp, method) => method === 'GET',
+        body: { id: HOSPITAL_X, name: 'Updated Hospital', address: 'Updated Addr', phone: '01800000000', verified: true, lat: 23.82, lon: 90.42 },
+      },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/hospitals/${HOSPITAL_X}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: 'Updated Hospital', lat: 23.82, lng: 90.42, address: 'Updated Addr', phone: '01800000000' }),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { id: string; name: string; lat: number; lng: number };
+    expect(body.id).toBe(HOSPITAL_X);
+    expect(body.name).toBe('Updated Hospital');
+    expect(body.lat).toBe(23.82);
+    expect(body.lng).toBe(90.42);
+  });
+
+  test('admin role updates hospital with fallback DTO if hospital_locations view query errors', async () => {
+    const token = await signTestJwt({ role: 'admin' });
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/hospitals',
+        match: (_sp, method) => method === 'PATCH',
+        body: [{ id: HOSPITAL_X, name: 'Fallback Hospital', address: 'Addr', phone: '01800000000', verified: true }],
+      },
+      {
+        path: '/rest/v1/hospital_locations',
+        match: (_sp, method) => method === 'GET',
+        body: postgrestErrorBody(),
+        status: 500,
+      },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/hospitals/${HOSPITAL_X}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: 'Fallback Hospital', lat: 23.82, lng: 90.42 }),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { id: string; name: string; lat: number; lng: number };
+    expect(body.name).toBe('Fallback Hospital');
+    expect(body.lat).toBe(23.82);
+    expect(body.lng).toBe(90.42);
+  });
+});
+
+describe('DELETE /api/resources/hospitals/:id', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('no token → 401', async () => {
+    const res = await buildApp().request(
+      `/hospitals/${HOSPITAL_X}`,
+      { method: 'DELETE' },
+      fakeBindings()
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test('citizen role → 403', async () => {
+    const token = await signTestJwt({ role: 'citizen' });
+    const res = await buildApp().request(
+      `/hospitals/${HOSPITAL_X}`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(403);
+  });
+
+  test('admin deletes hospital successfully → 204', async () => {
+    const token = await signTestJwt({ role: 'admin' });
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/hospitals',
+        match: (_sp, method) => method === 'DELETE',
+        body: null,
+      },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/hospitals/${HOSPITAL_X}`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(204);
+  });
+});
+
+describe('GET /api/resources/hospitals/:id/blood', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('no token → 401', async () => {
+    const res = await buildApp().request(`/hospitals/${HOSPITAL_X}/blood`, {}, fakeBindings());
+    expect(res.status).toBe(401);
+  });
+
+  test('moderator fetches blood inventory → 200 with inventory array', async () => {
+    const token = await signTestJwt({ role: 'moderator' });
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/blood_inventory',
+        match: (_sp, method) => method === 'GET',
+        body: [
+          { id: 1, hospital_id: HOSPITAL_X, blood_group: 'A+', units_available: 5, platelet_units: 2 },
+        ],
+      },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/hospitals/${HOSPITAL_X}/blood`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      fakeBindings()
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { inventory: unknown[] };
+    expect(body.inventory).toHaveLength(1);
   });
 });

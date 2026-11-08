@@ -57,7 +57,7 @@ const defaultRedisFactory = (env: Bindings): RateLimitRedisLike & QuotaGuardRedi
  * POST /api/symptom-check
  */
 export function createSymptomCheck(options?: CreateSymptomCheckOptions) {
-  const redisFactory = options?.redisFactory ?? defaultRedisFactory;
+  const customRedisFactory = options?.redisFactory;
 
   return new Hono<AppEnv>().post(
     '/',
@@ -67,7 +67,7 @@ export function createSymptomCheck(options?: CreateSymptomCheckOptions) {
       windowSeconds: 60,
       limit: SYMPTOM_CHECK_RATE_LIMIT.perMinute,
       keyStrategy: 'ip',
-      redisFactory,
+      redisFactory: customRedisFactory,
     }),
     rateLimit({
       guard: 'symptom-check',
@@ -75,7 +75,7 @@ export function createSymptomCheck(options?: CreateSymptomCheckOptions) {
       windowSeconds: 86400,
       limit: SYMPTOM_CHECK_RATE_LIMIT.perDay,
       keyStrategy: 'ip',
-      redisFactory,
+      redisFactory: customRedisFactory,
     }),
     withErrorBoundary(async (c: Context<AppEnv>) => {
       const requestId = c.get('requestId');
@@ -92,8 +92,24 @@ export function createSymptomCheck(options?: CreateSymptomCheckOptions) {
       let aiSuccess = false;
 
       if (qaPairs && qaPairs.length > 0) {
-        const quota = await consumeGeminiQuota(redisFactory(c.env));
-        if (quota.ok && quota.allowed) {
+        const hasRedis = Boolean(
+          customRedisFactory || (c.env.UPSTASH_REDIS_REST_URL && c.env.UPSTASH_REDIS_REST_TOKEN)
+        );
+        let quotaAllowed = true;
+
+        if (hasRedis) {
+          const redis = (customRedisFactory ?? defaultRedisFactory)(c.env);
+          const quota = await consumeGeminiQuota(redis);
+          quotaAllowed = quota.ok && quota.allowed;
+          if (!quotaAllowed) {
+            logger.warn('symptom-check: Gemini quota guard closed, skipping AI assist', {
+              requestId,
+              reason: quota.ok ? 'quota_exhausted' : 'quota_guard_unreachable',
+            });
+          }
+        }
+
+        if (quotaAllowed && c.env.GEMINI_API_KEY) {
           const userContent = qaPairs.map(qa => `Q: ${qa.question}\nA: ${qa.answer}`).join('\n\n');
           const geminiResult = await callGeminiStructured({
             apiKey: c.env.GEMINI_API_KEY,
@@ -114,11 +130,6 @@ export function createSymptomCheck(options?: CreateSymptomCheckOptions) {
               reason: geminiResult.reason,
             });
           }
-        } else {
-          logger.warn('symptom-check: Gemini quota guard closed, skipping AI assist', {
-            requestId,
-            reason: quota.ok ? 'quota_exhausted' : 'quota_guard_unreachable',
-          });
         }
       }
 

@@ -1,189 +1,17 @@
 import { useMemo, useState, type FormEvent } from "react";
 import "./symptom-checker.css";
-import symptomCheckerConfigData from "./symptom-checker-config.json";
+import { Spinner } from "@avash/ui";
 import { useSymptomCheck } from "./useSymptomCheck";
-import type { SymptomChecklist, SymptomCheckRequest } from "@avash/types";
-
-type QuestionType = "single_choice" | "multi_choice";
-
-type QuestionOption = {
-  id: string;
-  label: string;
-  value: string;
-  warningSign?: boolean;
-};
-
-type Question = {
-  id: string;
-  order: number;
-  type: QuestionType;
-  question: string;
-  required: boolean;
-  warningSignQuestion?: boolean;
-  options: QuestionOption[];
-  validation?: {
-    exclusiveOptions?: string[];
-  };
-};
-
-type Section = {
-  id: string;
-  title: string;
-  description?: string;
-  questions: Question[];
-};
-
-type ResultCategory = {
-  id: string;
-  label: string;
-  description: string;
-  triggerType: string;
-  clinicalThreshold: string;
-  message: string;
-};
-
-type SymptomConfig = {
-  symptomChecker: {
-    id: string;
-    title: string;
-    description: string;
-    version: string;
-    totalQuestions: number;
-    disclaimer: string;
-    sections: Section[];
-    resultCategories: ResultCategory[];
-    logic: {
-      warningSignsOverrideSymptomScore: boolean;
-      diagnosisEnabled: boolean;
-      scoring: {
-        enabled: boolean;
-        note: string;
-      };
-    };
-  };
-};
-
-const SYMPTOM_CHECKER_CONFIG: SymptomConfig =
-  symptomCheckerConfigData as SymptomConfig;
-
-const OUTCOME_BADGE_CLASS: Record<string, string> = {
-  urgent: "badge--severe",
-  dengue_suspected: "badge--high",
-  dengue_possible: "badge--medium",
-  dengue_less_likely: "badge--low",
-};
-
-const allQuestions = SYMPTOM_CHECKER_CONFIG.symptomChecker.sections.flatMap(
-  (section) => section.questions,
-);
-const resultCategories = SYMPTOM_CHECKER_CONFIG.symptomChecker.resultCategories;
-
-function getSelectedValues(
-  question: Question,
-  answers: Record<string, string | string[] | undefined>,
-) {
-  const value = answers[question.id];
-
-  if (question.type === "multi_choice") {
-    return Array.isArray(value) ? value : [];
-  }
-
-  return typeof value === "string" && value.length > 0 ? [value] : [];
-}
-
-function determineOutcome(
-  answers: Record<string, string | string[] | undefined>,
-): ResultCategory {
-  const warningSignFound = allQuestions.some((question) => {
-    const selected = getSelectedValues(question, answers);
-    return question.options.some(
-      (option) =>
-        selected.includes(option.value) && option.warningSign === true,
-    );
-  });
-
-  if (warningSignFound) {
-    return resultCategories[0]!;
-  }
-
-  const feverPresent = (() => {
-    const selected = getSelectedValues(allQuestions[0]!, answers);
-    return selected.some(
-      (value) => value === "currently_fever" || value === "recently_gone",
-    );
-  })();
-
-  const dengueCompatibleSymptoms = ["q4", "q5", "q6", "q7", "q8", "q9"].reduce(
-    (count, questionId) => {
-      const question = allQuestions.find((entry) => entry.id === questionId);
-      if (!question) {
-        return count;
-      }
-
-      const selected = getSelectedValues(question, answers);
-      const hasCompatibleResponse = selected.some(
-        (value) => !["no", "none", "not_sure"].includes(value),
-      );
-      return hasCompatibleResponse ? count + 1 : count;
-    },
-    0,
-  );
-
-  if (feverPresent && dengueCompatibleSymptoms >= 3) {
-    return resultCategories[1]!;
-  }
-
-  if (feverPresent && dengueCompatibleSymptoms >= 1) {
-    return resultCategories[2]!;
-  }
-
-  return resultCategories[3]!;
-}
-
-function buildChecklist(answers: Record<string, string | string[] | undefined>): SymptomChecklist {
-  const fever = ['currently_fever', 'recently_gone'].includes(answers.q1 as string);
-
-  const achesAndPains = ['mild', 'moderate', 'severe'].includes(answers.q4 as string) ||
-    ['mild', 'moderate', 'severe'].includes(answers.q5 as string) ||
-    ['mild', 'moderate', 'severe'].includes(answers.q6 as string);
-
-  const nauseaOrVomiting = ['nausea_only', 'vomited_once_twice', 'vomited_several_times', 'persistent_vomiting'].includes(answers.q7 as string);
-
-  const rash = answers.q8 === 'yes';
-
-  const severeAbdominalPain = answers.q10 === 'yes';
-  const persistentVomiting = answers.q11 === 'yes' || answers.q7 === 'persistent_vomiting';
-
-  const q12 = (answers.q12 || []) as string[];
-  const mucosalBleeding = q12.some(v => ['nose', 'gums', 'blood_vomit', 'blood_stool', 'blood_urine', 'heavy_menstrual', 'other'].includes(v));
-
-  const lethargyOrRestlessness = ['noticeable', 'severe'].includes(answers.q14 as string);
-
-  return {
-    fever,
-    severeAbdominalPain,
-    persistentVomiting,
-    mucosalBleeding,
-    lethargyOrRestlessness,
-    liverEnlargement: false,
-    fluidAccumulation: answers.q13 === 'yes',
-    nauseaOrVomiting,
-    rash,
-    achesAndPains,
-    positiveTourniquetTest: false,
-    leukopenia: false,
-  };
-}
-
-function backendOutcomeToResultCategory(outcome: 'emergency' | 'consult-24h' | 'monitor', guidance: string): ResultCategory {
-  if (outcome === 'emergency') {
-    return { id: 'urgent', label: 'জরুরি চিকিৎসা সেবা প্রয়োজন (Urgent Medical Attention)', message: guidance, description: '', triggerType: '', clinicalThreshold: '' };
-  }
-  if (outcome === 'consult-24h') {
-    return { id: 'dengue_suspected', label: 'দ্রুত চিকিৎসকের পরামর্শ নিন (Medical Consultation Recommended)', message: guidance, description: '', triggerType: '', clinicalThreshold: '' };
-  }
-  return { id: 'dengue_possible', label: 'লক্ষণ পর্যবেক্ষণ করুন (Monitor Symptoms)', message: guidance, description: '', triggerType: '', clinicalThreshold: '' };
-}
+import type { SymptomCheckRequest } from "@avash/types";
+import {
+  SYMPTOM_CHECKER_CONFIG,
+  OUTCOME_BADGE_CLASS,
+  getSelectedValues,
+  determineOutcome,
+  buildChecklist,
+  backendOutcomeToResultCategory,
+  type ResultCategory,
+} from "./symptomTriage";
 
 export function SymptomCheckerForm() {
   const [answers, setAnswers] = useState<
@@ -192,7 +20,6 @@ export function SymptomCheckerForm() {
   const [result, setResult] = useState<ResultCategory | null>(null);
 
   const mutation = useSymptomCheck();
-
   const schema = useMemo(() => SYMPTOM_CHECKER_CONFIG.symptomChecker, []);
 
   function handleSingleChoice(questionId: string, value: string) {
@@ -219,23 +46,34 @@ export function SymptomCheckerForm() {
     event.preventDefault();
 
     try {
-      const qaPairs = schema.sections.flatMap(section => 
-        section.questions.map(q => {
-          const selected = getSelectedValues(q, answers);
-          const answerLabels = selected.map(val => q.options.find(opt => opt.value === val)?.label).filter(Boolean);
-          return {
-            question: q.question,
-            answer: answerLabels.length > 0 ? answerLabels.join(', ') : 'Not answered'
-          };
-        }).filter(qa => qa.answer !== 'Not answered')
+      const qaPairs = schema.sections.flatMap((section) =>
+        section.questions
+          .map((q) => {
+            const selected = getSelectedValues(q, answers);
+            const answerLabels = selected
+              .map(
+                (val) => q.options.find((opt) => opt.value === val)?.label,
+              )
+              .filter(Boolean);
+            return {
+              question: q.question,
+              answer:
+                answerLabels.length > 0
+                  ? answerLabels.join(", ")
+                  : "Not answered",
+            };
+          })
+          .filter((qa) => qa.answer !== "Not answered"),
       );
 
-      const payload: SymptomCheckRequest = { 
+      const payload: SymptomCheckRequest = {
         qaPairs,
-        checklist: buildChecklist(answers)
+        checklist: buildChecklist(answers),
       };
       const response = await mutation.mutateAsync(payload);
-      setResult(backendOutcomeToResultCategory(response.outcome, response.guidance));
+      setResult(
+        backendOutcomeToResultCategory(response.outcome, response.guidance),
+      );
     } catch (error) {
       console.warn("Backend symptom check failed, using local fallback", error);
       setResult(determineOutcome(answers));
@@ -268,22 +106,7 @@ export function SymptomCheckerForm() {
                   <legend>{question.question}</legend>
 
                   {question.options.map((option) => {
-                    const sharedProps = {
-                      id: `${question.id}-${option.value}`,
-                      name: question.id,
-                      checked:
-                        question.type === "multi_choice"
-                          ? selectedValues.includes(option.value)
-                          : selectedValues.includes(option.value),
-                      onChange: () => {
-                        if (question.type === "multi_choice") {
-                          handleMultiChoice(question.id, option.value);
-                        } else {
-                          handleSingleChoice(question.id, option.value);
-                        }
-                      },
-                      "data-testid": `symptom-option-${question.id}-${option.value}`,
-                    };
+                    const isChecked = selectedValues.includes(option.value);
 
                     return (
                       <label
@@ -296,7 +119,17 @@ export function SymptomCheckerForm() {
                               ? "checkbox"
                               : "radio"
                           }
-                          {...sharedProps}
+                          id={`${question.id}-${option.value}`}
+                          name={question.id}
+                          checked={isChecked}
+                          onChange={() => {
+                            if (question.type === "multi_choice") {
+                              handleMultiChoice(question.id, option.value);
+                            } else {
+                              handleSingleChoice(question.id, option.value);
+                            }
+                          }}
+                          data-testid={`symptom-option-${question.id}-${option.value}`}
                         />
                         <span>{option.label}</span>
                       </label>
@@ -308,8 +141,20 @@ export function SymptomCheckerForm() {
           </section>
         ))}
 
-        <button className="button" type="submit">
-          লক্ষণ যাচাই করুন
+        <button
+          className="button flex items-center justify-center"
+          type="submit"
+          disabled={mutation.isPending}
+          data-testid="symptom-submit-button"
+        >
+          {mutation.isPending ? (
+            <>
+              <Spinner label="যাচাই করা হচ্ছে…" />
+              <span style={{ marginLeft: "8px" }}>যাচাই করা হচ্ছে…</span>
+            </>
+          ) : (
+            "লক্ষণ যাচাই করুন"
+          )}
         </button>
       </form>
 
@@ -337,7 +182,7 @@ export function SymptomCheckerForm() {
         <p
           className="symptom-checker__disclaimer"
           data-testid="symptom-check-disclaimer-idle"
-          style={{ color: '#c94a4a' }}
+          style={{ color: "var(--color-critical, #ef4444)" }}
         >
           {schema.disclaimer}
         </p>

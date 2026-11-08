@@ -32,11 +32,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Guard — job script not yet implemented
+      - name: Guard — script implementation and credentials
         id: guard
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           if [ ! -s ml/serving/predict.py ]; then
             echo "::notice::ml/serving/predict.py is an empty stub — this job ships with the ML pipeline slice (docs/PROJECT_PLAN.md §13). Exiting cleanly."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::notice::SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured — skipping batch predict. See docs/ci-cd.md."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
