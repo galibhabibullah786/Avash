@@ -302,7 +302,12 @@ const walk = (dir) => {
     if (ignoredPaths.has(p)) continue;
     if (entry.isDirectory()) walk(p);
     // Skills and commands are lazy content, not eager config — exempt.
-    else if (!p.startsWith(".claude/skills/") && !p.startsWith(".claude/commands/") && !KNOWN.has(p))
+    else if (
+      !p.startsWith(".claude/skills/") &&
+      !p.startsWith(".claude/commands/") &&
+      !p.startsWith(".agents/skills/") &&
+      !KNOWN.has(p)
+    )
       fail(`${p} is an agent config the Layer 1 table does not list (docs/standards/agent-compliance.md).`);
   }
 };

@@ -13,7 +13,23 @@
     "vite",
     "hono",
     "cloudflare-workers",
-    "postgis"
+    "postgis",
+    "ask-matt",
+    "code-review",
+    "codebase-design",
+    "diagnosing-bugs",
+    "domain-modeling",
+    "grill-me",
+    "grill-with-docs",
+    "grilling",
+    "handoff",
+    "impeccable",
+    "implement",
+    "implement-spec",
+    "improve-codebase-architecture",
+    "tdd",
+    "to-spec",
+    "to-tickets"
   ],
   "hooks": {
     "SessionStart": [

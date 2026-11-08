@@ -75,6 +75,7 @@ rule set; every other file points at it rather than restating it.
 | `.cursor/settings.json` | Cursor | eager | Non-negotiables + routing table |
 | `.github/copilot-instructions.md` | Copilot / Copilot Workspace | eager | Non-negotiables + routing table |
 | `.claude/skills/*/SKILL.md` | Claude Code | **lazy** — only the `description` is eager | Domain guidance, pulled in when the description matches the task |
+| `.agents/skills/*/SKILL.md` | Antigravity, Cursor, Codex, Copilot | **lazy** | Universal cross-agent skills (e.g. `impeccable`, Matt Pocock suite) |
 | `.claude/commands/*.md` | Claude Code | **lazy** — on invocation | Slash commands |
 | `docs/**` | any agent, via the routing table | **lazy** — on demand | Full detail, human-readable |
 | `.agents/task-contracts.json` | any agent, role-scoped | **lazy** | Per-role scope, forbidden actions, definition of done |

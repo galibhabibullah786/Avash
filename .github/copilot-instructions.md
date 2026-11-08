@@ -49,3 +49,9 @@ Load the row that matches the task — not the whole list.
 
 Testing in one line: **does the test drive a running process from the
 outside?** No → Vitest (`*.test.ts`). Yes → Playwright (`*.spec.ts`).
+
+## Skills & Workflows
+
+Modular agent skills live under `.agents/skills/` and `.claude/skills/`:
+- **`impeccable`**: Frontend design, craft, visual polish, typography, and UX audits (`pbakaus/impeccable`).
+- **Engineering Workflows**: Routing (`ask-matt`), design interrogation (`grill-with-docs`, `grill-me`, `grilling`), domain modeling (`domain-modeling`), specs & tickets (`to-spec`, `to-tickets`), modular architecture (`codebase-design`, `improve-codebase-architecture`), test-driven implementation (`implement`, `implement-spec`, `tdd`), code reviews (`code-review`), debugging (`diagnosing-bugs`), and session compaction (`handoff`).
