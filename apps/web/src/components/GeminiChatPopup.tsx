@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useChat } from '../features/chat/useChat';
+import { useSession } from '../features/auth/SessionProvider';
 import './GeminiChatPopup.css';
 
 interface Message {
@@ -9,11 +10,25 @@ interface Message {
 }
 
 export function GeminiChatPopup() {
+  const { accessToken } = useSession();
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     { id: '1', text: 'স্বাগতম! আমি আভাস এআই সহকারী। ডেঙ্গুর লক্ষণ বা প্রতিরোধ বিষয়ে আপনাকে কীভাবে সাহায্য করতে পারি?', sender: 'bot' }
   ]);
   const [inputValue, setInputValue] = useState('');
+  const [sessionId, setSessionId] = useState<string>(() => {
+    try {
+      const existing = sessionStorage.getItem('avash_chat_session_id');
+      if (existing && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(existing)) {
+        return existing;
+      }
+      const newId = crypto.randomUUID();
+      sessionStorage.setItem('avash_chat_session_id', newId);
+      return newId;
+    } catch {
+      return crypto.randomUUID();
+    }
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { mutate: sendMessage, isPending: isTyping } = useChat();
@@ -43,9 +58,21 @@ export function GeminiChatPopup() {
     const historyPayload = messages.map(m => ({ text: m.text, sender: m.sender })).concat([{ text: userMessage.text, sender: 'user' }]);
 
     sendMessage(
-      { messages: historyPayload },
+      {
+        messages: historyPayload,
+        sessionId,
+        accessToken: accessToken ?? undefined,
+      },
       {
         onSuccess: (data) => {
+          if (data.sessionId && data.sessionId !== sessionId) {
+            setSessionId(data.sessionId);
+            try {
+              sessionStorage.setItem('avash_chat_session_id', data.sessionId);
+            } catch {
+              // Ignore storage errors
+            }
+          }
           const botMessage: Message = {
             id: Date.now().toString(),
             text: data.text,

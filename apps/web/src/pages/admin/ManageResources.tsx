@@ -13,14 +13,40 @@ export default function ManageResources() {
     handleSave,
     handleDelete,
     loadBloodInventory,
-    handleUpdateBlood
+    handleUpdateBlood,
+    loadHospitals
   } = useManageResources();
 
   if (loading && hospitals.length === 0) return <div className="p-4">Loading...</div>;
-  if (error) return <div className="p-4 text-red-600">{error}</div>;
+  if (error && hospitals.length === 0) {
+    return (
+      <div className="p-4 text-red-600 flex flex-col items-start gap-3">
+        <p>{error}</p>
+        <button
+          type="button"
+          onClick={loadHospitals}
+          className="px-4 py-2 bg-[var(--color-primary)] text-white rounded font-semibold transition"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-6">
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded flex items-center justify-between">
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={loadHospitals}
+            className="px-3 py-1 bg-red-600 text-white rounded text-sm font-semibold hover:bg-red-700 transition"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-[var(--color-text)]">Manage Resources</h1>
         <button
@@ -60,8 +86,8 @@ export default function ManageResources() {
                 type="number"
                 step="any"
                 required
-                value={formState.lat || ''}
-                onChange={e => setFormState({ ...formState, lat: parseFloat(e.target.value) })}
+                value={formState.lat ?? ''}
+                onChange={e => setFormState({ ...formState, lat: e.target.value as unknown as number })}
                 className="w-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] rounded p-2 focus:ring focus:ring-[var(--color-primary)]/20 outline-none transition"
               />
             </div>
@@ -71,8 +97,8 @@ export default function ManageResources() {
                 type="number"
                 step="any"
                 required
-                value={formState.lng || ''}
-                onChange={e => setFormState({ ...formState, lng: parseFloat(e.target.value) })}
+                value={formState.lng ?? ''}
+                onChange={e => setFormState({ ...formState, lng: e.target.value as unknown as number })}
                 className="w-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] rounded p-2 focus:ring focus:ring-[var(--color-primary)]/20 outline-none transition"
               />
             </div>

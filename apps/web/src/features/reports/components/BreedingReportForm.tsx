@@ -83,8 +83,17 @@ export function BreedingReportForm() {
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setLocating(false);
-        setLat(position?.coords?.latitude ?? null);
-        setLng(position?.coords?.longitude ?? null);
+        const nextLat = position?.coords?.latitude ?? null;
+        const nextLng = position?.coords?.longitude ?? null;
+        if (typeof nextLat === 'number' && typeof nextLng === 'number') {
+          setLat(nextLat);
+          setLng(nextLng);
+          setLocationError(null);
+        } else {
+          setLocationError(
+            "অবস্থান শনাক্ত করা যায়নি। অনুগ্রহ করে ব্রাউজারে লোকেশন পারমিশন দিন এবং পুনরায় চেষ্টা করুন।",
+          );
+        }
       },
       () => {
         setLocating(false);
@@ -92,7 +101,7 @@ export function BreedingReportForm() {
           "অবস্থান শনাক্ত করা যায়নি। অনুগ্রহ করে ব্রাউজারে লোকেশন পারমিশন দিন এবং পুনরায় চেষ্টা করুন।",
         );
       },
-      { enableHighAccuracy: true, timeout: 10000 },
+      { enableHighAccuracy: false, timeout: 10000 },
     );
   }
 
@@ -185,6 +194,9 @@ export function BreedingReportForm() {
           onCoordinatesChange={(newLat, newLng) => {
             setLat(newLat);
             setLng(newLng);
+            if (newLat !== null && newLng !== null) {
+              setLocationError(null);
+            }
           }}
           locating={locating}
           locationError={locationError}

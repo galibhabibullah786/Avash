@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import "./symptom-checker.css";
+import { Spinner } from "@avash/ui";
 import { useSymptomCheck } from "./useSymptomCheck";
 import type { SymptomCheckRequest } from "@avash/types";
 import {
@@ -140,8 +141,20 @@ export function SymptomCheckerForm() {
           </section>
         ))}
 
-        <button className="button" type="submit">
-          লক্ষণ যাচাই করুন
+        <button
+          className="button flex items-center justify-center"
+          type="submit"
+          disabled={mutation.isPending}
+          data-testid="symptom-submit-button"
+        >
+          {mutation.isPending ? (
+            <>
+              <Spinner label="যাচাই করা হচ্ছে…" />
+              <span style={{ marginLeft: "8px" }}>যাচাই করা হচ্ছে…</span>
+            </>
+          ) : (
+            "লক্ষণ যাচাই করুন"
+          )}
         </button>
       </form>
 

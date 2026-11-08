@@ -3,6 +3,7 @@ import { buildGenericErrorBody, logger } from '@avash/logger';
 import type { AppEnv } from '../types';
 
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+const CLOUDFLARE_TEST_SECRET = '1x0000000000000000000000000000000AA';
 
 interface TurnstileVerifyResponse {
   success?: boolean;
@@ -17,6 +18,10 @@ interface TurnstileVerifyResponse {
  * of the route's zod parse in the chain (auth -> turnstile -> rate-limit).
  * Never logs the token itself (the logger also redacts `token`-keyed
  * fields, but this does not rely on that alone).
+ *
+ * In local dev (ENVIRONMENT=development), pairs dummy/test tokens with
+ * Cloudflare's official always-passing secret key so testing against
+ * localhost works out-of-the-box in both online and offline dev environments.
  */
 export const turnstile = (): MiddlewareHandler<AppEnv> => async (c, next) => {
   const requestId = c.get('requestId');
@@ -33,10 +38,15 @@ export const turnstile = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     return c.json(buildGenericErrorBody(requestId), 403);
   }
 
+  const isDev = c.env.ENVIRONMENT === 'development';
+  const isTestToken = token.startsWith('XXXX.') || token.startsWith('test-') || token === '1x00000000000000000000AA';
+  const isTestSecret = c.env.TURNSTILE_SECRET_KEY === CLOUDFLARE_TEST_SECRET;
+
+  const secretKey = (isDev && isTestToken) || isTestSecret ? CLOUDFLARE_TEST_SECRET : c.env.TURNSTILE_SECRET_KEY;
   const remoteIp = c.req.header('CF-Connecting-IP') ?? undefined;
 
   try {
-    const params = new URLSearchParams({ secret: c.env.TURNSTILE_SECRET_KEY, response: token });
+    const params = new URLSearchParams({ secret: secretKey, response: token });
     if (remoteIp) params.set('remoteip', remoteIp);
 
     const verifyResponse = await fetch(TURNSTILE_VERIFY_URL, {
@@ -47,9 +57,17 @@ export const turnstile = (): MiddlewareHandler<AppEnv> => async (c, next) => {
     const result = (await verifyResponse.json().catch(() => undefined)) as TurnstileVerifyResponse | undefined;
 
     if (!result?.success) {
+      if (isDev && isTestToken) {
+        await next();
+        return;
+      }
       return c.json(buildGenericErrorBody(requestId), 403);
     }
   } catch (error) {
+    if (isDev && isTestToken) {
+      await next();
+      return;
+    }
     logger.error('turnstile: verification service unreachable', {
       requestId,
       message: error instanceof Error ? error.message : String(error),

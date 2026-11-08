@@ -99,4 +99,29 @@ describe('turnstile middleware', () => {
     expect(capturedBody).toContain('response=good-token');
     expect(capturedBody).toContain('secret=test-turnstile-secret');
   });
+
+  test('local dev test tokens are verified with Cloudflare test secret key', async () => {
+    let capturedBody = '';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        capturedBody = typeof init?.body === 'string' ? init.body : String(init?.body);
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      })
+    );
+
+    const app = buildApp();
+    const res = await app.request(
+      '/guarded',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ turnstileToken: 'XXXX.DUMMY.TOKEN' }),
+      },
+      Object.assign({}, env, { ENVIRONMENT: 'development' })
+    );
+
+    expect(res.status).toBe(200);
+    expect(capturedBody).toContain('secret=1x0000000000000000000000000000000AA');
+  });
 });

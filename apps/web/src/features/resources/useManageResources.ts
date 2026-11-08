@@ -26,13 +26,14 @@ export function useManageResources() {
   const loadHospitals = useCallback(async () => {
     setLoading(true);
     const res = await fetchApi(
-      '/api/resources/hospitals?bbox=88,20,93,27',
+      `/api/resources/hospitals?bbox=88,20,93,27&_t=${Date.now()}`,
       hospitalsResponseSchema,
       { accessToken: accessToken || undefined }
     );
     if (!res.ok) {
       setError(res.error);
     } else {
+      setError(null);
       setHospitals(res.data.hospitals || []);
     }
     setLoading(false);
@@ -45,17 +46,30 @@ export function useManageResources() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!formState) return;
+
+    const trimmedName = formState.name?.trim() ?? '';
+    if (!trimmedName) {
+      alert('Please enter a valid hospital name');
+      return;
+    }
     
+    const lat = Number(formState.lat);
+    const lng = Number(formState.lng);
+    if (Number.isNaN(lat) || Number.isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      alert('Please enter valid numeric latitude (-90 to 90) and longitude (-180 to 180)');
+      return;
+    }
+
     const isEdit = !!formState.id;
     const method = isEdit ? 'PATCH' : 'POST';
     const path = isEdit ? `/api/resources/hospitals/${formState.id}` : '/api/resources/hospitals';
     
     const payload = {
-      name: formState.name,
-      lat: Number(formState.lat),
-      lng: Number(formState.lng),
-      address: formState.address || null,
-      phone: formState.phone || null,
+      name: trimmedName,
+      lat,
+      lng,
+      address: formState.address ? formState.address.trim() : null,
+      phone: formState.phone ? formState.phone.trim() : null,
       verified: formState.verified ?? true,
     };
 
@@ -70,6 +84,17 @@ export function useManageResources() {
       return;
     }
     
+    // Immediate state synchronization so UI updates without manual reload
+    const saved = res.data;
+    setHospitals((prev) => {
+      const exists = prev.some((h) => h.id === saved.id);
+      if (exists) {
+        return prev.map((h) => (h.id === saved.id ? saved : h));
+      }
+      return [saved, ...prev];
+    });
+
+    setError(null);
     setFormState(null);
     loadHospitals();
   }
@@ -86,6 +111,11 @@ export function useManageResources() {
       alert(res.error);
       return;
     }
+    setHospitals((prev) => prev.filter((h) => h.id !== id));
+    if (selectedHospitalForBlood?.id === id) {
+      setSelectedHospitalForBlood(null);
+    }
+    setError(null);
     loadHospitals();
   }
 
@@ -110,8 +140,19 @@ export function useManageResources() {
   async function handleUpdateBlood(e: React.FormEvent, row: BloodInventoryRow) {
     e.preventDefault();
     const formData = new FormData(e.target as HTMLFormElement);
-    const units = parseInt(formData.get('units') as string, 10);
-    const platelets = parseInt(formData.get('platelets') as string, 10);
+    const rawUnits = formData.get('units') as string;
+    const rawPlatelets = formData.get('platelets') as string;
+    const units = parseInt(rawUnits, 10);
+    const platelets = parseInt(rawPlatelets, 10);
+
+    if (Number.isNaN(units) || units < 0 || units > 500) {
+      alert('Please enter valid blood units (0 to 500)');
+      return;
+    }
+    if (Number.isNaN(platelets) || platelets < 0 || platelets > 500) {
+      alert('Please enter valid platelet units (0 to 500)');
+      return;
+    }
     
     const res = await fetchApi(`/api/resources/blood/${row.id}`, z.any(), {
       method: 'PATCH',
@@ -139,6 +180,7 @@ export function useManageResources() {
     handleSave,
     handleDelete,
     loadBloodInventory,
-    handleUpdateBlood
+    handleUpdateBlood,
+    loadHospitals
   };
 }

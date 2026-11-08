@@ -124,4 +124,23 @@ describe('POST /api/symptom-check', () => {
     const body = await readSuccess(res);
     expect(body.outcome).toBe('emergency');
   });
+
+  test('qaPairs with missing Redis env vars does not throw 500 in local dev', async () => {
+    const app = new Hono<AppEnv>();
+    app.use('*', requestId());
+    app.route('/', createSymptomCheck());
+    const res = await app.request(
+      '/',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          qaPairs: [{ question: 'Do you have fever?', answer: 'Yes' }],
+          checklist: emptyChecklistPayload,
+        }),
+      },
+      { GEMINI_API_KEY: 'test-key' } as never
+    );
+    expect(res.status).toBe(200);
+  });
 });

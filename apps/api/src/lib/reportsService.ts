@@ -99,24 +99,19 @@ export async function handleReportPhotoUpload(c: Context<AppEnv>): Promise<Respo
 
 export async function handleReportsList(c: Context<AppEnv>): Promise<Response> {
   const requestId = c.get('requestId');
-  const user = c.get('user');
-  if (!user) return c.json(buildGenericErrorBody(requestId), 401);
 
   const latStr = c.req.query('lat');
   const lngStr = c.req.query('lng');
-  const lat = latStr ? Number(latStr) : null;
-  const lng = lngStr ? Number(lngStr) : null;
-
-  if (lat === null || lng === null || isNaN(lat) || isNaN(lng)) {
-    return c.json(buildGenericErrorBody(requestId), 400);
-  }
+  const lat = latStr !== undefined && latStr !== '' ? Number(latStr) : null;
+  const lng = lngStr !== undefined && lngStr !== '' ? Number(lngStr) : null;
+  const hasCoords = lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng);
 
   try {
     const supabase = createSupabaseAdmin(c.env);
     const { data, error } = await supabase
       .from('breeding_reports')
       .select('id, description, photo_url, status, created_at, geom')
-      .in('status', ['pending', 'verified', 'resolved'])
+      .in('status', ['verified', 'resolved'])
       .order('created_at', { ascending: false })
       .limit(100);
 
@@ -130,9 +125,12 @@ export async function handleReportsList(c: Context<AppEnv>): Promise<Response> {
         const geom = row.geom as { coordinates?: number[] };
         const pointLat = geom?.coordinates?.[1] ?? 0;
         const pointLng = geom?.coordinates?.[0] ?? 0;
-        const dLat = pointLat - lat;
-        const dLng = pointLng - lng;
-        const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+        let dist = 0;
+        if (hasCoords) {
+          const dLat = pointLat - (lat as number);
+          const dLng = pointLng - (lng as number);
+          dist = Math.sqrt(dLat * dLat + dLng * dLng);
+        }
         return {
           id: row.id,
           description: row.description,
@@ -144,7 +142,11 @@ export async function handleReportsList(c: Context<AppEnv>): Promise<Response> {
           distance: dist,
         };
       })
-      .filter((r) => r.distance < 0.1);
+      .filter((r) => !hasCoords || r.distance < 0.1);
+
+    if (hasCoords) {
+      items.sort((a, b) => a.distance - b.distance);
+    }
 
     return c.json({ items, requestId }, 200);
   } catch (thrown) {

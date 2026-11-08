@@ -188,7 +188,7 @@ export function ReportLocationPicker({
         </label>
       </div>
 
-      {locationError ? (
+      {!hasLocation && locationError ? (
         <p
           className="field__error"
           role="alert"
