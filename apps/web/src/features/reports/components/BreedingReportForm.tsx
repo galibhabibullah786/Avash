@@ -31,6 +31,18 @@ export function BreedingReportForm() {
     };
   }, [photoPreviewUrl]);
 
+  useEffect(() => {
+    if (mutation.isSuccess) {
+      try {
+        if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+          navigator.vibrate([100, 50, 100]);
+        }
+      } catch {
+        // Platform lacks vibration support
+      }
+    }
+  }, [mutation.isSuccess]);
+
   const handlePhotoSelected = (file: File) => {
     if (!accessToken) return;
     setPhotoFile(file);

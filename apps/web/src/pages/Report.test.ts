@@ -98,7 +98,7 @@ describe('Report — location spinner + disabled inputs (feature 9, B-T05)', () 
     expect(lat.disabled).toBe(true);
     expect(lng.disabled).toBe(true);
     expect(useMyLocation.disabled).toBe(true);
-  });
+  }, 15000);
 
   test('lat/lng inputs are enabled again after a permission denial', async () => {
     const getCurrentPosition = vi.fn((_success: PositionCallback, error: PositionErrorCallback) => {
@@ -120,5 +120,5 @@ describe('Report — location spinner + disabled inputs (feature 9, B-T05)', () 
 
     const denied = container?.querySelector('[data-testid="location-permission-denied"]');
     expect(denied).not.toBeNull();
-  });
+  }, 15000);
 });

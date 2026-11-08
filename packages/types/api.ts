@@ -173,12 +173,8 @@ export type RiskDetailResponse = z.infer<typeof riskDetailResponseSchema>;
  * rather than an absence, so revoking a role is an assignment and shows
  * up in the audit trail like any other.
  */
-export const appRoleSchema = z.enum(['citizen', 'moderator', 'admin']);
-
-export type AppRole = z.infer<typeof appRoleSchema>;
-
-/** What a signed-in user with no `app_metadata.role` claim is treated as. */
-export const DEFAULT_APP_ROLE = 'citizen' satisfies AppRole;
+import { appRoleSchema, DEFAULT_APP_ROLE, type AppRole } from './roles';
+export { appRoleSchema, DEFAULT_APP_ROLE, type AppRole };
 
 // ── Role administration (admin-only) ──────────────────────────────────────
 

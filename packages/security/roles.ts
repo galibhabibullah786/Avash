@@ -1,4 +1,4 @@
-import { appRoleSchema, DEFAULT_APP_ROLE, type AppRole } from '@avash/types';
+import { appRoleSchema, DEFAULT_APP_ROLE, type AppRole } from '@avash/types/roles';
 
 /**
  * Where a custom role lives in a Supabase JWT (decision A). `app_metadata`

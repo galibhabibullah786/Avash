@@ -106,6 +106,58 @@ body {
   overflow-x: hidden;
 }
 
+/* Browser Surface Theming & Craft Floor */
+::selection {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+html {
+  scrollbar-color: var(--color-border) transparent;
+  scrollbar-width: thin;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+.tabular-nums,
+table,
+.weather-days strong,
+.weather-current strong,
+.weather-stat strong,
+.prediction-card strong,
+.dash-metric strong,
+.status-panel,
+.badge,
+time {
+  font-variant-numeric: tabular-nums;
+}
+
+.button:active,
+button:active {
+  transform: scale(0.98);
+}
+
 /* Navbar & Theme Controls */
 .navbar {
   border-bottom: 1px solid var(--color-border);
@@ -591,9 +643,9 @@ textarea {
   max-width: 560px;
   margin: 18px 0;
   color: var(--ink);
-  font-size: clamp(3.2rem, 5vw, 5.2rem);
-  line-height: .99;
-  letter-spacing: -.07em;
+  font-size: clamp(2.2rem, 5.5vw, 4.2rem);
+  line-height: 1.25;
+  letter-spacing: normal;
   font-weight: 800;
 }
 
@@ -878,7 +930,7 @@ textarea {
   display: flex;
   gap: 8px;
   padding: 15px;
-  background: white;
+  background: var(--color-surface);
   border-bottom: 1px solid #d5ebe2;
 }
 
@@ -997,7 +1049,7 @@ textarea {
   display: flex;
   gap: 18px;
   padding: 13px 15px;
-  background: white;
+  background: var(--color-surface);
   color: var(--muted);
   font-size: .63rem;
 }
@@ -1016,7 +1068,7 @@ textarea {
 
 .district-card {
   padding: 24px;
-  background: white;
+  background: var(--color-surface);
   border: 1px solid var(--line);
   border-radius: 14px;
   box-shadow: 0 10px 25px #0f172a08;
@@ -1135,7 +1187,7 @@ textarea {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   border: 1px solid var(--line);
-  background: white;
+  background: var(--color-surface);
   border-radius: 14px;
 }
 
@@ -1213,7 +1265,7 @@ textarea {
   height: 18px;
   place-items: center;
   color: var(--teal);
-  background: white;
+  background: var(--color-surface);
   border: 1px solid var(--line);
   border-radius: 50%;
   font-style: normal;
@@ -1230,7 +1282,7 @@ textarea {
   position: relative;
   min-height: 220px;
   padding: 21px;
-  background: white;
+  background: var(--color-surface);
   border: 1px solid var(--line);
   border-radius: 13px;
 }
@@ -1268,7 +1320,7 @@ textarea {
 .home__status {
   margin-top: 70px;
   color: var(--muted);
-  background: white;
+  background: var(--color-surface);
 }
 
 .home__status .status-panel__title {
@@ -1325,7 +1377,9 @@ textarea {
   }
 
   .home h1 {
-    font-size: 3.15rem;
+    font-size: clamp(2rem, 7vw, 2.8rem);
+    line-height: 1.25;
+    letter-spacing: normal;
   }
 
   .home__lede {
@@ -1424,20 +1478,61 @@ textarea {
 
   .prevention-grid {
     grid-template-columns: 1fr 1fr;
-    gap: 9px;
+    gap: 12px;
   }
 
   .prevention-card {
-    min-height: 245px;
-    padding: 15px;
+    min-height: 220px;
+    padding: 18px;
   }
 
   .prevention-card p {
-    font-size: .65rem;
+    font-size: .88rem;
+    line-height: 1.5;
   }
 
   .home__status {
     margin-top: 50px;
+  }
+}
+
+/* Tier 1: Mobile (H <= 667px, W <= 480px) */
+@media (max-width: 480px) {
+  .home,
+  .inner-page {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .prevention-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .prevention-card {
+    min-height: auto;
+    padding: 20px;
+  }
+
+  .prevention-card p {
+    font-size: 0.92rem;
+    line-height: 1.6;
+  }
+
+  .button-row {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .button-row .button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .button,
+  button,
+  input[type="submit"] {
+    min-height: 48px;
   }
 }
 
@@ -1821,7 +1916,7 @@ textarea {
   padding: 18px;
   color: var(--ink);
   text-align: left;
-  background: white;
+  background: var(--color-surface);
   border: 1px solid var(--line);
   border-radius: 11px;
   cursor: pointer;
@@ -1876,7 +1971,7 @@ textarea {
 .report-form,
 .breeding-section {
   padding: 25px;
-  background: white;
+  background: var(--color-surface);
   border: 1px solid var(--line);
   border-radius: 14px;
 }
@@ -2038,7 +2133,7 @@ textarea {
   grid-template-columns: 1.6fr repeat(4, 1fr);
   align-items: center;
   padding: 23px;
-  background: white;
+  background: var(--color-surface);
   border: 1px solid var(--line);
   border-radius: 14px;
 }
@@ -2106,7 +2201,7 @@ textarea {
   min-width: 180px;
   padding: 11px;
   color: var(--ink);
-  background: white;
+  background: var(--color-surface);
   border: 1px solid var(--line);
   border-radius: 7px;
   font: inherit;
@@ -2603,7 +2698,7 @@ textarea {
   left: 10px;
   padding: 7px 9px;
   color: var(--ink);
-  background: white;
+  background: var(--color-surface);
   border-radius: 5px;
   font-size: .6rem;
   font-weight: 700;
@@ -2630,7 +2725,7 @@ textarea {
   margin: 50px auto;
   padding: 55px;
   text-align: center;
-  background: white;
+  background: var(--color-surface);
   border: 1px solid var(--line);
   border-radius: 15px;
 }
@@ -2678,7 +2773,7 @@ textarea {
   padding: 10px 16px;
   color: var(--muted);
   white-space: nowrap;
-  background: white;
+  background: var(--color-surface);
   border: 1px solid var(--line);
   border-radius: 20px;
   font: inherit;
@@ -2700,7 +2795,7 @@ textarea {
 
 .news-card {
   overflow: hidden;
-  background: white;
+  background: var(--color-surface);
   border: 1px solid var(--line);
   border-radius: 14px;
 }
@@ -2856,9 +2951,45 @@ textarea {
   }
 }
 
+@media (max-width: 680px) {
+  .weather-days {
+    display: flex;
+    overflow-x: auto;
+    gap: 10px;
+    padding: 4px 4px 12px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .weather-days > div {
+    flex: 0 0 88px;
+    min-width: 88px;
+    border-right: none;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 8px;
+    gap: 8px;
+    background: var(--color-surface);
+  }
+
+  .weather-days b,
+  .weather-days small {
+    font-size: 0.78rem;
+  }
+
+  .weather-days span {
+    font-size: 1.25rem;
+  }
+
+  .weather-days strong {
+    font-size: 0.95rem;
+  }
+}
+
 @media (max-width: 430px) {
   .inner-page h1 {
-    font-size: 2.7rem;
+    font-size: clamp(1.65rem, 7vw, 2.2rem);
+    line-height: 1.25;
   }
 
   .prediction-card {
@@ -2867,27 +2998,6 @@ textarea {
 
   .prediction-card strong {
     font-size: 1.35rem;
-  }
-
-  .weather-days {
-    gap: 0;
-  }
-
-  .weather-days>div {
-    gap: 10px;
-  }
-
-  .weather-days b,
-  .weather-days small {
-    font-size: .49rem;
-  }
-
-  .weather-days span {
-    font-size: 1rem;
-  }
-
-  .weather-days strong {
-    font-size: .78rem;
   }
 
   .reason-grid,
@@ -2907,7 +3017,7 @@ textarea {
   place-items: center;
   min-height: calc(100vh - 67px);
   padding: 50px 20px;
-  background: radial-gradient(circle at 50% 15%, #dff6ec 0, var(--paper) 40%);
+  background: radial-gradient(circle at 50% 15%, var(--color-primary-light) 0, var(--color-bg) 60%);
 }
 
 .auth-brand {
@@ -2922,7 +3032,7 @@ textarea {
 .auth-page h1 {
   margin: 22px 0 8px;
   font-size: 2.5rem;
-  letter-spacing: -.07em;
+  letter-spacing: normal;
 }
 
 .auth-page__lede {
@@ -2936,7 +3046,7 @@ textarea {
 .auth-page>.card {
   width: min(100%, 430px);
   padding: 28px;
-  background: #fff;
+  background: var(--color-surface);
   border: 1px solid var(--line);
   border-radius: 14px;
   box-shadow: 0 18px 40px #0f172a0c;
@@ -3012,7 +3122,7 @@ textarea {
   height: calc(100vh - 67px);
   flex-direction: column;
   padding: 24px 14px;
-  background: white;
+  background: var(--color-surface);
   border-right: 1px solid var(--line);
 }
 
@@ -3187,7 +3297,7 @@ textarea {
 
 .dash-metric {
   padding: 18px;
-  background: white;
+  background: var(--color-surface);
   border: 1px solid var(--line);
   border-radius: 10px;
 }
@@ -3216,7 +3326,7 @@ textarea {
 
 .dash-panel {
   padding: 22px;
-  background: white;
+  background: var(--color-surface);
   border: 1px solid var(--line);
   border-radius: 11px;
 }
@@ -3833,7 +3943,7 @@ textarea {
   margin: auto;
   padding: 0;
   overflow: hidden;
-  background: white;
+  background: var(--color-surface);
   border: 1px solid var(--line);
   border-radius: 15px;
   box-shadow: 0 18px 40px #0f172a0b;
@@ -3844,7 +3954,7 @@ textarea {
   align-items: center;
   gap: 11px;
   padding: 17px 21px;
-  background: #f1faf6;
+  background: var(--color-surface-subtle);
   border-bottom: 1px solid var(--line);
 }
 
@@ -3919,8 +4029,8 @@ textarea {
 .chat-message p {
   margin: 0;
   padding: 11px 14px;
-  color: var(--ink);
-  background: #f1f6f5;
+  color: var(--color-text);
+  background: var(--color-surface-subtle);
   border-radius: 4px 12px 12px 12px;
   font-size: .7rem;
   line-height: 1.6;
@@ -3950,7 +4060,7 @@ textarea {
 .chat-starters button {
   padding: 8px 10px;
   color: var(--teal);
-  background: white;
+  background: var(--color-surface);
   border: 1px solid #b9ded3;
   border-radius: 16px;
   font: inherit;
@@ -3959,7 +4069,7 @@ textarea {
 }
 
 .chat-starters button:hover {
-  background: #eaf8f2;
+  background: var(--color-surface-subtle);
 }
 
 .chat-input {
@@ -3975,7 +4085,7 @@ textarea {
   min-width: 0;
   padding: 12px 14px;
   color: var(--ink);
-  background: white;
+  background: var(--color-surface);
   border: 1px solid var(--line);
   border-radius: 8px;
   font: inherit;
@@ -4089,8 +4199,9 @@ body {
 
 /* Hero and page hierarchy */
 .home h1 {
-  font-size: clamp(3.1rem, 5vw, 5rem);
-  line-height: 1.02;
+  font-size: clamp(2.2rem, 5.5vw, 4.2rem);
+  line-height: 1.25;
+  letter-spacing: normal;
 }
 
 .home__lede {
@@ -4099,8 +4210,9 @@ body {
 }
 
 .inner-page h1 {
-  font-size: clamp(2.7rem, 5vw, 4.3rem);
-  line-height: 1.04;
+  font-size: clamp(2rem, 5vw, 3.8rem);
+  line-height: 1.25;
+  letter-spacing: normal;
 }
 
 .home h2 {
@@ -4232,11 +4344,15 @@ body {
 /* Mobile balance */
 @media (max-width: 560px) {
   .home h1 {
-    font-size: clamp(2.8rem, 12vw, 3.7rem);
+    font-size: clamp(1.9rem, 7.5vw, 2.75rem);
+    line-height: 1.25;
+    letter-spacing: normal;
   }
 
   .inner-page h1 {
-    font-size: clamp(2.45rem, 11vw, 3.3rem);
+    font-size: clamp(1.8rem, 7vw, 2.5rem);
+    line-height: 1.25;
+    letter-spacing: normal;
   }
 
   .home h2 {

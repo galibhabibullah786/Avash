@@ -231,3 +231,21 @@
   background-color: var(--color-border);
   border-radius: 10px;
 }
+
+@media (max-width: 480px) {
+  .gemini-popup {
+    bottom: 16px;
+    right: 16px;
+  }
+
+  .gemini-chat-window {
+    position: fixed;
+    bottom: 80px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-width: none;
+    height: min(520px, calc(100dvh - 100px));
+    border-radius: 16px;
+  }
+}

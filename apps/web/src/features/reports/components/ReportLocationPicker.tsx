@@ -103,7 +103,8 @@ export function ReportLocationPicker({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              backgroundColor: "rgba(248, 250, 252, 0.8)",
+              backgroundColor: "color-mix(in srgb, var(--color-surface) 85%, transparent)",
+              backdropFilter: "blur(2px)",
               pointerEvents: "none",
             }}
           >
@@ -144,6 +145,7 @@ export function ReportLocationPicker({
         onClick={onUseMyLocation}
         disabled={locating}
         data-testid="use-my-location"
+        style={{ minHeight: "48px", width: "100%", justifyContent: "center" }}
       >
         ⌖ {locating ? "অবস্থান খোঁজা হচ্ছে…" : "আমার বর্তমান অবস্থান ব্যবহার করুন"}
       </button>
@@ -163,7 +165,7 @@ export function ReportLocationPicker({
             }
             data-testid="report-lat"
             aria-label="অক্ষাংশ"
-            style={{ padding: "4px" }}
+            style={{ padding: "8px 12px", minHeight: "44px" }}
           />
         </label>
 
@@ -181,7 +183,7 @@ export function ReportLocationPicker({
             }
             data-testid="report-lng"
             aria-label="দ্রাঘিমাংশ"
-            style={{ padding: "4px" }}
+            style={{ padding: "8px 12px", minHeight: "44px" }}
           />
         </label>
       </div>

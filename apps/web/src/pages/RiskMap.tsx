@@ -113,7 +113,7 @@ export default function RiskMap() {
             className="map-frame"
             ref={containerRef}
             data-testid="risk-map-container"
-            style={{ height: "400px", width: "100%" }}
+            style={{ height: "clamp(280px, 45vh, 420px)", width: "100%" }}
           >
             {riskMap.isLoading ? (
               <p className="map-frame__status">মানচিত্রের তথ্য লোড হচ্ছে…</p>
