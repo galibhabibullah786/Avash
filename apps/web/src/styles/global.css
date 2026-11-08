@@ -168,9 +168,10 @@ button:active {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  min-height: 48px;
   border-radius: var(--radius);
   border: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -589,10 +590,14 @@ textarea {
 }
 
 .navbar__link {
-  color: #64748b;
-  font-size: .76rem;
+  color: var(--color-text-muted);
+  font-size: .85rem;
   font-weight: 600;
   white-space: nowrap;
+  padding: 8px 6px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
 }
 
 .navbar__link:hover,
@@ -636,7 +641,7 @@ textarea {
   height: 7px;
   background: var(--mint);
   border-radius: 50%;
-  box-shadow: 0 0 0 4px #d8f7ec;
+  box-shadow: 0 0 0 4px var(--color-primary-light);
 }
 
 .home h1 {
@@ -700,8 +705,8 @@ textarea {
 
 .hero__trust {
   margin-top: 42px;
-  color: #94a3b8;
-  font-size: .68rem;
+  color: var(--color-text-muted);
+  font-size: .8rem;
 }
 
 .hero__trust span:first-child {
@@ -710,7 +715,7 @@ textarea {
 
 .hero__trust strong {
   padding: 0 7px;
-  color: #cbd5e1;
+  color: var(--color-text-muted);
 }
 
 .bangladesh-map {
@@ -3734,16 +3739,20 @@ textarea {
 
 .footer__links a {
   color: var(--muted);
-  font-size: .68rem;
+  font-size: .8rem;
   font-weight: 700;
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 4px;
 }
 
 .footer__note {
   grid-column: 1 / -1;
   max-width: 680px;
-  color: #94a3b8;
-  font-size: .62rem;
+  color: var(--color-text-muted);
+  font-size: .75rem;
   line-height: 1.6;
 }
 
@@ -3752,9 +3761,9 @@ textarea {
   grid-column: 1 / -1;
   justify-content: space-between;
   padding-top: 18px;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   border-top: 1px solid var(--line);
-  font-size: .6rem;
+  font-size: .75rem;
 }
 
 .footer__bottom b {

@@ -13,7 +13,7 @@ name: pipeline
 # claimed could not happen. Composing them as reusable workflows here
 # turns that claim into a real edge in the graph:
 #
-#   ci + codeql  ->  deploy-web + deploy-api + deploy-notify
+#   ci + codeql  ->  deploy-web + deploy-api + deploy-functions
 #
 # `workflow_run` would also sequence them, but it reports no status on the
 # pull request and always executes the default branch's copy of the
@@ -68,7 +68,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
       - id: resolve
         env:
           EVENT: ${{ github.event_name }}
@@ -100,7 +100,7 @@ jobs:
             api_changed=true
           fi
 
-          if echo "$CHANGED_FILES" | grep -qE '^(packages/db/|packages/push/|packages/types/)'; then
+          if echo "$CHANGED_FILES" | grep -qE '^(packages/db/|packages/push/|packages/types/|\.github/workflows/deploy-functions\.yml)'; then
             functions_changed=true
           fi
 
@@ -239,17 +239,9 @@ jobs:
       needs.context.outputs.deploy_functions == 'true' &&
       (needs.ci.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.bypass_gates == true)) &&
       (needs.codeql.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.bypass_gates == true))
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-workspace
-      - name: Deploy risk-alerts Edge Function
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-        run: |
-          if [ -n "$SUPABASE_ACCESS_TOKEN" ]; then
-            pnpm --filter @avash/db exec supabase functions deploy risk-alerts --project-ref "${SUPABASE_PROJECT_REF:-kdklmbqkczkaakgswlix}"
-          else
-            echo "::notice::SUPABASE_ACCESS_TOKEN secret not set; skipping Edge Function deploy."
-          fi
+    uses: ./.github/workflows/deploy-functions.yml
+    secrets:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    with:
+      environment: ${{ needs.context.outputs.environment }}
