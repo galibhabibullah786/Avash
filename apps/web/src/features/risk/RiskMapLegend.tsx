@@ -25,6 +25,9 @@ export function RiskMapLegend() {
                 className="map-legend__swatch"
                 style={{
                   backgroundColor: band.fillColor,
+                  borderWidth: `${band.weight}px`,
+                  borderStyle: band.dashArray ? 'dashed' : 'solid',
+                  borderColor: 'var(--color-border)',
                 }}
                 aria-hidden="true"
               />

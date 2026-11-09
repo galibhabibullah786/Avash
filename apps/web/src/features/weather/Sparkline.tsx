@@ -32,19 +32,21 @@ export function Sparkline({ points, label }: SparklineProps) {
     <figure className="sparkline" data-testid="weather-sparkline">
       <div style={{ width: '100%', height: '250px', maxWidth: '600px', margin: '0 auto' }} aria-label={ariaLabel} role="img">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <LineChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border, #e2e8f0)" />
             <XAxis
-              dataKey="x"
+              dataKey={chartData.some((p) => p.dayLabel) ? "dayLabel" : "x"}
               tick={{ fill: 'var(--color-text-muted, #64748b)', fontSize: 12 }}
               axisLine={{ stroke: 'var(--color-border, #e2e8f0)' }}
               tickLine={false}
+              tickFormatter={(val) => typeof val === 'number' ? `দিন ${val + 1}` : String(val)}
             />
             <YAxis
               tick={{ fill: 'var(--color-text-muted, #64748b)', fontSize: 12 }}
               axisLine={false}
               tickLine={false}
               domain={['auto', 'auto']}
+              unit="°"
             />
             <Tooltip
               contentStyle={{
@@ -54,16 +56,15 @@ export function Sparkline({ points, label }: SparklineProps) {
                 color: 'var(--color-text, #0f172a)',
               }}
               itemStyle={{ color: 'var(--color-primary, #0f766e)' }}
-              formatter={(value: unknown) => [`${Number(value).toFixed(1)}°`, 'Temperature']}
-              labelFormatter={(label) => `Day ${Number(label) + 1}`}
+              formatter={(value: unknown) => [`${Number(value).toFixed(1)}°C`, 'তাপমাত্রা']}
+              labelFormatter={(label) => typeof label === 'string' && label ? label : `দিন ${Number(label) + 1}`}
             />
             <Legend
-              verticalAlign="top"
               height={36}
               wrapperStyle={{ fontSize: '14px', color: 'var(--color-text-muted, #64748b)' }}
             />
             <Line
-              name="Mean Temperature"
+              name="গড় তাপমাত্রা"
               type="monotone"
               dataKey="y"
               stroke="var(--color-primary, #0f766e)"
@@ -74,7 +75,7 @@ export function Sparkline({ points, label }: SparklineProps) {
                   : { r: 3, fill: 'var(--color-surface, #ffffff)', stroke: 'var(--color-primary, #0f766e)', strokeWidth: 2 }
               }
               activeDot={{ r: 5, fill: 'var(--color-primary, #0f766e)', stroke: 'none' }}
-              isAnimationActive={false}
+              isAnimationActive={true}
             />
           </LineChart>
         </ResponsiveContainer>

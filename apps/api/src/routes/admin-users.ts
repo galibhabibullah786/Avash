@@ -11,18 +11,15 @@ import {
 } from '@avash/types';
 import { buildGenericErrorBody, logger } from '@avash/logger';
 import {
-  ROLE_ASSIGNMENT_RATE_LIMIT,
   resolveAppRole,
   buildAuditEntry,
   writeAuditEntry,
-  type RateLimitRedisLike,
 } from '@avash/security';
 import { auth } from '../middleware/auth';
-import { rateLimit } from '../middleware/rate-limit';
 import { createSupabaseAdmin } from '../lib/supabaseAdmin';
 import { createAuditSink } from '../lib/auditSink';
 import { parseListQuery, buildPageMeta } from '../lib/listQuery';
-import type { AppEnv, Bindings } from '../types';
+import type { AppEnv } from '../types';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -66,11 +63,6 @@ function toManagedUser(user: AdminApiUser | null | undefined): ManagedUser | nul
   };
 }
 
-export interface CreateAdminUsersOptions {
-  /** Test seam — route tests inject a fake in place of a real Upstash client. */
-  redisFactory?: (env: Bindings) => RateLimitRedisLike;
-}
-
 /**
  * Admin-only role administration. This is the mechanism that was missing:
  * before it, `app_metadata.role` could only be set by hand in the Supabase
@@ -88,20 +80,12 @@ export interface CreateAdminUsersOptions {
  * `user_metadata` — a signed-in user cannot write it. `role_assignments`
  * records history alongside it but never gates a request.
  */
-export function createAdminUsers(options?: CreateAdminUsersOptions) {
+export function createAdminUsers() {
   return (
     new Hono<AppEnv>()
       .get(
         '/',
         auth({ capability: 'roles:manage' }),
-        rateLimit({
-          guard: 'role-admin',
-          window: 'minute',
-          windowSeconds: 60,
-          limit: ROLE_ASSIGNMENT_RATE_LIMIT.perMinute,
-          keyStrategy: 'user',
-          redisFactory: options?.redisFactory,
-        }),
         async (c) => {
           const requestId = c.get('requestId');
           const parsedQuery = parseListQuery(c, adminUsersListQuerySchema);
@@ -157,14 +141,6 @@ export function createAdminUsers(options?: CreateAdminUsersOptions) {
       .patch(
         '/:id/role',
         auth({ capability: 'roles:manage' }),
-        rateLimit({
-          guard: 'role-admin',
-          window: 'minute',
-          windowSeconds: 60,
-          limit: ROLE_ASSIGNMENT_RATE_LIMIT.perMinute,
-          keyStrategy: 'user',
-          redisFactory: options?.redisFactory,
-        }),
         async (c) => {
           const requestId = c.get('requestId');
           const actor = c.get('user');

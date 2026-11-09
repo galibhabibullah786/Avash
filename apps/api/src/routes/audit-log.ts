@@ -9,12 +9,10 @@ import {
   type AuditEntry,
 } from '@avash/types';
 import { buildGenericErrorBody, logger } from '@avash/logger';
-import { ROLE_ASSIGNMENT_RATE_LIMIT, type RateLimitRedisLike } from '@avash/security';
 import { auth } from '../middleware/auth';
-import { rateLimit } from '../middleware/rate-limit';
 import { createSupabaseAdmin } from '../lib/supabaseAdmin';
 import { parseListQuery, buildPageMeta } from '../lib/listQuery';
-import type { AppEnv, Bindings } from '../types';
+import type { AppEnv } from '../types';
 
 /** `AUDIT_LOG_PAGE_SIZE_DEFAULT` (§14) — default page size for this route (decision, mirrors `ADMIN_USER_PAGE_SIZE`'s pattern). */
 const AUDIT_LOG_PAGE_SIZE_DEFAULT = 50;
@@ -60,28 +58,15 @@ function toAuditEntry(row: Record<string, unknown>): AuditEntry | null {
   return parsed.success ? parsed.data : null;
 }
 
-export interface CreateAuditLogOptions {
-  /** Test seam — route tests inject a fake in place of a real Upstash client. */
-  redisFactory?: (env: Bindings) => RateLimitRedisLike;
-}
-
 /**
  * Admin-only read surface for `audit_log` (decision D) — an audit trail
  * nobody can read is a table, not a control. Reuses
  * `ROLE_ASSIGNMENT_RATE_LIMIT`, matching `GET /api/admin/users`.
  */
-export function createAuditLog(options?: CreateAuditLogOptions) {
+export function createAuditLog() {
   return new Hono<AppEnv>().get(
     '/',
     auth({ capability: 'roles:manage' }),
-    rateLimit({
-      guard: 'audit-log-read',
-      window: 'minute',
-      windowSeconds: 60,
-      limit: ROLE_ASSIGNMENT_RATE_LIMIT.perMinute,
-      keyStrategy: 'user',
-      redisFactory: options?.redisFactory,
-    }),
     async (c) => {
       const requestId = c.get('requestId');
 

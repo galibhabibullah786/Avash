@@ -98,4 +98,23 @@ describe('SymptomCheckerForm', () => {
     const resultOutcome = container?.querySelector('[data-testid="symptom-check-outcome"]');
     expect(resultOutcome).toBeTruthy();
   });
+
+  test('selecting a warning sign immediately triggers the emergency alert callout', async () => {
+    render(createElement(SymptomCheckerForm));
+    expect(container?.querySelector('[data-testid="symptom-warning-alert"]')).toBeNull();
+
+    // Select warning sign on q10 (yes = severe pain)
+    const warningOption = container?.querySelector(
+      'input[data-testid="symptom-option-q10-yes"]'
+    ) as HTMLInputElement;
+    expect(warningOption).toBeTruthy();
+
+    await act(async () => {
+      warningOption.click();
+    });
+
+    const alert = container?.querySelector('[data-testid="symptom-warning-alert"]');
+    expect(alert).toBeTruthy();
+    expect(alert?.textContent).toContain('জরুরি সতর্ক সংকেত চিহ্নিত হয়েছে');
+  });
 });

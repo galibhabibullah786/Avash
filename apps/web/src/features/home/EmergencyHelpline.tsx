@@ -1,6 +1,6 @@
 export function EmergencyHelpline() {
   return (
-    <section className="p-4 my-3 bg-[var(--color-primary-light)]/40 border border-[var(--color-primary)]/20 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+    <section className="bg-[var(--color-primary-light)]/40 border border-[var(--color-primary)]/20 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4" style={{ padding: '10px', margin: '20px 0' }}>
       <div className="flex items-center gap-3">
         <span className="text-2xl" aria-hidden="true">📞</span>
         <div>

@@ -79,13 +79,13 @@ describe('mounted route stubs (contract-shaped placeholders where handlers remai
   });
 
   test('audit-log: GET / with no token → 401, not 501', async () => {
-    const app = buildApp(createAuditLog({ redisFactory: fakeRedis }));
+    const app = buildApp(createAuditLog());
     const res = await app.request('/', { method: 'GET' }, fakeBindings());
     expect(res.status).toBe(401);
   });
 
   test('audit-log: GET / with a moderator token → 403, not 501', async () => {
-    const app = buildApp(createAuditLog({ redisFactory: fakeRedis }));
+    const app = buildApp(createAuditLog());
     const token = await signTestJwt({ role: 'moderator' });
     const res = await app.request(
       '/',

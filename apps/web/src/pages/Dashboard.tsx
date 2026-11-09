@@ -87,8 +87,6 @@ export default function Dashboard() {
         <PushNotificationToggle />
         <AlertSubscribeForm />
       </section>
-
-
     </main>
   );
 }

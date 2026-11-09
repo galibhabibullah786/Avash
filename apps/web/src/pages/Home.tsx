@@ -78,7 +78,7 @@ export default function Home() {
 
       {/* Install Prompt Banners */}
       {installStatus === 'available' ? (
-        <section className="px-6 py-4 mx-auto my-4 max-w-5xl bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/30 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4" data-testid="home-install-banner">
+        <section className="max-w-5xl bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/30 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4" data-testid="home-install-banner" style={{ padding: '10px', marginBottom: '20px' }}>
           <div className="flex items-center gap-3">
             <span className="text-2xl" aria-hidden="true">📲</span>
             <div>

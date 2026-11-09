@@ -57,6 +57,7 @@ export default function Weather() {
   const sparklinePoints = points.map((point, index) => ({
     x: index,
     y: point?.tempMeanC ?? null,
+    dayLabel: formatDay(point.observedAt, index),
   }));
 
   const temps = points
