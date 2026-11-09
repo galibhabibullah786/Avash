@@ -1,33 +1,11 @@
 import { describe, test, expect, vi, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import { paginatedResponseSchema, managedUserSchema, roleAssignmentResponseSchema } from '@avash/types';
-import type { RateLimitRedisLike } from '@avash/security';
 import { createAdminUsers } from '../../src/routes/admin-users';
 import { requestId } from '../../src/middleware/request-id';
 import { createFakeSupabase, INVALID_SUPABASE_URL } from '../helpers/fakeSupabase';
 import type { AppEnv, Bindings } from '../../src/types';
 import { signTestJwt } from '../helpers/fakeJwt';
-
-function fakeRedis(): RateLimitRedisLike {
-  const sets = new Map<string, Map<string, number>>();
-  return {
-    async zadd(key, entry) {
-      const set = sets.get(key) ?? new Map<string, number>();
-      set.set(entry.member, entry.score);
-      sets.set(key, set);
-      return 1;
-    },
-    async zremrangebyscore() {
-      return 0;
-    },
-    async zcard(key) {
-      return sets.get(key)?.size ?? 0;
-    },
-    async expire() {
-      return 1;
-    },
-  };
-}
 
 function fakeBindings(overrides: Partial<Bindings> = {}): Bindings {
   return {
@@ -51,7 +29,7 @@ function fakeBindings(overrides: Partial<Bindings> = {}): Bindings {
 function buildApp() {
   const app = new Hono<AppEnv>();
   app.use('*', requestId());
-  app.route('/', createAdminUsers({ redisFactory: fakeRedis }));
+  app.route('/', createAdminUsers());
   return app;
 }
 

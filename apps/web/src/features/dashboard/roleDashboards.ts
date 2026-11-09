@@ -16,40 +16,6 @@ export interface RoleDashboard {
 }
 
 /**
- * What each role lands on. Deliberately data, not four page components:
- * the difference between these dashboards is *which* destinations are
- * offered, and expressing that as a table means adding a role is a table
- * entry rather than a new route tree.
- *
- * Every tile here is navigation, never authorization. A tile hidden from
- * a role is a UX affordance only — the destination enforces its own access
- * via `ProtectedRoute` client-side and, for real, via `apps/api`'s `auth`
- * middleware and RLS. Nothing here is load-bearing for security.
- */
-const CITIZEN_TILES: readonly DashboardTile[] = [
-  {
-    to: '/symptoms',
-    label: 'Check symptoms',
-    description: 'Answer the WHO warning-sign checklist and get triage guidance.',
-  },
-  {
-    to: '/report',
-    label: 'Report a breeding site',
-    description: 'Standing water or a blocked drain near you — no account needed.',
-  },
-  {
-    to: '/risk',
-    label: 'Risk map',
-    description: 'Predicted dengue risk by region for the next 2–4 weeks.',
-  },
-  {
-    to: '/resources',
-    label: 'Find blood & hospitals',
-    description: 'Live blood-stock availability at hospitals near you.',
-  },
-];
-
-/**
  * First occurrence of a destination wins. Role-specific tiles are listed
  * before the shared citizen ones below, so a role that has its own framing
  * for a page ("Update blood inventory") gets that card instead of the
@@ -69,7 +35,7 @@ export const ROLE_DASHBOARDS: Readonly<Record<AppRole, RoleDashboard>> = {
   citizen: {
     title: 'Your dashboard',
     description: 'Everything you can do to protect yourself and your neighbourhood.',
-    tiles: dedupeByDestination(CITIZEN_TILES),
+    tiles: [],
   },
   moderator: {
     title: 'Moderator dashboard',
@@ -88,7 +54,6 @@ export const ROLE_DASHBOARDS: Readonly<Record<AppRole, RoleDashboard>> = {
         description: 'Add, update, or remove hospital records and inventory.',
         capability: 'hospitals:manage',
       },
-      ...CITIZEN_TILES,
     ]),
   },
   admin: {
@@ -114,7 +79,6 @@ export const ROLE_DASHBOARDS: Readonly<Record<AppRole, RoleDashboard>> = {
         description: 'Add, update, or remove hospital records and inventory.',
         capability: 'hospitals:manage',
       },
-      ...CITIZEN_TILES,
     ]),
   },
 };

@@ -9,33 +9,33 @@
     "sections": [
       {
         "id": "fever",
-        "title": "Fever",
+        "title": "জ্বর ও প্রাথমিক লক্ষণ",
         "questions": [
           {
             "id": "q1",
             "order": 1,
             "type": "single_choice",
-            "question": "Do you currently have a fever, or have you had a fever recently?",
+            "question": "আপনার কি বর্তমানে জ্বর আছে, বা সম্প্রতি জ্বর হয়েছিল?",
             "required": true,
             "options": [
               {
                 "id": "currently_fever",
-                "label": "Yes, I currently have a fever",
+                "label": "হ্যাঁ, বর্তমানে জ্বর আছে",
                 "value": "currently_fever"
               },
               {
                 "id": "recently_gone",
-                "label": "Yes, but my fever recently went away",
+                "label": "হ্যাঁ, তবে সম্প্রতি জ্বর সেরে গেছে",
                 "value": "recently_gone"
               },
               {
                 "id": "no_fever",
-                "label": "No",
+                "label": "না, জ্বর নেই",
                 "value": "no_fever"
               },
               {
                 "id": "not_sure",
-                "label": "I'm not sure",
+                "label": "নিশ্চিত নই",
                 "value": "not_sure"
               }
             ]
@@ -44,37 +44,37 @@
             "id": "q2",
             "order": 2,
             "type": "single_choice",
-            "question": "How long have you had fever or fever-like symptoms?",
+            "question": "কত দিন ধরে আপনার জ্বর বা জ্বরের উপসর্গ রয়েছে?",
             "required": true,
             "options": [
               {
                 "id": "less_than_1_day",
-                "label": "Less than 1 day",
+                "label": "১ দিনের কম",
                 "value": "less_than_1_day"
               },
               {
                 "id": "1_2_days",
-                "label": "1–2 days",
+                "label": "১–২ দিন",
                 "value": "1_2_days"
               },
               {
                 "id": "3_5_days",
-                "label": "3–5 days",
+                "label": "৩–৫ দিন",
                 "value": "3_5_days"
               },
               {
                 "id": "6_7_days",
-                "label": "6–7 days",
+                "label": "৬–৭ দিন",
                 "value": "6_7_days"
               },
               {
                 "id": "more_than_7_days",
-                "label": "More than 7 days",
+                "label": "৭ দিনের বেশি",
                 "value": "more_than_7_days"
               },
               {
                 "id": "not_sure",
-                "label": "I'm not sure",
+                "label": "নিশ্চিত নই",
                 "value": "not_sure"
               }
             ]
@@ -83,32 +83,32 @@
             "id": "q3",
             "order": 3,
             "type": "single_choice",
-            "question": "What was the highest temperature you recorded?",
+            "question": "জ্বরের সর্বোচ্চ তাপমাত্রা কত পরিমাপ করেছেন?",
             "required": true,
             "options": [
               {
                 "id": "below_38",
-                "label": "Below 38°C (100.4°F)",
+                "label": "৩৮°সে (১০০.৪°ফা) এর নিচে",
                 "value": "below_38"
               },
               {
                 "id": "38_38_9",
-                "label": "38–38.9°C (100.4–102°F)",
+                "label": "৩৮–৩৮.৯°সে (১০০.৪–১০২°ফা)",
                 "value": "38_38_9"
               },
               {
                 "id": "39_39_9",
-                "label": "39–39.9°C (102.2–103.8°F)",
+                "label": "৩৯–৩৯.৯°সে (১০২.২–১০৩.৮°ফা)",
                 "value": "39_39_9"
               },
               {
                 "id": "40_or_higher",
-                "label": "40°C (104°F) or higher",
+                "label": "৪০°সে (১০৪°ফা) বা তার বেশি",
                 "value": "40_or_higher"
               },
               {
                 "id": "not_measured",
-                "label": "I haven't measured my temperature",
+                "label": "তাপমাত্রা পরিমাপ করা হয়নি",
                 "value": "not_measured"
               }
             ]
@@ -117,38 +117,38 @@
       },
       {
         "id": "common_symptoms",
-        "title": "Common Symptoms",
+        "title": "সাধারণ উপসর্গ",
         "questions": [
           {
             "id": "q4",
             "order": 4,
             "type": "single_choice",
-            "question": "Are you experiencing a headache?",
+            "question": "আপনার কি মাথাব্যথা হচ্ছে?",
             "required": true,
             "options": [
               {
                 "id": "no",
-                "label": "No",
+                "label": "না",
                 "value": "no"
               },
               {
                 "id": "mild",
-                "label": "Mild",
+                "label": "হালকা",
                 "value": "mild"
               },
               {
                 "id": "moderate",
-                "label": "Moderate",
+                "label": "মাঝারি",
                 "value": "moderate"
               },
               {
                 "id": "severe",
-                "label": "Severe",
+                "label": "তীব্র",
                 "value": "severe"
               },
               {
                 "id": "not_sure",
-                "label": "I'm not sure",
+                "label": "নিশ্চিত নই",
                 "value": "not_sure"
               }
             ]
@@ -157,32 +157,32 @@
             "id": "q5",
             "order": 5,
             "type": "single_choice",
-            "question": "Are you experiencing pain behind or around your eyes?",
+            "question": "চোখের পেছনে বা চোখের চারপাশে ব্যথা অনুভব করছেন?",
             "required": true,
             "options": [
               {
                 "id": "no",
-                "label": "No",
+                "label": "না",
                 "value": "no"
               },
               {
                 "id": "mild",
-                "label": "Mild",
+                "label": "হালকা",
                 "value": "mild"
               },
               {
                 "id": "moderate",
-                "label": "Moderate",
+                "label": "মাঝারি",
                 "value": "moderate"
               },
               {
                 "id": "severe",
-                "label": "Severe",
+                "label": "তীব্র",
                 "value": "severe"
               },
               {
                 "id": "not_sure",
-                "label": "I'm not sure",
+                "label": "নিশ্চিত নই",
                 "value": "not_sure"
               }
             ]
@@ -191,32 +191,32 @@
             "id": "q6",
             "order": 6,
             "type": "single_choice",
-            "question": "Are you experiencing muscle, bone, or joint pain?",
+            "question": "মাংসপেশি, হাড় বা শরীরের জোড়ায় (গাঁটে) ব্যথা হচ্ছে?",
             "required": true,
             "options": [
               {
                 "id": "no",
-                "label": "No",
+                "label": "না",
                 "value": "no"
               },
               {
                 "id": "mild",
-                "label": "Mild",
+                "label": "হালকা",
                 "value": "mild"
               },
               {
                 "id": "moderate",
-                "label": "Moderate",
+                "label": "মাঝারি",
                 "value": "moderate"
               },
               {
                 "id": "severe",
-                "label": "Severe",
+                "label": "তীব্র",
                 "value": "severe"
               },
               {
                 "id": "not_sure",
-                "label": "I'm not sure",
+                "label": "নিশ্চিত নই",
                 "value": "not_sure"
               }
             ]
@@ -225,38 +225,38 @@
             "id": "q7",
             "order": 7,
             "type": "single_choice",
-            "question": "Are you experiencing nausea or vomiting?",
+            "question": "বমি বমি ভাব বা বমি হচ্ছে কি?",
             "required": true,
             "options": [
               {
                 "id": "none",
-                "label": "No",
+                "label": "না",
                 "value": "none"
               },
               {
                 "id": "nausea_only",
-                "label": "Nausea only",
+                "label": "শুধু বমি বমি ভাব",
                 "value": "nausea_only"
               },
               {
                 "id": "vomited_once_twice",
-                "label": "Vomited once or twice",
+                "label": "এক-দুই বার বমি হয়েছে",
                 "value": "vomited_once_twice"
               },
               {
                 "id": "vomited_several_times",
-                "label": "Vomited several times",
+                "label": "কয়েকবার বমি হয়েছে",
                 "value": "vomited_several_times"
               },
               {
                 "id": "persistent_vomiting",
-                "label": "Persistent or repeated vomiting",
+                "label": "একটানা বা বারবার বমি হচ্ছে",
                 "value": "persistent_vomiting",
                 "warningSign": true
               },
               {
                 "id": "not_sure",
-                "label": "I'm not sure",
+                "label": "নিশ্চিত নই",
                 "value": "not_sure"
               }
             ]
@@ -265,22 +265,22 @@
             "id": "q8",
             "order": 8,
             "type": "single_choice",
-            "question": "Have you developed a skin rash?",
+            "question": "ত্বকে কোনো লালচে ফুসকুড়ি বা র্যাশ দেখা দিয়েছে?",
             "required": true,
             "options": [
               {
                 "id": "no",
-                "label": "No",
+                "label": "না",
                 "value": "no"
               },
               {
                 "id": "yes",
-                "label": "Yes",
+                "label": "হ্যাঁ",
                 "value": "yes"
               },
               {
                 "id": "not_sure",
-                "label": "I'm not sure",
+                "label": "নিশ্চিত নই",
                 "value": "not_sure"
               }
             ]
@@ -289,22 +289,22 @@
             "id": "q9",
             "order": 9,
             "type": "single_choice",
-            "question": "Have you noticed swollen glands or lymph nodes?",
+            "question": "গলা বা শরীরের কোনো গ্রন্থি (লিম্ফ নোড) ফুলে উঠেছে কি?",
             "required": true,
             "options": [
               {
                 "id": "no",
-                "label": "No",
+                "label": "না",
                 "value": "no"
               },
               {
                 "id": "yes",
-                "label": "Yes",
+                "label": "হ্যাঁ",
                 "value": "yes"
               },
               {
                 "id": "not_sure",
-                "label": "I'm not sure",
+                "label": "নিশ্চিত নই",
                 "value": "not_sure"
               }
             ]
@@ -313,31 +313,31 @@
       },
       {
         "id": "warning_signs",
-        "title": "Warning Signs",
+        "title": "জরুরি সতর্ক সংকেত (উদ্বেগজনক লক্ষণ)",
         "description": "These questions check for symptoms that may require urgent medical evaluation.",
         "questions": [
           {
             "id": "q10",
             "order": 10,
             "type": "single_choice",
-            "question": "Are you experiencing severe pain or tenderness in your abdomen or belly?",
+            "question": "পেটে তীব্র বা প্রচণ্ড ব্যথা বা চাপ দিলে ব্যথা অনুভব করছেন?",
             "required": true,
             "warningSignQuestion": true,
             "options": [
               {
                 "id": "no",
-                "label": "No",
+                "label": "না",
                 "value": "no"
               },
               {
                 "id": "yes",
-                "label": "Yes",
+                "label": "হ্যাঁ",
                 "value": "yes",
                 "warningSign": true
               },
               {
                 "id": "not_sure",
-                "label": "I'm not sure",
+                "label": "নিশ্চিত নই",
                 "value": "not_sure"
               }
             ]
@@ -346,24 +346,24 @@
             "id": "q11",
             "order": 11,
             "type": "single_choice",
-            "question": "Have you experienced persistent or repeated vomiting?",
+            "question": "একটানা বা বারবার বমি হচ্ছে?",
             "required": true,
             "warningSignQuestion": true,
             "options": [
               {
                 "id": "no",
-                "label": "No",
+                "label": "না",
                 "value": "no"
               },
               {
                 "id": "yes",
-                "label": "Yes",
+                "label": "হ্যাঁ",
                 "value": "yes",
                 "warningSign": true
               },
               {
                 "id": "not_sure",
-                "label": "I'm not sure",
+                "label": "নিশ্চিত নই",
                 "value": "not_sure"
               }
             ]
@@ -372,89 +372,92 @@
             "id": "q12",
             "order": 12,
             "type": "multi_choice",
-            "question": "Have you experienced any unusual bleeding?",
+            "question": "শরীরের কোথাও অস্বাভাবিক রক্তপাতের লক্ষণ দেখেছেন?",
             "required": true,
             "warningSignQuestion": true,
             "options": [
               {
                 "id": "none",
-                "label": "No unusual bleeding",
+                "label": "কোনো অস্বাভাবিক রক্তপাত নেই",
                 "value": "none"
               },
               {
                 "id": "nose",
-                "label": "Nose bleeding",
+                "label": "নাক দিয়ে রক্ত পড়া",
                 "value": "nose",
                 "warningSign": true
               },
               {
                 "id": "gums",
-                "label": "Gum bleeding",
+                "label": "দাঁতের মাড়ি দিয়ে রক্ত পড়া",
                 "value": "gums",
                 "warningSign": true
               },
               {
                 "id": "blood_vomit",
-                "label": "Blood in vomit",
+                "label": "বমির সাথে রক্ত যাওয়া",
                 "value": "blood_vomit",
                 "warningSign": true
               },
               {
                 "id": "blood_stool",
-                "label": "Blood in stool or black stool",
+                "label": "পায়খানার সাথে রক্ত বা কালো পায়খানা",
                 "value": "blood_stool",
                 "warningSign": true
               },
               {
                 "id": "blood_urine",
-                "label": "Blood in urine",
+                "label": "প্রস্রাবের সাথে রক্ত যাওয়া",
                 "value": "blood_urine",
                 "warningSign": true
               },
               {
                 "id": "heavy_menstrual",
-                "label": "Unusually heavy menstrual bleeding",
+                "label": "নারীদের অতিরিক্ত মাসিক রক্তপাত",
                 "value": "heavy_menstrual",
                 "warningSign": true
               },
               {
                 "id": "other",
-                "label": "Other unusual bleeding",
+                "label": "অন্যান্য অস্বাভাবিক রক্তপাত",
                 "value": "other",
                 "warningSign": true
               },
               {
                 "id": "not_sure",
-                "label": "I'm not sure",
+                "label": "নিশ্চিত নই",
                 "value": "not_sure"
               }
             ],
             "validation": {
-              "exclusiveOptions": ["none", "not_sure"]
+              "exclusiveOptions": [
+                "none",
+                "not_sure"
+              ]
             }
           },
           {
             "id": "q13",
             "order": 13,
             "type": "single_choice",
-            "question": "Are you having difficulty breathing or breathing unusually fast?",
+            "question": "শ্বাস নিতে কষ্ট হচ্ছে বা দ্রুত শ্বাস নিতে হচ্ছে?",
             "required": true,
             "warningSignQuestion": true,
             "options": [
               {
                 "id": "no",
-                "label": "No",
+                "label": "না",
                 "value": "no"
               },
               {
                 "id": "yes",
-                "label": "Yes",
+                "label": "হ্যাঁ",
                 "value": "yes",
                 "warningSign": true
               },
               {
                 "id": "not_sure",
-                "label": "I'm not sure",
+                "label": "নিশ্চিত নই",
                 "value": "not_sure"
               }
             ]
@@ -463,34 +466,34 @@
             "id": "q14",
             "order": 14,
             "type": "single_choice",
-            "question": "Are you experiencing unusual weakness, extreme tiredness, restlessness, or confusion?",
+            "question": "চরম দুর্বলতা, অতিরিক্ত ক্লান্তি, অস্থিরতা বা বিভ্রান্তি অনুভব করছেন?",
             "required": true,
             "warningSignQuestion": true,
             "options": [
               {
                 "id": "no",
-                "label": "No",
+                "label": "না",
                 "value": "no"
               },
               {
                 "id": "mild",
-                "label": "Mild",
+                "label": "হালকা",
                 "value": "mild"
               },
               {
                 "id": "noticeable",
-                "label": "Noticeable",
+                "label": "বেশ লক্ষ্যণীয়",
                 "value": "noticeable"
               },
               {
                 "id": "severe",
-                "label": "Severe",
+                "label": "চরম অস্থিরতা বা দুর্বলতা",
                 "value": "severe",
                 "warningSign": true
               },
               {
                 "id": "not_sure",
-                "label": "I'm not sure",
+                "label": "নিশ্চিত নই",
                 "value": "not_sure"
               }
             ]
@@ -499,35 +502,35 @@
             "id": "q15",
             "order": 15,
             "type": "single_choice",
-            "question": "Are you very thirsty or urinating much less than usual?",
+            "question": "প্রচণ্ড পিপাসা পাচ্ছে বা স্বাভাবিকের চেয়ে অনেক কম প্রস্রাব হচ্ছে?",
             "required": true,
             "warningSignQuestion": true,
             "options": [
               {
                 "id": "no",
-                "label": "No",
+                "label": "না",
                 "value": "no"
               },
               {
                 "id": "very_thirsty",
-                "label": "Very thirsty",
+                "label": "প্রচণ্ড পিপাসা",
                 "value": "very_thirsty"
               },
               {
                 "id": "less_urination",
-                "label": "Urinating much less than usual",
+                "label": "খুব কম প্রস্রাব হওয়া",
                 "value": "less_urination",
                 "warningSign": true
               },
               {
                 "id": "both",
-                "label": "Both",
+                "label": "উভয় লক্ষণই বিদ্যমান",
                 "value": "both",
                 "warningSign": true
               },
               {
                 "id": "not_sure",
-                "label": "I'm not sure",
+                "label": "নিশ্চিত নই",
                 "value": "not_sure"
               }
             ]
@@ -536,28 +539,28 @@
       },
       {
         "id": "medical_context",
-        "title": "Additional Information",
+        "title": "অন্যান্য প্রাসঙ্গিক তথ্য",
         "questions": [
           {
             "id": "q16",
             "order": 16,
             "type": "single_choice",
-            "question": "Have you had dengue before?",
+            "question": "আপনার কি পূর্বে কখনো ডেঙ্গু হয়েছিল?",
             "required": true,
             "options": [
               {
                 "id": "no",
-                "label": "No",
+                "label": "না",
                 "value": "no"
               },
               {
                 "id": "yes",
-                "label": "Yes",
+                "label": "হ্যাঁ",
                 "value": "yes"
               },
               {
                 "id": "not_sure",
-                "label": "I'm not sure",
+                "label": "নিশ্চিত নই",
                 "value": "not_sure"
               }
             ]
@@ -566,27 +569,27 @@
             "id": "q17",
             "order": 17,
             "type": "single_choice",
-            "question": "Has your fever decreased or gone away within the last 1–2 days?",
+            "question": "বিগত ১–২ দিনের মধ্যে কি আপনার জ্বর কমে গেছে বা পুরোপুরি চলে গেছে?",
             "required": true,
             "options": [
               {
                 "id": "no",
-                "label": "No",
+                "label": "না",
                 "value": "no"
               },
               {
                 "id": "within_24_hours",
-                "label": "Yes, within the last 24 hours",
+                "label": "হ্যাঁ, বিগত ২৪ ঘণ্টার মধ্যে",
                 "value": "within_24_hours"
               },
               {
                 "id": "1_2_days_ago",
-                "label": "Yes, 1–2 days ago",
+                "label": "হ্যাঁ, ১–২ দিন আগে",
                 "value": "1_2_days_ago"
               },
               {
                 "id": "not_sure",
-                "label": "I'm not sure",
+                "label": "নিশ্চিত নই",
                 "value": "not_sure"
               }
             ]

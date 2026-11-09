@@ -10,14 +10,13 @@ import {
 } from '@avash/types';
 import { buildGenericErrorBody, logger } from '@avash/logger';
 import { parseBbox } from '@avash/geo';
-import { BLOOD_UPDATE_RATE_LIMIT, buildAuditEntry, writeAuditEntry, type RateLimitRedisLike } from '@avash/security';
+import { buildAuditEntry, writeAuditEntry } from '@avash/security';
 import { auth } from '../middleware/auth';
-import { rateLimit } from '../middleware/rate-limit';
 import { createSupabaseAdmin } from '../lib/supabaseAdmin';
 import { createAuditSink } from '../lib/auditSink';
 import { toHospitalDto, toBloodAvailabilityDto } from '../lib/resourceDto';
 import { toNumberOrNull } from '../lib/numeric';
-import type { AppEnv, Bindings } from '../types';
+import type { AppEnv } from '../types';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -26,11 +25,6 @@ const HOSPITAL_RESULT_LIMIT = 200;
 /** `RESOURCES_CACHE_TTL_S` (§14) — edge cache for resource reads. */
 const RESOURCES_CACHE_TTL_S = 'public, max-age=0, s-maxage=60, stale-while-revalidate=120';
 
-export interface CreateResourcesOptions {
-  /** Test seam — route tests inject a fake in place of a real Upstash client. */
-  redisFactory?: (env: Bindings) => RateLimitRedisLike;
-}
-
 /**
  * Public GETs stay cors+headers only (decision J — no rate-limit on this
  * slice's reads); the write is auth+rate-limit, with the handler-level
@@ -38,7 +32,7 @@ export interface CreateResourcesOptions {
  * Worker's Supabase client uses the service-role key, which bypasses RLS
  * entirely).
  */
-export function createResources(options?: CreateResourcesOptions) {
+export function createResources() {
   return new Hono<AppEnv>()
     .get('/hospitals', async (c) => {
       const requestId = c.get('requestId');
@@ -399,14 +393,6 @@ export function createResources(options?: CreateResourcesOptions) {
       // locks them out immediately, without also having to find and delete
       // their verified_moderator membership rows.
       auth({ capability: 'inventory:write' }),
-      rateLimit({
-        guard: 'blood-update',
-        window: 'minute',
-        windowSeconds: 60,
-        limit: BLOOD_UPDATE_RATE_LIMIT.perMinute,
-        keyStrategy: 'user',
-        redisFactory: options?.redisFactory,
-      }),
       async (c) => {
         const requestId = c.get('requestId');
         const id = c.req.param('id');

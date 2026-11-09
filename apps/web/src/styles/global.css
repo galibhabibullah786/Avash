@@ -1,27 +1,29 @@
 @import "tailwindcss";
 
-/* Reset */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+@layer base {
+  /* Reset */
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
 
-html,
-body,
-#root {
-  height: 100%;
-}
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
 
-h1, h2, h3, h4, h5, h6 {
-  font-weight: 700;
-}
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 700;
+  }
 
-p {
-  margin-block-start: 1em;
-  margin-block-end: 1em;
+  p {
+    margin-block-start: 1em;
+    margin-block-end: 1em;
+  }
 }
 
 /* Design tokens & Canonical Public Health Palette */
@@ -95,50 +97,54 @@ p {
   --coral: var(--color-danger);
 }
 
-body {
-  font-family: var(--font-sans);
-  background-color: var(--color-bg);
-  color: var(--color-text);
-  line-height: 1.6;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  transition: background-color 0.2s ease, color 0.2s ease;
-  overflow-x: hidden;
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    line-height: 1.6;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    transition: background-color 0.2s ease, color 0.2s ease;
+    overflow-x: hidden;
+  }
+
+  /* Browser Surface Theming & Craft Floor */
+  ::selection {
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  html {
+    scrollbar-color: var(--color-border) transparent;
+    scrollbar-width: thin;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-text-muted);
+  }
 }
 
-/* Browser Surface Theming & Craft Floor */
-::selection {
-  background: var(--color-primary-light);
-  color: var(--color-primary);
-}
-
-:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-
-html {
-  scrollbar-color: var(--color-border) transparent;
-  scrollbar-width: thin;
-}
-
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-muted);
-}
+@layer components {
 
 .tabular-nums,
 table,
@@ -195,9 +201,9 @@ button:active {
 }
 
 .navbar__nav {
-  max-width: 640px;
+  max-width: 1240px;
   margin: 0 auto;
-  padding: var(--space-2) var(--space-3);
+  padding: 16px clamp(16px, 3vw, 28px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1335,13 +1341,6 @@ textarea {
 @media (max-width: 900px) {
   .navbar__nav {
     max-width: none;
-  }
-
-  .navbar__links {
-    order: 3;
-    width: 100%;
-    overflow-x: auto;
-    padding-top: 4px;
   }
 
   .home__hero {
@@ -3513,21 +3512,20 @@ textarea {
 .report-table-panel table {
   width: 100%;
   border-collapse: collapse;
-  white-space: nowrap;
 }
 
 .report-table-panel th,
 .report-table-panel td {
-  padding: 12px 8px;
+  padding: 12px 14px;
   border-top: 1px solid var(--line);
-  color: var(--muted);
+  color: var(--color-text);
   text-align: left;
-  font-size: .62rem;
+  font-size: 0.875rem;
 }
 
 .report-table-panel th {
-  color: #94a3b8;
-  font-size: .56rem;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
   font-weight: 700;
 }
 
@@ -3709,32 +3707,19 @@ textarea {
 
 .footer {
   max-width: 1240px;
-  margin: auto;
+  margin: 80px auto 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 35px;
-  margin-top: 80px;
-  padding-top: 34px;
+  padding: 34px clamp(16px, 4vw, 32px) 24px;
   border-top: 1px solid var(--line);
-}
-
-.footer__brand {
-  display: grid;
-  grid-template-columns: 27px auto;
-  align-items: center;
-  gap: 8px;
-}
-
-.footer__brand p {
-  grid-column: 1 / -1;
-  color: var(--muted);
-  font-size: .69rem;
 }
 
 .footer__links {
   display: flex;
   justify-content: end;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 9px;
 }
 
 .footer__links a {
@@ -4159,10 +4144,10 @@ textarea {
   }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 850px) {
   .footer {
     grid-template-columns: 1fr;
-    gap: 22px;
+    gap: 24px;
     margin-top: 55px;
   }
 
@@ -4497,4 +4482,5 @@ body {
 .user-score span,
 .user-score small {
   font-size: 0.72rem;
+}
 }

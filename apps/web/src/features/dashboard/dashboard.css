@@ -1,6 +1,7 @@
 /* Dashboard tile grid. Sits on the shared .card primitive from
    styles/global.css — only layout and the link treatment live here. */
 
+@layer components {
 .dashboard__tiles {
   list-style: none;
   margin: 1.5rem 0 0;
@@ -43,4 +44,5 @@
 
 .admin-users__row--self td {
   font-style: italic;
+}
 }

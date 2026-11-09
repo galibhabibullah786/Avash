@@ -130,29 +130,41 @@ export default function ManageResources() {
       )}
 
       {selectedHospitalForBlood && (
-        <div className="bg-[var(--color-surface)] p-6 rounded-lg shadow-md border border-[var(--color-border)] relative">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="blood-modal-title"
+          className="bg-[var(--color-surface)] p-6 rounded-lg shadow-lg border border-[var(--color-border)] relative my-4"
+        >
           <button
             onClick={() => setSelectedHospitalForBlood(null)}
-            className="absolute top-4 right-4 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+            className="absolute top-4 right-4 p-2 text-[var(--color-text-muted)] hover:text-[var(--color-text)] rounded text-sm font-semibold"
+            aria-label="Close blood inventory modal"
           >
             ✕ Close
           </button>
-          <h2 className="text-xl font-semibold mb-4 text-[var(--color-text)]">Inventory for {selectedHospitalForBlood.name}</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <h2 id="blood-modal-title" className="text-xl font-semibold mb-4 text-[var(--color-text)]">
+            Inventory for {selectedHospitalForBlood.name}
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {bloodInventory.map(row => (
               <form key={row.id} onSubmit={(e) => handleUpdateBlood(e, row)} className="border border-[var(--color-border)] rounded p-4 bg-[var(--color-surface-subtle)] shadow-sm">
-                <h3 className="font-bold text-lg text-[var(--color-danger)] mb-2">{row.blood_group}</h3>
+                <h3 className={`font-bold text-lg mb-2 ${row.units_available === 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-heading)]'}`}>
+                  {row.blood_group}
+                </h3>
                 <div className="space-y-2">
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-[var(--color-text-muted)]">Blood</span>
-                    <input name="units" type="number" defaultValue={row.units_available} min="0" className="w-20 p-1 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] rounded text-right" />
+                    <input name="units" type="number" defaultValue={row.units_available} min="0" className="w-20 p-1 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] rounded text-right tabular-nums" />
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-[var(--color-text-muted)]">Platelets</span>
-                    <input name="platelets" type="number" defaultValue={row.platelet_units} min="0" className="w-20 p-1 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] rounded text-right" />
+                    <input name="platelets" type="number" defaultValue={row.platelet_units} min="0" className="w-20 p-1 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] rounded text-right tabular-nums" />
                   </div>
                 </div>
-                <button type="submit" className="mt-3 w-full bg-[var(--color-danger)]/10 text-[var(--color-danger)] border border-[var(--color-danger)]/30 py-1 rounded hover:bg-[var(--color-danger)]/20 transition text-sm font-medium">Update</button>
+                <button type="submit" className="mt-3 w-full bg-[var(--color-primary-light)] text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-white border border-[var(--color-primary)] py-1.5 rounded transition text-sm font-semibold min-h-[44px]">
+                  Update
+                </button>
               </form>
             ))}
           </div>

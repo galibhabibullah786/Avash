@@ -1,33 +1,11 @@
 import { describe, test, expect, vi, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import { hospitalsResponseSchema, bloodSearchResponseSchema, bloodAvailabilityDtoSchema } from '@avash/types';
-import type { RateLimitRedisLike } from '@avash/security';
 import { createResources } from '../../src/routes/resources';
 import { requestId } from '../../src/middleware/request-id';
 import { createFakeSupabase, INVALID_SUPABASE_URL, postgrestErrorBody } from '../helpers/fakeSupabase';
 import type { AppEnv, Bindings } from '../../src/types';
 import { signTestJwt } from '../helpers/fakeJwt';
-
-function fakeRedis(): RateLimitRedisLike {
-  const sets = new Map<string, Map<string, number>>();
-  return {
-    async zadd(key, entry) {
-      const set = sets.get(key) ?? new Map<string, number>();
-      set.set(entry.member, entry.score);
-      sets.set(key, set);
-      return 1;
-    },
-    async zremrangebyscore() {
-      return 0;
-    },
-    async zcard(key) {
-      return sets.get(key)?.size ?? 0;
-    },
-    async expire() {
-      return 1;
-    },
-  };
-}
 
 function fakeBindings(overrides: Partial<Bindings> = {}): Bindings {
   return {
@@ -51,7 +29,7 @@ function fakeBindings(overrides: Partial<Bindings> = {}): Bindings {
 function buildApp() {
   const app = new Hono<AppEnv>();
   app.use('*', requestId());
-  app.route('/', createResources({ redisFactory: fakeRedis }));
+  app.route('/', createResources());
   return app;
 }
 
@@ -740,14 +718,9 @@ describe('PATCH /api/resources/blood/:id', () => {
     ]);
     vi.stubGlobal('fetch', fake.fetch);
 
-    // A single shared fake Redis instance across every request in this
-    // loop — `fakeRedis()` builds a fresh in-memory store per call, so a
-    // per-request factory (as `buildApp()` wires by default) would reset
-    // the counter every time and this test would never observe a 429.
-    const sharedRedis = fakeRedis();
     const app = new Hono<AppEnv>();
     app.use('*', requestId());
-    app.route('/', createResources({ redisFactory: () => sharedRedis }));
+    app.route('/', createResources());
     const env = fakeBindings();
     let last;
     for (let i = 0; i < 11; i += 1) {

@@ -1,6 +1,7 @@
 export interface SparklinePoint {
   x: number;
   y: number | null;
+  dayLabel?: string;
 }
 
 export interface ScaledPoint {

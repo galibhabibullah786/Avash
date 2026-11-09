@@ -69,7 +69,7 @@ export function CitizenLifelines() {
         ))}
       </div>
 
-      <div className="mt-6 p-6 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4" style={{ padding: '10px', marginTop: '20px' }}>
         <div className="flex items-center gap-4">
           <span className="text-3xl" aria-hidden="true">📸</span>
           <div>

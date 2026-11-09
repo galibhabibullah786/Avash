@@ -1,3 +1,4 @@
+@layer components {
 .gemini-popup {
   position: fixed;
   bottom: var(--space-4, 24px);
@@ -249,4 +250,5 @@
     height: min(520px, calc(100dvh - 100px));
     border-radius: 16px;
   }
+}
 }

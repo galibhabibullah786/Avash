@@ -22,6 +22,21 @@ export function SymptomCheckerForm() {
   const mutation = useSymptomCheck();
   const schema = useMemo(() => SYMPTOM_CHECKER_CONFIG.symptomChecker, []);
 
+  const hasWarningSign = useMemo(() => {
+    return schema.sections.some((sec) =>
+      sec.questions.some((q) => {
+        const selected = getSelectedValues(q, answers);
+        return q.options.some((opt) => opt.warningSign && selected.includes(opt.value));
+      })
+    );
+  }, [schema, answers]);
+
+  const answeredCount = useMemo(() => {
+    return schema.sections.reduce((count, sec) => {
+      return count + sec.questions.filter((q) => getSelectedValues(q, answers).length > 0).length;
+    }, 0);
+  }, [schema, answers]);
+
   function handleSingleChoice(questionId: string, value: string) {
     setAnswers((previous) => ({ ...previous, [questionId]: value }));
   }
@@ -84,6 +99,23 @@ export function SymptomCheckerForm() {
     <div className="symptom-checker">
       <p className="symptom-checker__summary">{schema.description}</p>
 
+      {hasWarningSign && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          data-testid="symptom-warning-alert"
+          className="p-4 rounded-lg bg-[var(--color-danger-light)] border-2 border-[var(--color-danger)] text-[var(--color-danger)] flex items-start gap-3 shadow-md"
+        >
+          <span className="text-2xl" aria-hidden="true">🚨</span>
+          <div>
+            <strong className="block text-base font-bold">জরুরি সতর্ক সংকেত চিহ্নিত হয়েছে!</strong>
+            <p className="text-sm mt-1 text-[var(--color-text)]">
+              আপনি এক বা একাধিক বিপজ্জনক সতর্ক লক্ষণ (যেমন অস্বাভাবিক রক্তপাত, প্রচণ্ড পেটব্যথা বা ক্রমাগত বমি) নির্বাচন করেছেন। বিলম্ব না করে অবিলম্বে নিকটস্থ হাসপাতালের জরুরি বিভাগে যান অথবা স্বাস্থ্য বাতায়নে (১৬২৬৩) যোগাযোগ করুন।
+            </p>
+          </div>
+        </div>
+      )}
+
       <form
         className="symptom-checker__form"
         onSubmit={handleSubmit}
@@ -111,7 +143,7 @@ export function SymptomCheckerForm() {
                     return (
                       <label
                         key={option.id}
-                        className="symptom-checker__option"
+                        className={`symptom-checker__option ${isChecked ? 'symptom-checker__option--selected' : ''}`}
                       >
                         <input
                           type={
@@ -141,21 +173,26 @@ export function SymptomCheckerForm() {
           </section>
         ))}
 
-        <button
-          className="button flex items-center justify-center"
-          type="submit"
-          disabled={mutation.isPending}
-          data-testid="symptom-submit-button"
-        >
-          {mutation.isPending ? (
-            <>
-              <Spinner label="যাচাই করা হচ্ছে…" />
-              <span style={{ marginLeft: "8px" }}>যাচাই করা হচ্ছে…</span>
-            </>
-          ) : (
-            "লক্ষণ যাচাই করুন"
-          )}
-        </button>
+        <div className="sticky bottom-4 z-20 p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-xl flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm font-medium text-[var(--color-text-muted)]">
+            উত্তর দেওয়া হয়েছে: <strong className="text-[var(--color-primary)] font-bold">{answeredCount}</strong> / {schema.totalQuestions}টি প্রশ্ন
+          </div>
+          <button
+            className="button flex items-center justify-center min-h-[48px] px-6 py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg font-bold shadow-md transition-all active:scale-[0.98]"
+            type="submit"
+            disabled={mutation.isPending}
+            data-testid="symptom-submit-button"
+          >
+            {mutation.isPending ? (
+              <>
+                <Spinner label="যাচাই করা হচ্ছে…" />
+                <span style={{ marginLeft: "8px" }}>যাচাই করা হচ্ছে…</span>
+              </>
+            ) : (
+              "লক্ষণ যাচাই করুন"
+            )}
+          </button>
+        </div>
       </form>
 
       {result ? (

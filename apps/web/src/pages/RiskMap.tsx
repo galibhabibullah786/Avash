@@ -10,6 +10,7 @@ import {
   RISK_LEVEL_BAND_STYLES,
 } from "../features/risk/riskLevelBands";
 import { RiskMapLegend } from "../features/risk/RiskMapLegend";
+import { formatFactor } from "../features/risk/riskFormatters";
 
 const HORIZON_OPTIONS: Array<2 | 4> = [2, 4];
 
@@ -36,7 +37,7 @@ export default function RiskMap() {
   const activeRegionName =
     regionRisk.data?.regionName ??
     regions.find((region) => region.regionId === activeRegionId)?.regionName ??
-    "Region";
+    "এলাকা";
 
   useRiskMapLayer(mapRef, riskMap.data, setSelectedRegionId);
   useRiskReportsLayer(mapRef, regionRisk.data?.verifiedReports);
@@ -48,22 +49,25 @@ export default function RiskMap() {
       <div className="inner-page__intro">
         <div>
           <p className="eyebrow">জেলা ও এলাকাভিত্তিক বিশ্লেষণ</p>
+          <h1>ঝুঁকির মানচিত্র</h1>
           {regions.length > 0 ? (
-            <label className="location-select">
-              <select
-                value={activeRegionId ?? ""}
-                onChange={(event) => setSelectedRegionId(event.target.value)}
-              >
-                {regions.map((region) => (
-                  <option key={region.regionId} value={region.regionId}>
-                    {region.regionName}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : (
-            <h1>ঝুঁকির মানচিত্র</h1>
-          )}
+            <div className="mt-2">
+              <label className="location-select">
+                <span className="sr-only">এলাকা নির্বাচন করুন</span>
+                <select
+                  value={activeRegionId ?? ""}
+                  onChange={(event) => setSelectedRegionId(event.target.value)}
+                  aria-label="এলাকা নির্বাচন করুন"
+                >
+                  {regions.map((region) => (
+                    <option key={region.regionId} value={region.regionId}>
+                      {region.regionName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ) : null}
           <p className="inner-lede">
             এই জেলার ডেঙ্গু ঝুঁকি পরিস্থিতি এবং পারিপার্শ্বিক প্রভাবকসমূহের বিস্তারিত চিত্র।
           </p>
@@ -133,7 +137,7 @@ export default function RiskMap() {
             aria-pressed={option === horizonWeeks}
             onClick={() => setHorizonWeeks(option)}
           >
-            <span>{option === 2 ? "২ সপ্তাহ" : "৪ সপ্তাহ"} ({option} weeks)</span>
+            <span>{option === 2 ? "২ সপ্তাহের পূর্বাভাস" : "৪ সপ্তাহের পূর্বাভাস"}</span>
             <i>→</i>
           </button>
         ))}
@@ -179,9 +183,7 @@ export default function RiskMap() {
                             {(prediction.topFactors ?? []).length === 0
                               ? "কোনো বিশেষ কারণ চিহ্নিত করা যায়নি।"
                               : (prediction.topFactors ?? [])
-                                .map(
-                                  (f) => `${f.feature} ${f.direction} ঝুঁকি`,
-                                )
+                                .map((f) => formatFactor(f.feature, f.direction))
                                 .join(", ")}
                           </small>
                         </div>

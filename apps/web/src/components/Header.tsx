@@ -28,8 +28,6 @@ const PUBLIC_LINKS: readonly NavItem[] = [
 
 const ADMIN_LINKS: readonly NavItem[] = [
   { to: '/dashboard', label: 'ড্যাশবোর্ড', authenticatedOnly: true },
-  { to: '/moderation', label: 'মডারেশন', capability: 'reports:moderate' },
-  { to: '/admin/users', label: 'ব্যবহারকারী', capability: 'roles:manage' },
 ];
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -140,12 +138,12 @@ export const Header = () => {
         </nav>
       </header>
 
-      {/* Mobile Drawer */}
+      {/* Mobile Drawer Backdrop */}
       {isDrawerOpen && (
-        <button
-          type="button"
-          aria-label="মেনু বন্ধ করুন"
-          className="fixed inset-0 bg-black/50 z-50 lg:hidden cursor-default w-full h-full border-none p-0"
+        <div
+          role="presentation"
+          aria-hidden="true"
+          className="fixed inset-0 bg-black/50 z-50 lg:hidden cursor-pointer"
           onClick={() => setIsDrawerOpen(false)}
         />
       )}
@@ -154,9 +152,10 @@ export const Header = () => {
         ref={drawerRef}
         role="dialog"
         aria-modal="true"
+        aria-hidden={!isDrawerOpen}
         aria-label="মোবাইল নেভিগেশন মেনু"
         className={`fixed top-0 left-0 w-72 max-w-[85vw] h-full bg-[var(--color-surface)] border-r border-[var(--color-border)] z-50 transform transition-transform duration-200 lg:hidden flex flex-col ${
-          isDrawerOpen ? 'translate-x-0' : '-translate-x-full'
+          isDrawerOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none invisible'
         }`}
       >
         <div className="p-4 border-b border-[var(--color-border)] flex justify-between items-center bg-[var(--color-surface)]">
@@ -164,16 +163,13 @@ export const Header = () => {
             <img src="/icons/brand.svg" alt="" aria-hidden="true" className="w-6 h-6" />
             <span>আভাস</span>
           </NavLink>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <button
-              onClick={() => setIsDrawerOpen(false)}
-              className="p-3 min-h-[48px] min-w-[48px] flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)] rounded-lg text-lg font-bold"
-              aria-label="মেনু বন্ধ করুন"
-            >
-              ✕
-            </button>
-          </div>
+          <button
+            onClick={() => setIsDrawerOpen(false)}
+            className="p-3 min-h-[48px] min-w-[48px] flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)] rounded-lg text-lg font-bold"
+            aria-label="মেনু বন্ধ করুন"
+          >
+            ✕
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto py-4 px-3">
           <ul className="flex flex-col gap-1.5">
