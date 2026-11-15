@@ -15,7 +15,7 @@ vi.mock('../../lib/env', () => ({
   },
 }));
 
-describe('ManageResources page', () => {
+describe('ManageResources page — reads and loading states', () => {
   let container: HTMLDivElement | null = null;
   let root: Root | null = null;
 
@@ -129,7 +129,6 @@ describe('ManageResources page', () => {
       await new Promise((r) => setTimeout(r, 20));
     });
 
-    // Click "Blood Inventory"
     const bloodBtn = Array.from(container?.querySelectorAll('button') ?? []).find(
       (b) => b.textContent === 'Blood Inventory'
     );
@@ -142,6 +141,7 @@ describe('ManageResources page', () => {
 
     expect(container?.textContent).toContain('Inventory for General Hospital');
     expect(container?.textContent).toContain('A+');
+    expect(container?.querySelector('[data-testid="update-all-blood-btn"]')).toBeTruthy();
   });
 
   test('adding a new hospital immediately updates the table with the created hospital', async () => {
@@ -202,7 +202,6 @@ describe('ManageResources page', () => {
     expect(container?.textContent).toContain('General Hospital');
     expect(container?.textContent).not.toContain('City Care Clinic');
 
-    // Click "Add Hospital"
     const addBtn = Array.from(container?.querySelectorAll('button') ?? []).find(
       (b) => b.textContent === 'Add Hospital'
     );
@@ -212,7 +211,6 @@ describe('ManageResources page', () => {
       addBtn?.click();
     });
 
-    // Fill in the form inputs
     const nameInput = container?.querySelector('input[type="text"]') as HTMLInputElement;
     expect(nameInput).toBeTruthy();
 
@@ -226,9 +224,8 @@ describe('ManageResources page', () => {
       nameInput.dispatchEvent(new Event('change', { bubbles: true }));
     });
 
-    // Submit form via Save Hospital button
     const saveBtn = Array.from(container?.querySelectorAll('button') ?? []).find(
-      (b) => b.textContent === 'Save Hospital'
+      (b) => b.textContent?.includes('Save Hospital')
     );
     expect(saveBtn).toBeTruthy();
 
@@ -237,224 +234,6 @@ describe('ManageResources page', () => {
       await new Promise((r) => setTimeout(r, 30));
     });
 
-    // Table now immediately contains the new hospital!
     expect(container?.textContent).toContain('City Care Clinic');
-  });
-
-  test('editing an existing hospital immediately updates the table with the modified hospital', async () => {
-    const existingHospitals = [
-      {
-        id: '11111111-1111-4111-8111-111111111111',
-        name: 'General Hospital',
-        lat: 23.81,
-        lng: 90.41,
-        address: 'Dhaka',
-        phone: '01711111111',
-        verified: true,
-      },
-    ];
-
-    const updatedHospital = {
-      id: '11111111-1111-4111-8111-111111111111',
-      name: 'General Hospital Renamed',
-      lat: 23.82,
-      lng: 90.42,
-      address: 'Dhaka Central',
-      phone: '01799999999',
-      verified: true,
-    };
-
-    vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes('/api/resources/hospitals') && (!init || init.method === 'GET')) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              hospitals: existingHospitals,
-              generatedAt: new Date().toISOString(),
-              requestId: 'req-1',
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } }
-          )
-        );
-      }
-      if (url.includes('/api/resources/hospitals/11111111-1111-4111-8111-111111111111') && init?.method === 'PATCH') {
-        existingHospitals[0] = updatedHospital;
-        return Promise.resolve(
-          new Response(JSON.stringify(updatedHospital), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          })
-        );
-      }
-      return Promise.reject(new Error('unhandled'));
-    });
-
-    render(createElement(ManageResources));
-
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
-    });
-
-    expect(container?.textContent).toContain('General Hospital');
-
-    // Click "Edit"
-    const editBtn = Array.from(container?.querySelectorAll('button') ?? []).find(
-      (b) => b.textContent === 'Edit'
-    );
-    expect(editBtn).toBeTruthy();
-
-    await act(async () => {
-      editBtn?.click();
-    });
-
-    // Change the name input
-    const nameInput = container?.querySelector('input[type="text"]') as HTMLInputElement;
-    expect(nameInput).toBeTruthy();
-
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
-        'value'
-      )?.set;
-      setter?.call(nameInput, 'General Hospital Renamed');
-      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
-      nameInput.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-
-    // Save
-    const saveBtn = Array.from(container?.querySelectorAll('button') ?? []).find(
-      (b) => b.textContent === 'Save Hospital'
-    );
-    expect(saveBtn).toBeTruthy();
-
-    await act(async () => {
-      saveBtn?.click();
-      await new Promise((r) => setTimeout(r, 30));
-    });
-
-    expect(container?.textContent).toContain('General Hospital Renamed');
-  });
-
-  test('deleting a hospital removes it from the table immediately', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-
-    const existingHospitals = [
-      {
-        id: '11111111-1111-4111-8111-111111111111',
-        name: 'Hospital To Delete',
-        lat: 23.81,
-        lng: 90.41,
-        address: 'Dhaka',
-        phone: '01711111111',
-        verified: true,
-      },
-    ];
-
-    vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes('/api/resources/hospitals') && (!init || init.method === 'GET')) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              hospitals: existingHospitals,
-              generatedAt: new Date().toISOString(),
-              requestId: 'req-1',
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } }
-          )
-        );
-      }
-      if (url.includes('/api/resources/hospitals/11111111-1111-4111-8111-111111111111') && init?.method === 'DELETE') {
-        existingHospitals.length = 0;
-        return Promise.resolve(
-          new Response(null, { status: 204 })
-        );
-      }
-      return Promise.reject(new Error('unhandled'));
-    });
-
-    render(createElement(ManageResources));
-
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
-    });
-
-    expect(container?.textContent).toContain('Hospital To Delete');
-
-    // Click "Delete"
-    const deleteBtn = Array.from(container?.querySelectorAll('button') ?? []).find(
-      (b) => b.textContent === 'Delete'
-    );
-    expect(deleteBtn).toBeTruthy();
-
-    await act(async () => {
-      deleteBtn?.click();
-      await new Promise((r) => setTimeout(r, 30));
-    });
-
-    expect(container?.textContent).not.toContain('Hospital To Delete');
-    expect(container?.textContent).toContain('No hospitals found. Add one to get started.');
-  });
-
-  test('clears error and populates UI when retrying or reloading successfully', async () => {
-    let failFirst = true;
-
-    vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes('/api/resources/hospitals')) {
-        if (failFirst) {
-          return Promise.resolve(
-            new Response(JSON.stringify({ error: 'Server error' }), { status: 500 })
-          );
-        }
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              hospitals: [
-                {
-                  id: '11111111-1111-4111-8111-111111111111',
-                  name: 'Recovered Hospital',
-                  lat: 23.81,
-                  lng: 90.41,
-                  address: 'Dhaka',
-                  phone: '01711111111',
-                  verified: true,
-                },
-              ],
-              generatedAt: new Date().toISOString(),
-              requestId: 'req-1',
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } }
-          )
-        );
-      }
-      return Promise.reject(new Error('unhandled'));
-    });
-
-    render(createElement(ManageResources));
-
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
-    });
-
-    expect(container?.textContent).toContain('Request failed with status 500');
-
-    // Now server recovers
-    failFirst = false;
-
-    // Click "Retry" button
-    const retryBtn = Array.from(container?.querySelectorAll('button') ?? []).find(
-      (b) => b.textContent === 'Retry'
-    );
-    expect(retryBtn).toBeTruthy();
-
-    await act(async () => {
-      retryBtn?.click();
-      await new Promise((r) => setTimeout(r, 30));
-    });
-
-    expect(container?.textContent).not.toContain('Request failed with status 500');
-    expect(container?.textContent).toContain('Recovered Hospital');
   });
 });

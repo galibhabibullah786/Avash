@@ -140,9 +140,6 @@ if (target === 'dev') {
   if (rootEnv['UPSTASH_REDIS_REST_URL']) apiVars['UPSTASH_REDIS_REST_URL'] = rootEnv['UPSTASH_REDIS_REST_URL'];
   if (rootEnv['UPSTASH_REDIS_REST_TOKEN']) apiVars['UPSTASH_REDIS_REST_TOKEN'] = rootEnv['UPSTASH_REDIS_REST_TOKEN'];
   apiVars['TURNSTILE_SECRET_KEY'] = rootEnv['TURNSTILE_SECRET_KEY'] || LOCAL_TURNSTILE_SECRET_KEY;
-  if (rootEnv['CLOUDINARY_CLOUD_NAME']) apiVars['CLOUDINARY_CLOUD_NAME'] = rootEnv['CLOUDINARY_CLOUD_NAME'];
-  if (rootEnv['CLOUDINARY_API_KEY']) apiVars['CLOUDINARY_API_KEY'] = rootEnv['CLOUDINARY_API_KEY'];
-  if (rootEnv['CLOUDINARY_API_SECRET']) apiVars['CLOUDINARY_API_SECRET'] = rootEnv['CLOUDINARY_API_SECRET'];
 } else {
   const SERVER_SECRETS = [
     'SUPABASE_URL',
@@ -155,9 +152,6 @@ if (target === 'dev') {
     'ENVIRONMENT',
     'CORS_ALLOWED_ORIGINS',
     'CORS_PREVIEW_ORIGIN_SUFFIX',
-    'CLOUDINARY_CLOUD_NAME',
-    'CLOUDINARY_API_KEY',
-    'CLOUDINARY_API_SECRET',
   ];
   for (const key of SERVER_SECRETS) {
     if (rootEnv[key]) {

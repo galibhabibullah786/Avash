@@ -66,24 +66,31 @@ describe('rate-limit middleware — ip strategy', () => {
     expect(third.headers.get('Retry-After')).toBe('60');
   });
 
-  test('Redis unreachable fails closed (429), never lets the request through', async () => {
+  test('Redis unreachable falls back gracefully to in-memory sliding window', async () => {
     const app = new Hono<AppEnv>();
     app.use('*', requestId());
     app.get(
       '/guarded',
       rateLimit({
-        guard: 'test-guard',
+        guard: 'test-fallback-guard',
         window: 'minute',
         windowSeconds: 60,
-        limit: 5,
+        limit: 2,
         keyStrategy: 'ip',
         redisFactory: () => unreachableRedis(),
       }),
       (c) => c.json({ ok: true })
     );
 
-    const res = await app.request('/guarded', { headers: { 'CF-Connecting-IP': '203.0.113.9' } }, env);
-    expect(res.status).toBe(429);
+    const headers = { 'CF-Connecting-IP': '203.0.113.9' };
+    const first = await app.request('/guarded', { headers }, env);
+    const second = await app.request('/guarded', { headers }, env);
+    const third = await app.request('/guarded', { headers }, env);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(third.status).toBe(429);
+    expect(third.headers.get('Retry-After')).toBe('60');
   });
 });
 

@@ -1,3 +1,4 @@
+import './polyfill';
 import { Hono } from 'hono';
 import { handleError, buildGenericErrorBody } from '@avash/logger';
 import type { AppEnv } from './types';
@@ -12,11 +13,11 @@ import { symptomCheck } from './routes/symptom-check';
 import { reports } from './routes/reports';
 import { resources } from './routes/resources';
 import { adminUsers } from './routes/admin-users';
-import { uploads } from './routes/uploads';
 import { alerts } from './routes/alerts';
 
 import { auditLog } from './routes/audit-log';
 import { chat } from './routes/chat';
+import { inngestRoute } from './routes/inngest';
 
 const app = new Hono<AppEnv>();
 
@@ -44,11 +45,11 @@ app.route('/api/symptom-check', symptomCheck); // rate-limit, quota-guard
 app.route('/api/reports', reports); // turnstile+rate-limit (POST breeding-site), rate-limit only (POST photo — see rateLimit.ts's REPORT_PHOTO_UPLOAD_RATE_LIMIT comment), auth+rate-limit (PATCH verify)
 app.route('/api/resources', resources); // public GETs; auth+rate-limit on PATCH blood/:id
 app.route('/api/admin/users', adminUsers); // auth(roles:manage)+rate-limit on every method
-app.route('/api/uploads/signature', uploads); // auth (any role)+rate-limit; signed direct-to-Cloudinary (ADR-015)
 app.route('/api/alerts', alerts); // auth+rate-limit; CRUD only, push send lives in ml/serving/predict.py (decision C)
 
 app.route('/api/admin/audit-log', auditLog); // auth(roles:manage)+rate-limit
 app.route('/api/chat', chat);
+app.route('/api/inngest', inngestRoute);
 
 app.notFound((c) => {
   const origin = c.req.header('Origin');

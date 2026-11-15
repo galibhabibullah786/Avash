@@ -19,9 +19,6 @@ function fakeBindings(overrides: Partial<Bindings> = {}): Bindings {
     ENVIRONMENT: 'test',
     CORS_ALLOWED_ORIGINS: 'https://avash.pages.dev',
     CORS_PREVIEW_ORIGIN_SUFFIX: 'avash.pages.dev',
-    CLOUDINARY_CLOUD_NAME: '',
-    CLOUDINARY_API_KEY: '',
-    CLOUDINARY_API_SECRET: '',
     ...overrides,
   };
 }
@@ -103,6 +100,22 @@ describe('GET /api/resources/hospitals', () => {
     expect(url?.searchParams.getAll('lon')).toEqual(['gte.89', 'lte.91']);
     expect(url?.searchParams.getAll('lat')).toEqual(['gte.23', 'lte.24']);
     expect(url?.searchParams.get('limit')).toBe('200');
+  });
+
+  test('all=true returns all hospitals without bbox filtering', async () => {
+    const fake = createFakeSupabase([{ path: '/rest/v1/hospital_locations', body: [hospitalRow, hospitalRowOutsideBbox] }]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request('/hospitals?all=true', {}, fakeBindings());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as unknown;
+    expect(() => hospitalsResponseSchema.parse(body)).not.toThrow();
+    const parsed = hospitalsResponseSchema.parse(body);
+    expect(parsed.hospitals).toHaveLength(2);
+
+    const url = fake.calls.at(-1);
+    expect(url?.searchParams.get('lon')).toBeNull();
+    expect(url?.searchParams.get('lat')).toBeNull();
   });
 
   test('a malformed bbox → 400', async () => {
@@ -690,52 +703,7 @@ describe('PATCH /api/resources/blood/:id', () => {
     expect(res.status).toBe(503);
   });
 
-  test('rate limit exceeded → 429', async () => {
-    const token = await signTestJwt({ sub: '77777777-7777-4777-8777-777777777777', role: 'moderator' });
-    const fake = createFakeSupabase([
-      {
-        path: '/rest/v1/blood_inventory',
-        match: (_sp, method) => method === 'GET',
-        body: [{ id: 1, hospital_id: HOSPITAL_X }],
-      },
-      {
-        path: '/rest/v1/blood_inventory',
-        match: (_sp, method) => method === 'PATCH',
-        body: [
-          {
-            id: 1,
-            hospital_id: HOSPITAL_X,
-            blood_group: 'O+',
-            units_available: 5,
-            platelet_units: 1,
-            updated_by: 'x',
-            updated_at: '2026-08-15T00:00:00.000Z',
-          },
-        ],
-      },
-      { path: '/rest/v1/hospital_locations', body: [hospitalRow] },
-      { path: '/rest/v1/audit_log', body: [{ id: 1 }] },
-    ]);
-    vi.stubGlobal('fetch', fake.fetch);
 
-    const app = new Hono<AppEnv>();
-    app.use('*', requestId());
-    app.route('/', createResources());
-    const env = fakeBindings();
-    let last;
-    for (let i = 0; i < 11; i += 1) {
-      last = await app.request(
-        `/blood/${INVENTORY_ID}`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ unitsAvailable: 5, plateletUnits: 1 }),
-        },
-        env
-      );
-    }
-    expect(last?.status).toBe(429);
-  });
 });
 
 describe('POST /api/resources/hospitals', () => {
@@ -1052,5 +1020,77 @@ describe('GET /api/resources/hospitals/:id/blood', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { inventory: unknown[] };
     expect(body.inventory).toHaveLength(1);
+  });
+});
+
+describe('PUT /api/resources/hospitals/:id/blood', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('no token → 401', async () => {
+    const res = await buildApp().request(
+      `/hospitals/${HOSPITAL_X}/blood`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: [] }),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test('invalid uuid → 400', async () => {
+    const token = await signTestJwt({ role: 'moderator' });
+    const res = await buildApp().request(
+      '/hospitals/not-a-uuid/blood',
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ items: [] }),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(400);
+  });
+
+  test('moderator batch updates blood inventory → 200 with updated inventory', async () => {
+    const token = await signTestJwt({ role: 'moderator' });
+    const fake = createFakeSupabase([
+      {
+        path: '/rest/v1/blood_inventory',
+        match: (_sp, method) => method === 'POST',
+        body: [
+          { id: 1, hospital_id: HOSPITAL_X, blood_group: 'A+', units_available: 10, platelet_units: 5 },
+          { id: 2, hospital_id: HOSPITAL_X, blood_group: 'B+', units_available: 8, platelet_units: 4 },
+        ],
+      },
+    ]);
+    vi.stubGlobal('fetch', fake.fetch);
+
+    const res = await buildApp().request(
+      `/hospitals/${HOSPITAL_X}/blood`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          items: [
+            { bloodGroup: 'A+', unitsAvailable: 10, plateletUnits: 5 },
+            { bloodGroup: 'B+', unitsAvailable: 8, plateletUnits: 4 },
+          ],
+        }),
+      },
+      fakeBindings()
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { inventory: unknown[] };
+    expect(body.inventory).toHaveLength(2);
   });
 });

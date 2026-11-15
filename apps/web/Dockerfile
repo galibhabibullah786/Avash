@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-#
 # apps/web container image (ADR-012).
 #
 # THE BUILD CONTEXT IS THE REPOSITORY ROOT, not apps/web:

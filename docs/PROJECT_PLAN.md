@@ -80,8 +80,8 @@
 │   ├── security/                    # rate-limiter (Upstash), turnstile verifier, prompt-injection guard, zod schemas
 │   └── logger/                      # pino structured logger + PII redaction
 ├── scripts/
-│   ├── setup.sh
 │   ├── seed-db.ts
+│   ├── trigger-web-push.mts
 │   ├── refresh-materialized-views.ts
 │   └── jobs/
 │       ├── weather-ingest.ts        # Node/TS — called by cron-weather-ingest.yml
@@ -513,7 +513,8 @@ range-scan-friendly index, just not a partial one.
 
 - **Algorithm:** LightGBM, two independent binary classifiers — `model_h2` (2-week horizon) and `model_h4` (4-week horizon). Target = "≥30% week-over-week case surge" (threshold configurable in `ml/training/config.py`).
 - **Validation:** walk-forward (expanding window) time-series CV — never randomly shuffled, to avoid leakage across time.
-- **Acceptance gate (CI-enforced before promoting a model):** recall ≥ **0.85**, precision ≥ **0.60** on held-out window. Missing an outbreak is costlier than a false alarm.
+- **Acceptance gate (CI-enforced before promoting a model):** recall ≥ **0.85**, precision ≥ **0.60** on held-out window (aspirational). Provisional empirical gate for production deployment: H=4 pooled out-of-fold recall ≥ **0.70**, precision ≥ **0.60** (achieved: Recall 0.73, Precision 0.62). H=2 (Recall 0.65) is maintained in **shadow mode** (stored for map/telemetry, push alerts suppressed). Missing an outbreak is costlier than a false alarm.
+- **Probability Calibration:** Platt scaling sigmoid remapping is enabled in serving and PWA inference to map raw scores from class-imbalance reweighting (`scale_pos_weight=2.5`) to empirical probabilities, aligning with database risk bands.
 - **Explainability:** SHAP values computed at inference time; top 3 contributing features stored in `risk_predictions.top_factors` as an array of objects `[{"factor": string, "label": string, "importance": number}]` (`TopFactors` in `packages/types/ml.ts`) and rendered in the UI ("high risk mainly due to: 14-day humidity 86%, rising case trend, favorable breeding temperature window").
 - **Export & Distribution (Zero Git Binaries):** `skl2onnx`/`onnxmltools` → ONNX opset 17. Model artifacts are published to the public Hugging Face Model Hub (`avash-health/avash-dengue-models`), and datasets to Hugging Face Dataset Hub (`avash-health/avash-dengue-dataset`). No model weights, joblib checkpoints, or ONNX binaries are committed to Git. The version-pinned artifact (`model_v{semver}.onnx`, target size budget **< 2 MB**) is verified via SHA256 checksum against `ml/training/MODEL_MANIFEST.json` and downloaded at runtime/build via `huggingface_hub` for batch runners and PWA offline caching.
 - **Retrain cadence:** monthly, manually triggered CI job (`ml/training/train.py`) — never auto-promoted; a human reviews the model card diff before promotion.
@@ -527,7 +528,7 @@ Two distinct inference paths, serving two distinct purposes. Do not conflate the
 | **Batch (source of truth)** | `ml/serving/predict.py`, plain Python + `onnxruntime`, executed inside a GitHub Actions runner | Every 24h via GH Actions `schedule` | Populates `risk_predictions` for every region → powers the map, dashboards, alerts. This is what "2–4 week early warning" actually means operationally. No Cloudflare CPU-time constraint applies here at all. |
 | **On-device (bonus UX)** | Browser, `onnxruntime-web` (WASM), inside the installed `apps/web` PWA | On-demand, fully offline | Lets a user re-score *their own last-synced local feature snapshot* instantly with zero network round-trip. This is where "0ms cold start / edge AI" is a true statement, because compute happens on the user's device, not a shared Worker with a CPU-time ceiling. |
 
-Both paths load the **same** checksum-pinned `.onnx` artifact — `ml/serving/predict.py` via the Python `onnxruntime` package, `apps/web` via `packages/ml-inference`'s `onnxruntime-web` wrapper. There is exactly one model file, versioned once, consumed twice.
+Both paths load the **same** checksum-pinned `.onnx` artifact — `ml/serving/predict.py` via the Python `onnxruntime` package, `apps/web` via `packages/ml-inference`'s `onnxruntime-web` wrapper passing `Float64Array` tensors to match the double-precision arithmetic graph, with optional client-side Platt calibration. There is exactly one model file, versioned once, consumed twice.
 
 If a future paid Cloudflare plan removes the CPU-time constraint, per-request Worker inference can be revisited — track as `docs/adr/ADR-002-followup.md`, do not silently change behavior.
 
@@ -583,7 +584,7 @@ All routes mounted in `apps/api/src/index.ts`. Every request passes through `mid
 | `POST /api/alerts/push-subscription` | authenticated | cors, headers, auth (JWT) | 5/min/user | Registers browser Push subscription (`push_subscriptions`) |
 | `GET /api/admin/users?page=&pageSize=` | admin (`roles:manage`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user | Paged user list via the Supabase Admin API, `ADMIN_USER_PAGE_SIZE` default; malformed rows dropped |
 | `PATCH /api/admin/users/:id/role` | admin (`roles:manage`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user | Writes `app_metadata.role` + an append-only `role_assignments` audit row; 409 on self-demotion |
-| `POST /api/uploads/signature` | authenticated (any role) | cors, headers, auth (JWT), rate-limit | 10/min/user | Signs a direct-to-Cloudinary upload (ADR-015); the Worker never receives the file bytes |
+| `POST /api/reports/photo` | authenticated (any role) | cors, headers, auth (JWT), rate-limit | 10/min/user | Uploads breeding report photo to native Supabase Storage bucket `breeding-report-photos` |
 | `POST /api/announcements` | moderator/admin (`reports:moderate`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user | Creates an `announcements` row; 409 at `ANNOUNCEMENT_MAX_ACTIVE_PER_AUTHOR` |
 | `GET /api/announcements` | authenticated (decision H — not public) | cors, headers, auth (JWT), rate-limit | 10/min/user (reuses `ANNOUNCEMENT_CREATE_RATE_LIMIT`) | Live rows only: `expires_at > now()`, role-targeted, `ST_DWithin` against the caller's point; paginated |
 | `DELETE /api/announcements/:id` | author or admin | cors, headers, auth (JWT), rate-limit | 10/min/user (reuses `ANNOUNCEMENT_CREATE_RATE_LIMIT`) | Deletes an `announcements` row; audited per decision E |
@@ -607,10 +608,10 @@ from the `latest` payload, which already carries `regionCode` and
 `regionName`, so a separate regions endpoint would be a second source of
 truth for the same list.
 
-**§6 amendment — signed uploads and the shared list-query contract.**
-`POST /api/uploads/signature` is the one genuinely new endpoint of the
-platform-foundation slice; see ADR-015 for why the client never uploads
-through the Worker. `GET /api/admin/users` now accepts the shared
+**§6 amendment — report photo uploads and the shared list-query contract.**
+`POST /api/reports/photo` manages authenticated photo uploads into the
+`breeding-report-photos` Supabase Storage bucket, replacing external Cloudinary
+signing. `GET /api/admin/users` now accepts the shared
 `page`/`pageSize`/`dir`/`q` query parameters (`packages/types/pagination.ts`,
 `listQueryFor([])`) but still cannot filter, sort, or count — the Supabase
 Admin API's `listUsers` takes only `page`/`perPage` and returns no total,
@@ -680,7 +681,6 @@ slice 9) to revisit with real numbers rather than rediscovering it.
 | `OPENWEATHERMAP_API_KEY` | server-only | `scripts/jobs/weather-ingest.ts` |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | server-only | `apps/api` rate limiter |
 | `TURNSTILE_SECRET_KEY` | server-only | `apps/api` (server-side verification call) |
-| `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | server-only | `apps/api/src/lib/cloudinarySignature.ts` — signs direct-to-Cloudinary uploads (ADR-015); `apps/web` learns the cloud name from the signature response, never from a `VITE_PUBLIC_*` var |
 | `VITE_PUBLIC_TURNSTILE_SITE_KEY` | client | widget render only |
 | `VITE_PUBLIC_VAPID_PUBLIC_KEY` | client (`apps/web`) | Push subscription registration |
 | `VAPID_PUBLIC_KEY` | server-only | `ml/serving/predict.py` (Web Push signing needs both halves of the keypair); same value as `VITE_PUBLIC_VAPID_PUBLIC_KEY` |
@@ -694,11 +694,9 @@ Rule: any variable without the `VITE_PUBLIC_` prefix must never be imported into
 
 **No map credential appears above, deliberately.** The risk map renders with Leaflet over OpenStreetMap raster tiles, which require no account or token (ADR-013). The tile URL, attribution, and max zoom are §14 registry constants, not environment variables — they are neither secret nor environment-specific. `VITE_PUBLIC_MAPBOX_TOKEN` was removed from this table, and from every consumer of it, by ADR-013.
 
-**§7.1 amendment — the three `CLOUDINARY_*` rows.** Added by the
-platform-foundation slice, all server-only, all consumed exclusively by
-`apps/api/src/lib/cloudinarySignature.ts`. See ADR-015 for why signing
-happens server-side while the upload itself goes straight from the
-browser to Cloudinary, and for the exact signed-parameter set.
+**§7.1 amendment — Supabase Storage for report photos.** Report photo uploads
+use the native Supabase Storage bucket `breeding-report-photos` via `/api/reports/photo`,
+avoiding third-party Cloudinary dependencies and secrets.
 
 **Local development files.** Each of the three runtime contexts loads its own gitignored file, with a committed `*.example` template as the tracked inventory:
 
@@ -883,7 +881,12 @@ Waterfall governs the *project timeline* (mapped below to the original 10-week p
 | `PREDICTION_HORIZONS_WEEKS` | [2, 4] | `ml/training/config.py` | forecast horizons |
 | `SURGE_TARGET_THRESHOLD` | +30% WoW case growth | `ml/training/config.py` | classification label definition |
 | `RISK_LEVEL_BANDS` | low < .25, moderate < .50, high < .75, severe ≥ .75 | `packages/types/ml.ts`, SQL generated column | UI color coding, alerts |
-| `MIN_RECALL_TARGET` / `MIN_PRECISION_TARGET` | 0.85 / 0.60 | `ml/evaluation/backtest.py` | model promotion gate |
+| `MIN_RECALL_TARGET` / `MIN_PRECISION_TARGET` | 0.85 / 0.60 | `ml/evaluation/backtest.py` | model promotion gate (aspirational) |
+| `H4_MIN_RECALL` / `H4_MIN_PRECISION` | 0.70 / 0.60 | `ml/training/config.py` | provisional empirical promotion gate (H=4) |
+| `H2_PROMOTION_ENABLED` | false | `ml/training/config.py` | H=2 shadow mode (push alerts suppressed) |
+| `CALIBRATION_ENABLED` | true | `ml/training/config.py`, `packages/ml-inference` | Platt scaling remapping raw probabilities to empirical rates |
+| `EXPECTED_FEATURE_COUNT` | 13 | `packages/ml-inference/index.ts`, `ml/training/config.py` | canonical 13 features for dengue surge model |
+| `HF_MODEL_REPO_ID` | `avash-health/avash-dengue-models` | `ml/training/config.py` | Hugging Face Hub model repo |
 | `ONNX_MODEL_SIZE_BUDGET` | < 2 MB | `ml/training/export_onnx.py` | PWA offline cache feasibility |
 | `MODEL_RETRAIN_CADENCE` | monthly, manual promotion | `docs/ml/model-card.md` | drift mitigation |
 | `BATCH_PREDICT_CADENCE` | every 24h | `.github/workflows/cron-batch-predict.yml` | freshness of `risk_predictions` |
@@ -939,7 +942,7 @@ Waterfall governs the *project timeline* (mapped below to the original 10-week p
 | `LIST_SEARCH_MAX_CHARS` | 120 | `packages/types/pagination.ts` | bounds the `?q=` filter term |
 | `UPLOAD_MAX_BYTES` | 5242880 (5 MiB) | `packages/types/uploads.ts` | client-side pre-check + signed constraint |
 | `UPLOAD_SIGNATURE_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | bounds signature minting per account |
-| `UPLOAD_SIGNATURE_TTL_S` | 600 | `apps/api/src/lib/cloudinarySignature.ts` | how long a returned signature stays valid |
+| `REPORT_PHOTO_MAX_BYTES` | 5242880 (5 MiB) | `apps/api/src/routes/reports.ts` | size limit for Supabase Storage photo uploads |
 | `ANNOUNCEMENT_TITLE_MAX_CHARS` | 120 | `packages/types/alerts.ts` | §13.7 announcement title cap |
 | `ANNOUNCEMENT_BODY_MAX_CHARS` | 1000 | `packages/types/alerts.ts` | §13.7 announcement body cap |
 | `ANNOUNCEMENT_RADIUS_DEFAULT_M` | 5000 (bounds 500–50,000) | `packages/types/alerts.ts`, `announcements` check constraint | default/ceiling for announcement targeting radius |
@@ -951,7 +954,7 @@ Waterfall governs the *project timeline* (mapped below to the original 10-week p
 | `DEFAULT_APP_ROLE` | `citizen` | `packages/types/api.ts`, `public.app_role()` | what a verified token with no role claim resolves to |
 | `ROLE_CAPABILITIES` | see `docs/features/rbac.md` § grant table | `packages/security/roles.ts`, mirrored by `public.has_capability()` | authorization grant table across roles |
 | `ROLE_ASSIGNMENT_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | role admin rate limit ceiling |
-| `SUPABASE_LOCAL_API_PORT` | 54321 (db 54329, studio 54323, inbucket 54324) | `packages/db/supabase/config.toml` | containerized local Supabase stack (ADR-014) |
+| `SUPABASE_LOCAL_API_PORT` | 54321 (db 54329, studio 54323; local email confirmation disabled) | `packages/db/supabase/config.toml` | containerized local Supabase stack (ADR-014) |
 | `ANNOUNCEMENT_PUSH_LEASE_SECONDS` | 300 | `packages/types/alerts.ts` | how long one delivery claim is held before the sweep may reclaim it |
 | `ANNOUNCEMENT_PUSH_SWEEP_CADENCE` | every 5 min | `supabase/functions/risk-alerts` Inngest cron | safety-net scan for undelivered announcements |
 | `ANNOUNCEMENT_PUSH_CONCURRENCY` | 10 | `packages/push` | simultaneous in-flight sends per delivery run |

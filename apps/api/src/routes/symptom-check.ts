@@ -19,6 +19,8 @@ import {
 } from '@avash/security';
 import { rateLimit } from '../middleware/rate-limit';
 import { callGeminiStructured } from '../lib/geminiClient';
+import { createSupabaseAdmin } from '../lib/supabaseAdmin';
+import { dispatchInngestLogEvent } from '../lib/inngestDispatcher';
 import type { AppEnv, Bindings } from '../types';
 
 const SYMPTOM_SYSTEM_INSTRUCTION =
@@ -148,6 +150,29 @@ export function createSymptomCheck(options?: CreateSymptomCheckOptions) {
         guidance,
         requestId,
       });
+
+      try {
+        const supabase = createSupabaseAdmin(c.env);
+        const logPayload = {
+          request_id: requestId,
+          outcome,
+          checklist: clientChecklist || {},
+          qa_pairs: qaPairs || [],
+          guidance,
+        };
+        const bgTask = dispatchInngestLogEvent('ai/symptom-check.logged', logPayload, c.env, supabase);
+        if (c.env.ENVIRONMENT === 'test') {
+          await bgTask;
+        } else {
+          try {
+            c.executionCtx.waitUntil(bgTask);
+          } catch {
+            void bgTask;
+          }
+        }
+      } catch {
+        // Non-blocking background log
+      }
 
       return c.json(responseBody, 200);
     })

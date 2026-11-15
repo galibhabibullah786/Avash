@@ -6,11 +6,8 @@ import { useRiskMap } from "../features/risk/useRiskMap";
 import { useRegionRisk } from "../features/risk/useRegionRisk";
 import { useRiskMapLayer } from "../features/risk/useRiskMapLayer";
 import { useRiskReportsLayer } from "../features/risk/useRiskReportsLayer";
-import {
-  RISK_LEVEL_BAND_STYLES,
-} from "../features/risk/riskLevelBands";
 import { RiskMapLegend } from "../features/risk/RiskMapLegend";
-import { formatFactor } from "../features/risk/riskFormatters";
+import { RiskDetailPanel } from "../features/risk/RiskDetailPanel";
 
 const HORIZON_OPTIONS: Array<2 | 4> = [2, 4];
 
@@ -144,95 +141,12 @@ export default function RiskMap() {
       </section>
 
       {activeRegionId ? (
-        <section
-          className="analysis-grid max-md:!flex max-md:!flex-col"
-          aria-label="Region risk detail"
-          data-testid="risk-detail-panel"
-          style={{ marginTop: "30px" }}
-        >
-          {regionRisk.isLoading ? (
-            <div className="chart-panel">
-              <p className="checker-time" data-testid="status-loading">
-                এলাকার বিস্তারিত তথ্য লোড হচ্ছে…
-              </p>
-            </div>
-          ) : regionRisk.isError ? (
-            <div className="chart-panel">
-              <p className="alert alert--error" data-testid="status-error">
-                এই মুহূর্তে বিস্তারিত তথ্য লোড করা যায়নি।
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="chart-panel">
-                <div className="panel-heading">
-                  <div>
-                    <p className="eyebrow">ঝুঁকি পূর্বাভাস</p>
-                    <h2>{activeRegionName}</h2>
-                  </div>
-                </div>
-                <div className="condition-list">
-                  {(regionRisk.data?.predictions ?? []).length === 0 ? (
-                    <p>এই এলাকার জন্য কোনো পূর্বাভাস নেই।</p>
-                  ) : (
-                    (regionRisk.data?.predictions ?? []).map((prediction) => (
-                      <div className="condition" key={prediction.horizonWeeks}>
-                        <div>
-                          <b>{prediction.horizonWeeks === 2 ? "২ সপ্তাহ" : "৪ সপ্তাহ"} আগাম পূর্বাভাস</b>
-                          <small>
-                            {(prediction.topFactors ?? []).length === 0
-                              ? "কোনো বিশেষ কারণ চিহ্নিত করা যায়নি।"
-                              : (prediction.topFactors ?? [])
-                                .map((f) => formatFactor(f.feature, f.direction))
-                                .join(", ")}
-                          </small>
-                        </div>
-                        <strong>
-                          {RISK_LEVEL_BAND_STYLES[prediction.riskLevel]
-                            ?.label ?? prediction.riskLevel}{" "}
-                          ({(prediction.riskScore * 100).toFixed(0)}%)
-                        </strong>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="signals-panel">
-                <div className="panel-heading">
-                  <div>
-                    <p className="eyebrow">বর্তমান অবস্থা</p>
-                    <h2>সর্বশেষ আবহাওয়া</h2>
-                  </div>
-                </div>
-                <div className="condition-list">
-                  {regionRisk.data?.latestWeather ? (
-                    <>
-                      <div className="condition">
-                        <div>
-                          <b>তাপমাত্রা</b>
-                        </div>
-                        <strong>
-                          {regionRisk.data.latestWeather.tempMeanC ?? "—"}°C
-                        </strong>
-                      </div>
-                      <div className="condition">
-                        <div>
-                          <b>আর্দ্রতা</b>
-                        </div>
-                        <strong>
-                          {regionRisk.data.latestWeather.humidityPct ?? "—"}%
-                        </strong>
-                      </div>
-                    </>
-                  ) : (
-                    <p>আবহাওয়ার কোনো তথ্য পাওয়া যায়নি।</p>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-        </section>
+        <RiskDetailPanel
+          activeRegionName={activeRegionName}
+          isLoading={regionRisk.isLoading}
+          isError={regionRisk.isError}
+          data={regionRisk.data}
+        />
       ) : null}
     </main>
   );

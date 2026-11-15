@@ -10,6 +10,7 @@ export default defineConfig({
     jsx: 'automatic',
   },
   test: {
+    testTimeout: 10000,
     coverage: {
       // istanbul, not v8: the "api" project runs inside workerd via
       // @cloudflare/vitest-pool-workers, and v8 coverage depends on

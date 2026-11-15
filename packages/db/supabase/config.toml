@@ -90,3 +90,7 @@ double_confirm_changes = true
 
 [analytics]
 enabled = false
+
+[edge_runtime]
+enabled = true
+port = 54321

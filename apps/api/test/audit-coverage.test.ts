@@ -49,6 +49,9 @@ const ALLOWED_UNAUDITED_ROUTES: Record<string, string> = {
   'symptom-check.ts':
     'POST /api/symptom-check only classifies free text via Gemini into a checklist and returns a triage ' +
     'outcome — it writes nothing to any table, so there is no state change to audit.',
+  'inngest.ts':
+    'Inngest coordination endpoint for function registration (PUT) and background job execution (POST). ' +
+    'Individual functions handle their own audit logging where applicable.',
 };
 
 function routeFileName(modulePath: string): string {

@@ -19,8 +19,11 @@ export default function Resources() {
   const geolocation = useGeolocation();
   const [bloodGroup, setBloodGroup] = useState<BloodGroup>("O+");
   const [useNearby, setUseNearby] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const handleToggleNearby = () => {
+    setCurrentPage(1);
     if (!useNearby) {
       geolocation.request();
       setUseNearby(true);
@@ -69,6 +72,14 @@ export default function Resources() {
     });
   }, [search.data, liveOverrides]);
 
+  const totalResults = results.length;
+  const totalPages = Math.max(1, Math.ceil(totalResults / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedResults = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return results.slice(start, start + pageSize);
+  }, [results, safePage, pageSize]);
+
   return (
     <main className="inner-page">
       <div className="inner-page__intro">
@@ -86,9 +97,10 @@ export default function Resources() {
               id="blood-group-select"
               data-testid="blood-group-select"
               value={bloodGroup}
-              onChange={(event) =>
-                setBloodGroup((event?.target?.value as BloodGroup) ?? "O+")
-              }
+              onChange={(event) => {
+                setBloodGroup((event?.target?.value as BloodGroup) ?? "O+");
+                setCurrentPage(1);
+              }}
             >
               {BLOOD_GROUPS.map((group) => (
                 <option key={group} value={group}>
@@ -150,7 +162,72 @@ export default function Resources() {
           কোনো হাসপাতালে {bloodGroup} রক্তের মজুদের তথ্য পাওয়া যায়নি।
         </p>
       ) : (
-        <ResourceTable results={results} />
+        <>
+          <ResourceTable results={paginatedResults} />
+          {results.length > 0 && (
+            <div
+              data-testid="resource-pagination"
+              className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 px-2 border-t border-[var(--color-border)] mt-4"
+            >
+              <div className="text-sm text-[var(--color-text-muted)]">
+                মোট <span className="font-semibold text-[var(--color-text)]">{results.length}</span>টি ফলাফলের মধ্যে{' '}
+                <span className="font-semibold text-[var(--color-text)]">
+                  {(safePage - 1) * pageSize + 1}
+                </span>{' '}
+                থেকে{' '}
+                <span className="font-semibold text-[var(--color-text)]">
+                  {Math.min(safePage * pageSize, results.length)}
+                </span>{' '}
+                দেখানো হচ্ছে
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <label htmlFor="resource-page-size" className="text-xs text-[var(--color-text-muted)]">
+                    প্রতি পৃষ্ঠায়:
+                  </label>
+                  <select
+                    id="resource-page-size"
+                    data-testid="resource-page-size"
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="text-xs px-2 py-1 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+                  >
+                    <option value={5}>৫</option>
+                    <option value={10}>১০</option>
+                    <option value={25}>২৫</option>
+                    <option value={50}>৫০</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="pagination-prev"
+                    onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                    disabled={safePage <= 1}
+                    className="px-3 py-1.5 rounded text-sm font-semibold border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-40 disabled:cursor-not-allowed transition"
+                  >
+                    পূর্ববর্তী
+                  </button>
+                  <span className="text-sm font-medium text-[var(--color-text)] px-2">
+                    {safePage} / {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="pagination-next"
+                    onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                    disabled={safePage >= totalPages}
+                    className="px-3 py-1.5 rounded text-sm font-semibold border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-40 disabled:cursor-not-allowed transition"
+                  >
+                    পরবর্তী
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </main>
   );

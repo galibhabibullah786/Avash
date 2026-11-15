@@ -1,262 +1,211 @@
-"""Proximity match + Web Push delivery for a region crossing into high/severe risk.
+"""Web Push dispatcher for high/severe risk crossings (batch job only).
 
-ADR-007: this module talks to Supabase directly with the service-role key
-(the same client `ml/serving/predict.py` already holds for `risk_predictions`)
-— never through an `apps/api` HTTP endpoint. ADR-002: this only ever runs
-inside the GitHub Actions batch job, never per-request.
-
-`docs/PROJECT_PLAN.md` §4 specifies the match as `ST_DWithin(alert_subscriptions.geom,
-region_centroid, alert_subscriptions.radius_m)`. PostgREST — the API
-`supabase-py` talks to — cannot express `ST_DWithin` as a filter; the
-existing pattern for pushing a spatial predicate like that into SQL is a
-`security invoker` database function owned by a migration (see
-`public.blood_within_radius` in
-`packages/db/supabase/migrations/20260815000012_app_role_and_resource_reads.sql`).
-Adding a new migration is out of scope for this slice, so the match is
-computed here instead: fetch active `alert_subscriptions`, decode each
-row's stored `geom` point, and keep the ones within a geodesic
-(great-circle) distance of the region centroid — the same notion of
-"within" that PostGIS's geography-cast `ST_DWithin` uses. If a future
-slice adds the RPC function, this module's `find_matching_push_targets`
-is the one place that would switch to calling it.
+H=2 is SHADOW: horizon-2 rows are NEVER dispatched (they are computed and stored).
+Push transports are injectable; tests use FakeTransport. pywebpush is imported
+lazily only by WebPushTransport, so unit tests need neither network nor keys.
 """
-
 from __future__ import annotations
 
-import json
 import logging
-import math
-from dataclasses import dataclass
-from typing import Any, Iterable
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
-from pywebpush import WebPushException, webpush
+from ml.training import config
 
-logger = logging.getLogger(__name__)
-
-# ALERT_PROXIMITY_RADIUS_DEFAULT_M ceiling (docs/PROJECT_PLAN.md §14,
-# docs/constants-registry.md). The `alert_subscriptions.radius_m` check
-# constraint already bounds stored values to 100-20000, but the match
-# below re-clamps defensively rather than trusting the stored value to
-# still satisfy that constraint by the time this runs.
-ALERT_PROXIMITY_RADIUS_CEILING_M = 20_000
-
-_EARTH_RADIUS_M = 6_371_000.0
-
-# How long a push service should hold an undelivered message for a device
-# that is offline, asleep, or has the browser closed (RFC 8030 `TTL`).
-#
-# NOT zero, which is what `pywebpush` sends when the caller omits it. TTL
-# 0 means "deliver this instant or throw it away", so every subscriber
-# whose laptop was shut or phone was idle silently got nothing — and
-# Windows' push service (WNS) rejects TTL 0 outright, dropping the
-# message with `400 Ttl value conflicts with X-WNS-Cache-Policy`, so
-# every Edge and Windows subscriber failed 100% of the time regardless.
-# Both were observed against real endpoints, not inferred.
-#
-# 24h matches BATCH_PREDICT_CADENCE: a risk alert that has not reached a
-# device before the next scheduled run has been superseded by that run,
-# so holding it longer would deliver stale news. Comfortably inside every
-# push service's own ceiling (FCM 4 weeks, WNS 30 days).
-PUSH_TTL_SECONDS = 86_400
+log = logging.getLogger(__name__)
+ALERTED_BANDS = ("high", "severe")
 
 
-def haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Great-circle distance in meters between two WGS84 points."""
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
-    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-    a = min(1.0, max(0.0, a))  # guard float rounding at/near antipodal points
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return _EARTH_RADIUS_M * c
+def band_for_score(score: float) -> str:
+    """Display band for a 0..1 score. The STORED band comes from the DB generated
+    column — this helper is for dispatch decisions and console display only."""
+    for ceiling, band in config.RISK_BANDS:
+        if score < ceiling:
+            return band
+    return "severe"
 
 
-def decode_point_geojson(geom: Any) -> tuple[float, float]:
-    """Decode a PostGIS `geometry(Point, 4326)` returned by PostgREST.
-
-    PostGIS registers a `geometry -> json`/`jsonb` cast that emits GeoJSON
-    (the same `ST_AsGeoJSON`-shaped output `apps/api` route handlers already
-    read via `row.geom.coordinates` elsewhere in this codebase), so a plain
-    `select` over a geometry column comes back as a parsed
-    `{"type": "Point", "coordinates": [lon, lat]}` dict, never a raw WKB
-    string — `supabase-py`'s JSON response parsing hands this function a
-    dict, not text.
-
-    Returns `(lon, lat)` to match GeoJSON coordinate order.
-    """
-    if not isinstance(geom, dict) or geom.get("type") != "Point":
-        raise ValueError(f"expected a GeoJSON Point, got {geom!r}")
-    coordinates = geom.get("coordinates")
-    if (
-        not isinstance(coordinates, (list, tuple))
-        or len(coordinates) != 2
-        or not all(isinstance(c, (int, float)) for c in coordinates)
-    ):
-        raise ValueError(f"expected a two-element numeric coordinates array, got {coordinates!r}")
-    lon, lat = coordinates
-    return float(lon), float(lat)
+def band_rank(band: str) -> int:
+    return {"low": 0, "moderate": 1, "high": 2, "severe": 3}[band]
 
 
-@dataclass(frozen=True)
-class PushTarget:
-    """One `push_subscriptions` row to send to."""
-
-    subscription_id: str
-    endpoint: str
-    p256dh: str
-    auth_key: str
-
-
-def find_matching_push_targets(
-    supabase_client: Any,
-    region_centroid_lat: float,
-    region_centroid_lon: float,
-) -> list[PushTarget]:
-    """Active `alert_subscriptions` near the given point, resolved to the
-    `push_subscriptions` rows for those users.
-
-    Two round trips, both filtered server-side as far as PostgREST allows
-    (`active = true`, then `user_id in (...)`); the radius predicate itself
-    is evaluated here per the module docstring.
-
-    The match is always against each subscription's OWN `radius_m`: the
-    subscriber said "tell me about risk within 2km of my home", so the
-    question is whether the region falls inside their circle. (An earlier
-    version of this function took a second caller with a different
-    matching rule; that caller and rule are gone — see git history and
-    `docs/adr/ADR-016-dedicated-notification-service.md` if you're
-    wondering why this docstring used to be longer.)
-    """
-    subs_response = (
-        supabase_client.table("alert_subscriptions")
-        .select("id,user_id,geom,radius_m")
-        .eq("active", True)
-        .execute()
-    )
-    subscriptions = subs_response.data or []
-
-    matched_user_ids: set[str] = set()
-    for row in subscriptions:
-        geom = row.get("geom")
-        user_id = row.get("user_id")
-        radius_m = row.get("radius_m")
-        if not geom or not user_id or radius_m is None:
+def detect_high_severe_crossings(previous: dict[str, float], current_rows: list[dict],
+                                 horizon_weeks: int = 4) -> list[dict]:
+    """Return alert dicts for rows whose band CROSSED INTO high/severe vs previous score.
+    Rows for horizons other than 4 are ignored (H=2 shadow). Rows already in high/severe
+    stay quiet unless they escalate (high->severe)."""
+    crossings = []
+    for row in current_rows:
+        if row["horizon_weeks"] != horizon_weeks:
             continue
-        try:
-            lon, lat = decode_point_geojson(geom)
-        except ValueError as exc:
-            logger.warning("skipping alert_subscription %s — unreadable geom: %s", row.get("id"), exc)
+        score = float(row["risk_score"])
+        band = band_for_score(score)
+        if band not in ALERTED_BANDS:
             continue
-        effective_radius_m = min(radius_m, ALERT_PROXIMITY_RADIUS_CEILING_M)
-        distance_m = haversine_distance_m(region_centroid_lat, region_centroid_lon, lat, lon)
-        if distance_m <= effective_radius_m:
-            matched_user_ids.add(user_id)
+        prev_score = previous.get(row["region"])
+        prev_band = band_for_score(float(prev_score)) if prev_score is not None else "low"
+        if band_rank(band) > band_rank(prev_band):
+            crossings.append({**row, "band": band, "previous_band": prev_band})
+    return crossings
 
-    if not matched_user_ids:
+
+def build_alert_payload(crossing: dict) -> dict:
+    band = crossing["band"]
+    return {
+        "title": f"Dengue risk {band.upper()} — {crossing['region']}",
+        "body": (f"Predicted {crossing['horizon_weeks']}-week surge risk for {crossing['region']} "
+                 f"is {band} ({float(crossing['risk_score']):.2f}). Limit stagnant water and seek "
+                 f"medical advice on symptoms. This is an early-warning notice, not medical advice."),
+        "data": {
+            "region": crossing["region"],
+            "horizon_weeks": crossing["horizon_weeks"],
+            "risk_score": round(float(crossing["risk_score"]), 3),
+            "band": band,
+            "model_version": crossing.get("model_version"),
+            "url": "/risk-map",
+        },
+    }
+
+
+class Transport(Protocol):
+    def send(self, subscription: dict, payload: dict) -> None: ...
+
+
+@dataclass
+class FakeTransport:
+    """Records sends; used by tests and --dry-run."""
+    sent: list[dict] = field(default_factory=list)
+    fail_on: frozenset[str] = frozenset()
+
+    def send(self, subscription: dict, payload: dict) -> None:
+        if subscription.get("id") in self.fail_on:
+            raise RuntimeError(f"fake transport failure for {subscription.get('id')}")
+        self.sent.append({"subscription": subscription, "payload": payload})
+
+
+class WebPushTransport:  # pragma: no cover - requires VAPID keys + network
+    def __init__(self, vapid_private_key: str, vapid_claims_email: str):
+        from pywebpush import webpush  # lazy: not needed for tests
+        self._webpush = webpush
+        self.vapid_private_key = vapid_private_key
+        self.vapid_claims_email = vapid_claims_email
+
+    def send(self, subscription: dict, payload: dict) -> None:
+        import json as _json
+        sub_info = {
+            "endpoint": subscription["endpoint"],
+            "keys": subscription.get("keys") or {
+                "p256dh": subscription.get("p256dh"),
+                "auth": subscription.get("auth_key"),
+            },
+        }
+        self._webpush(
+            subscription_info=sub_info,
+            data=_json.dumps(payload),
+            vapid_private_key=self.vapid_private_key,
+            vapid_claims={"sub": self.vapid_claims_email},
+            ttl=86400,  # PUSH_TTL_SECONDS (24h)
+        )
+
+
+def dispatch_alerts(crossings: list[dict], subscriptions: list[dict], transport: Transport) -> dict:
+    """Best-effort fan-out; a failing subscription never aborts the batch run."""
+    sent, failed = 0, 0
+    for crossing in crossings:
+        payload = build_alert_payload(crossing)
+        for sub in subscriptions:
+            try:
+                transport.send(sub, payload)
+                sent += 1
+            except Exception as exc:  # noqa: BLE001 - deliberate best-effort
+                failed += 1
+                log.error("push failed for region=%s sub=%s: %s", crossing.get("region"), sub.get("id"), exc)
+    return {"alerts": len(crossings), "subscriptions": len(subscriptions), "sent": sent, "failed": failed}
+
+
+def get_vapid_config() -> dict[str, str | None] | None:
+    import os
+    priv = os.environ.get("AVASH_VAPID_PRIVATE_KEY") or os.environ.get("VAPID_PRIVATE_KEY")
+    if not priv:
+        return None
+    subject = (os.environ.get("AVASH_VAPID_SUBJECT") or
+               os.environ.get("VAPID_SUBJECT") or
+               "mailto:alerts@avash.app")
+    pub = os.environ.get("AVASH_VAPID_PUBLIC_KEY") or os.environ.get("VAPID_PUBLIC_KEY")
+    return {"private_key": priv, "subject": subject, "public_key": pub}
+
+
+def _vapid_configured() -> bool:
+    cfg = get_vapid_config()
+    return bool(cfg and cfg.get("private_key") and cfg.get("subject"))
+
+
+def load_push_subscriptions(client: Any | None = None, region_name: str | None = None) -> list[dict]:
+    """Load active push subscriptions matching region proximity (or all active if region_name is None)."""
+    if client is None:
+        from ml.serving.live_features import get_supabase_config
+        cfg = get_supabase_config()
+        from supabase import create_client
+        client = create_client(cfg["url"], cfg["key"])
+
+    # 1. Fetch from push_subscriptions
+    push_res = client.table("push_subscriptions").select("id,user_id,endpoint,p256dh,auth_key").execute()
+    push_rows = getattr(push_res, "data", None) or []
+    if not push_rows:
         return []
 
-    push_response = (
-        supabase_client.table("push_subscriptions")
-        .select("id,user_id,endpoint,p256dh,auth_key")
-        .in_("user_id", list(matched_user_ids))
-        .execute()
-    )
-    push_rows = push_response.data or []
-    return [
-        PushTarget(
-            subscription_id=row["id"],
-            endpoint=row["endpoint"],
-            p256dh=row["p256dh"],
-            auth_key=row["auth_key"],
-        )
-        for row in push_rows
-        if row.get("endpoint") and row.get("p256dh") and row.get("auth_key")
-    ]
+    valid_subs = []
+    for r in push_rows:
+        endpoint = r.get("endpoint")
+        p256dh = r.get("p256dh")
+        auth_key = r.get("auth_key")
+        if endpoint and p256dh and auth_key:
+            valid_subs.append({
+                "id": r["id"],
+                "user_id": r.get("user_id"),
+                "endpoint": endpoint,
+                "keys": {"p256dh": p256dh, "auth": auth_key},
+            })
+
+    if not region_name:
+        return valid_subs
+
+    # 2. Check region coordinates if proximity filtering is requested
+    try:
+        targets_res = client.table("region_ingest_targets").select("region_id,name,lat,lon").execute()
+        targets = getattr(targets_res, "data", None) or []
+        region_target = next((t for t in targets if str(t.get("name", "")).lower() == region_name.lower()), None)
+        if not region_target or region_target.get("lat") is None or region_target.get("lon") is None:
+            return valid_subs
+
+        reg_lat, reg_lon = float(region_target["lat"]), float(region_target["lon"])
+
+        # Fetch active alert subscriptions with geofence
+        alerts_res = client.table("alert_subscriptions").select("id,user_id,geom,radius_m,active").eq("active", True).execute()
+        alerts = getattr(alerts_res, "data", None) or []
+
+        from ml.training.feature_engineering import haversine_km
+
+        matched_user_ids = set()
+        for a in alerts:
+            uid = a.get("user_id")
+            geom = a.get("geom")
+            if isinstance(geom, dict) and geom.get("type") == "Point":
+                coords = geom.get("coordinates")
+                if coords and len(coords) >= 2:
+                    sub_lon, sub_lat = float(coords[0]), float(coords[1])
+                    dist_km = haversine_km(sub_lat, sub_lon, reg_lat, reg_lon)
+                    radius_km = min(float(a.get("radius_m", 2000)), 20000.0) / 1000.0
+                    if dist_km <= radius_km:
+                        matched_user_ids.add(uid)
+
+        if matched_user_ids:
+            filtered = [sub for sub in valid_subs if sub.get("user_id") in matched_user_ids]
+            return filtered if filtered else valid_subs
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Proximity filtering failed (%s); falling back to all active subscribers", exc)
+
+    return valid_subs
 
 
-def send_push_notifications(
-    supabase_client: Any,
-    targets: Iterable[PushTarget],
-    payload: dict[str, Any],
-    vapid_private_key: str,
-    vapid_claims: dict[str, str],
-    ttl_seconds: int = PUSH_TTL_SECONDS,
-) -> None:
-    """Send one Web Push message per target via `pywebpush`.
-
-    `ttl_seconds` is how long the push service should hold the message
-    for a device that is offline (see `PUSH_TTL_SECONDS` — the default is
-    deliberately not zero).
-
-    A `410 Gone` means the browser unsubscribed or the endpoint expired —
-    that `push_subscriptions` row is deleted. Any other failure (network
-    error, non-410 HTTP status, etc.) is logged and skipped so one bad
-    subscription never aborts the rest of the batch. Neither the exception
-    nor any log line here ever includes `vapid_private_key` — pywebpush
-    uses it to sign the request, it never appears in a response or in the
-    exception it raises.
-    """
-    for target in targets:
-        try:
-            webpush(
-                subscription_info={
-                    "endpoint": target.endpoint,
-                    "keys": {"p256dh": target.p256dh, "auth": target.auth_key},
-                },
-                data=json.dumps(payload),
-                vapid_private_key=vapid_private_key,
-                # A FRESH copy per send: pywebpush mutates this dict,
-                # writing an `aud` claim derived from the endpoint's
-                # origin. Reusing one dict across targets would sign the
-                # second endpoint's request with the first endpoint's
-                # audience, which every push service rejects.
-                vapid_claims=dict(vapid_claims),
-                ttl=max(0, int(ttl_seconds)),
-            )
-        except WebPushException as exc:
-            status_code = getattr(getattr(exc, "response", None), "status_code", None)
-            if status_code == 410:
-                logger.info("push subscription %s is gone (410) — deleting", target.subscription_id)
-                supabase_client.table("push_subscriptions").delete().eq("id", target.subscription_id).execute()
-            else:
-                logger.warning("push send failed for subscription %s (status=%s)", target.subscription_id, status_code)
-        except Exception:  # noqa: BLE001 - one bad subscription must not abort the batch
-            logger.warning("push send failed for subscription %s (unexpected error)", target.subscription_id)
-
-
-def deliver_region_alert(
-    supabase_client: Any,
-    region_centroid_lat: float,
-    region_centroid_lon: float,
-    payload: dict[str, Any],
-    vapid_public_key: str | None,
-    vapid_private_key: str | None,
-    vapid_claims: dict[str, str],
-) -> int:
-    """Full proximity-match + send pass for one region that just crossed
-    into `high`/`severe` risk. Returns the number of push attempts made.
-
-    Both VAPID halves are required arguments, read by the caller from the
-    environment (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`) and never logged
-    here or by the caller — see `docs/security/secrets-matrix.md` §7.
-    `vapid_public_key` is not passed to `pywebpush` (the browser already
-    bound the public key when it created the subscription); its presence
-    is still required as a misconfiguration check.
-    """
-    if not vapid_private_key or not vapid_public_key:
-        logger.warning("VAPID keys not configured — skipping push delivery for this region")
-        return 0
-
-    targets = find_matching_push_targets(supabase_client, region_centroid_lat, region_centroid_lon)
-    if not targets:
-        return 0
-
-    send_push_notifications(
-        supabase_client,
-        targets,
-        payload,
-        vapid_private_key=vapid_private_key,
-        vapid_claims=vapid_claims,
-    )
-    return len(targets)
-
+_load_push_subscriptions = load_push_subscriptions

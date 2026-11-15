@@ -9,6 +9,7 @@ import { defineWorkersConfig } from '@cloudflare/vitest-pool-workers/config';
 export default defineWorkersConfig({
   test: {
     name: 'api',
+    setupFiles: ['./test/setup.ts'],
     include: ['test/**/*.test.ts'],
     poolOptions: {
       workers: {
@@ -27,10 +28,6 @@ export default defineWorkersConfig({
             UPSTASH_REDIS_REST_URL: 'https://example-upstash-test.invalid',
             UPSTASH_REDIS_REST_TOKEN: 'test-upstash-token',
             TURNSTILE_SECRET_KEY: 'test-turnstile-secret',
-            // Test-only values — never a real credential.
-            CLOUDINARY_CLOUD_NAME: 'test-cloud',
-            CLOUDINARY_API_KEY: 'test-cloudinary-key',
-            CLOUDINARY_API_SECRET: 'test-cloudinary-secret',
           },
         },
       },

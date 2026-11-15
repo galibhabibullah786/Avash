@@ -7,7 +7,7 @@ const API_CLIENT_TIMEOUT_MS = 8000;
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
 export interface FetchApiOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'PUT';
   body?: unknown;
   /** Supabase access token — sent as `Authorization: Bearer <token>` when set. */
   accessToken?: string;

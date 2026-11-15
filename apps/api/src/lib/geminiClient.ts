@@ -29,7 +29,7 @@ import { z } from 'zod';
  * accuracy was spot-checked against a multi-symptom description and was
  * correct on every field, including the negative ones.
  */
-export const GEMINI_MODEL_ID = 'gemini-3.1-flash-lite';
+export const GEMINI_MODEL_ID = 'gemini-2.0-flash';
 /** `GEMINI_REQUEST_TIMEOUT_MS` (§14) — bounds a hung Gemini call inside the Worker's request budget. */
 export const GEMINI_REQUEST_TIMEOUT_MS = 5000;
 

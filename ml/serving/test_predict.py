@@ -1,182 +1,202 @@
-"""Tests for ml/serving/predict.py — the risk_predictions-empty guard and
-crossing detection. Delivery itself (proximity match, push send) is
-covered by test_push_delivery.py; these tests only exercise the wiring.
+"""Unit tests for predict wiring: row assembly, payload filtering, band display, H=2 shadow.
+No network, no Supabase, no ONNX files required — model sessions and boosters are faked
+trained in-memory; the real ONNX path is covered by ml/tests/test_parity.py."""
+import numpy as np
+import pandas as pd
+import pytest
+from lightgbm import LGBMClassifier
 
-Run with: pytest ml/serving/test_predict.py
-"""
+from ml.training import config
+from ml.serving import predict
 
-from __future__ import annotations
-
-import logging
-import sys
-from pathlib import Path
-from types import SimpleNamespace
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import predict  # noqa: E402
+FEATURES = list(config.FEATURES_A)
 
 
-class _FakeQuery:
-    def __init__(self, table_name: str, store: dict):
-        self._table = table_name
-        self._store = store
-        self._filters: list[tuple] = []
-
-    def select(self, _columns):
-        return self
-
-    def eq(self, col, val):
-        self._filters.append((col, val))
-        return self
-
-    def execute(self):
-        rows = self._store.get(self._table, [])
-        for col, val in self._filters:
-            rows = [r for r in rows if r.get(col) == val]
-        return SimpleNamespace(data=rows)
+@pytest.fixture(scope="module")
+def tiny_clf():
+    rng = np.random.RandomState(1)
+    X = rng.rand(80, len(FEATURES))
+    y = (X[:, 5] + X[:, 1] > 1).astype(int)
+    return LGBMClassifier(n_estimators=10, max_depth=3, random_state=42, verbose=-1).fit(X, y)
 
 
-class FakeSupabaseClient:
-    def __init__(self, store: dict):
-        self.store = store
+class FakeSession:
+    def __init__(self, p=0.73):
+        self.p = p
 
-    def table(self, name: str) -> _FakeQuery:
-        return _FakeQuery(name, self.store)
-
-
-def test_batch_predict_returns_early_on_empty_risk_predictions(monkeypatch, caplog):
-    client = FakeSupabaseClient({"risk_predictions": []})
-    monkeypatch.setattr(predict, "_build_supabase_client", lambda: client)
-
-    calls = []
-    monkeypatch.setattr(predict, "_find_crossings", lambda predictions: calls.append(predictions) or [])
-
-    with caplog.at_level(logging.INFO):
-        predict.batch_predict()
-
-    # The empty-table guard must return before crossing detection ever runs.
-    assert calls == []
-    assert any("risk_predictions is empty" in record.getMessage() for record in caplog.records)
+    def run(self, outputs, feed):
+        assert outputs == ["probabilities"]
+        X = feed["input"]
+        p = np.full(len(X), self.p, dtype=np.float32)
+        return [np.stack([1 - p, p], axis=1)]
 
 
-def test_batch_predict_logs_and_returns_when_no_region_crosses(monkeypatch, caplog):
-    client = FakeSupabaseClient(
-        {
-            "risk_predictions": [
-                {"region_id": "r1", "horizon_weeks": 2, "risk_level": "low", "prediction_date": "2026-08-17"},
-            ]
-        }
-    )
-    monkeypatch.setattr(predict, "_build_supabase_client", lambda: client)
-
-    delivered = []
-    monkeypatch.setattr(predict, "deliver_region_alert", lambda *a, **k: delivered.append((a, k)) or 0)
-
-    with caplog.at_level(logging.INFO):
-        predict.batch_predict()
-
-    assert delivered == []
-    assert any("no region crossed into high/severe risk" in record.getMessage() for record in caplog.records)
+@pytest.fixture(scope="module")
+def df_rows():
+    rng = np.random.RandomState(5)
+    rows = []
+    for d in ["Dhaka", "Khulna", "Barishal"]:
+        rows.append({"District": d, "week_start": pd.Timestamp("2026-06-29"),
+                     **{f: float(v) for f, v in zip(FEATURES, rng.rand(len(FEATURES)) + 0.5)}})
+    return pd.DataFrame(rows).set_index(pd.Index([0, 1, 2]), drop=False)
 
 
-def test_find_crossings_flags_first_time_high_with_no_prior_row():
-    predictions = [
-        {"region_id": "r1", "horizon_weeks": 2, "risk_level": "high", "prediction_date": "2026-08-17"},
-    ]
-    crossings = predict._find_crossings(predictions)
-    assert [c["region_id"] for c in crossings] == ["r1"]
+def test_build_rows_contract(df_rows, tiny_clf):
+    models = {2: {"session": FakeSession(0.73), "booster": tiny_clf},
+              4: {"session": FakeSession(0.81), "booster": tiny_clf}}
+    rows = predict.build_rows(df_rows, models, FEATURES, "2026-11-09", "2.0.0", region_ids=None)
+    assert len(rows) == 6  # 3 districts x 2 horizons
+    for r in rows:
+        assert "risk_level" not in r                      # DB generated — never set by us
+        assert set(r) >= {"region", "region_id", "prediction_date", "horizon_weeks",
+                          "risk_score", "top_factors", "model_version", "_band_display"}
+        assert r["horizon_weeks"] in (2, 4)
+        assert 0.0 <= r["risk_score"] <= 1.0
+        assert round(r["risk_score"], 3) == r["risk_score"]
+        assert len(r["top_factors"]) == 3
+        assert all(set(f) == {"factor", "label", "importance"} for f in r["top_factors"])
 
 
-def test_find_crossings_skips_region_already_high_last_time():
-    predictions = [
-        {"region_id": "r1", "horizon_weeks": 2, "risk_level": "high", "prediction_date": "2026-08-17"},
-        {"region_id": "r1", "horizon_weeks": 2, "risk_level": "severe", "prediction_date": "2026-08-16"},
-    ]
-    assert predict._find_crossings(predictions) == []
+def test_no_risk_level_in_upsert_payload(df_rows, tiny_clf):
+    models = {2: {"session": FakeSession(0.5), "booster": tiny_clf},
+              4: {"session": FakeSession(0.5), "booster": tiny_clf}}
+    rows = predict.build_rows(df_rows, models, FEATURES, "2026-11-09", "2.0.0", region_ids=None)
+    name_to_id = {"dhaka": "id-1", "khulna": "id-2", "barishal": "id-3"}
+    payload = predict.to_upsert_payload(rows, name_to_id)
+    assert len(payload) == 6
+    for p in payload:
+        assert set(p) == {"region_id", "prediction_date", "horizon_weeks", "risk_score",
+                          "top_factors", "model_version"}   # exactly the contract
+        assert "risk_level" not in p and "generated_at" not in p
 
 
-def test_find_crossings_flags_moderate_to_high_transition():
-    predictions = [
-        {"region_id": "r1", "horizon_weeks": 2, "risk_level": "high", "prediction_date": "2026-08-17"},
-        {"region_id": "r1", "horizon_weeks": 2, "risk_level": "moderate", "prediction_date": "2026-08-16"},
-    ]
-    crossings = predict._find_crossings(predictions)
-    assert [c["prediction_date"] for c in crossings] == ["2026-08-17"]
+def test_upsert_payload_rejects_unknown_region(df_rows, tiny_clf):
+    models = {2: {"session": FakeSession(0.5), "booster": tiny_clf},
+              4: {"session": FakeSession(0.5), "booster": tiny_clf}}
+    rows = predict.build_rows(df_rows, models, FEATURES, "2026-11-09", "2.0.0", region_ids=None)
+    with pytest.raises(ValueError, match="Barishal"):
+        predict.to_upsert_payload(rows, {"dhaka": "id-1", "khulna": "id-2"})
 
 
-def test_find_crossings_ignores_low_and_moderate_latest():
-    predictions = [
-        {"region_id": "r1", "horizon_weeks": 2, "risk_level": "moderate", "prediction_date": "2026-08-17"},
-        {"region_id": "r2", "horizon_weeks": 4, "risk_level": "low", "prediction_date": "2026-08-17"},
-    ]
-    assert predict._find_crossings(predictions) == []
+def test_normalize_district():
+    assert predict.normalize_district("Barishal") == "barishal"
+    assert predict.normalize_district(" Narayanganj ") == "narayanganj"
+    assert predict.normalize_district("B. Baria") == "bbaria"
 
 
-def test_fetch_model_from_hub_with_strict_tag(tmp_path, monkeypatch):
-    dest = tmp_path / "model.onnx"
-    recorded_kwargs = {}
-
-    def fake_download(**kwargs):
-        recorded_kwargs.update(kwargs)
-        dest.write_text("dummy-onnx-content")
-        return str(dest)
-
-    fake_hf = SimpleNamespace(hf_hub_download=fake_download)
-    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hf)
-
-    result = predict.fetch_model_from_hub(
-        repo_id="custom-org/custom-model",
-        tag="v1.2.0",
-        filename="model.onnx",
-        destination=dest,
-    )
-
-    assert result == dest
-    assert recorded_kwargs.get("repo_id") == "custom-org/custom-model"
-    assert recorded_kwargs.get("revision") == "v1.2.0"
-    assert recorded_kwargs.get("filename") == "model.onnx"
+def test_h2_rows_flagged_shadow_not_in_alerts(df_rows, tiny_clf):
+    from ml.serving.push_delivery import detect_high_severe_crossings
+    models = {2: {"session": FakeSession(0.95), "booster": tiny_clf},
+              4: {"session": FakeSession(0.95), "booster": tiny_clf}}
+    rows = predict.build_rows(df_rows, models, FEATURES, "2026-11-09", "2.0.0", region_ids=None)
+    h2 = [r for r in rows if r["horizon_weeks"] == 2]
+    assert h2 and all(r["_band_display"] == "severe" for r in h2)   # computed, visible, ...
+    assert detect_high_severe_crossings({}, h2, horizon_weeks=4) == []  # ... never alerted
+    h4 = [r for r in rows if r["horizon_weeks"] == 4]
+    assert detect_high_severe_crossings({}, h4, horizon_weeks=4)    # H=4 does alert
 
 
-def test_fetch_model_from_hub_falls_back_to_existing_disk_cache(tmp_path, monkeypatch, caplog):
-    dest = tmp_path / "model.onnx"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text("pre-existing-cached-onnx")
+def test_env_var_fallbacks_resolve_ci_secrets(monkeypatch):
+    """CI passes SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY without AVASH_ prefix."""
+    monkeypatch.delenv("AVASH_SUPABASE_URL", raising=False)
+    monkeypatch.delenv("AVASH_SUPABASE_SERVICE_KEY", raising=False)
+    monkeypatch.delenv("AVASH_VAPID_PRIVATE_KEY", raising=False)
+    monkeypatch.delenv("AVASH_VAPID_SUBJECT", raising=False)
 
-    def failing_download(**_kwargs):
-        raise RuntimeError("Hugging Face Hub connection timed out")
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-key-123")
+    monkeypatch.setenv("VAPID_PRIVATE_KEY", "vapid-priv-abc")
+    monkeypatch.setenv("VAPID_PUBLIC_KEY", "vapid-pub-xyz")
 
-    fake_hf = SimpleNamespace(hf_hub_download=failing_download)
-    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hf)
+    cfg = predict.get_supabase_config()
+    assert cfg["url"] == "https://example.supabase.co"
+    assert cfg["key"] == "service-key-123"
 
-    with caplog.at_level(logging.INFO):
-        result = predict.fetch_model_from_hub(
-            repo_id="avash-health/avash-dengue-models",
-            tag="v1.0.0",
-            destination=dest,
-            expected_sha256="mismatched_sha_forcing_download_attempt",
-        )
-
-    assert result == dest
-    assert any("Hugging Face Hub model fetch failed" in record.getMessage() for record in caplog.records)
-    assert any("Disk cache fallback" in record.getMessage() for record in caplog.records)
+    vapid = predict.get_vapid_config()
+    assert vapid["private_key"] == "vapid-priv-abc"
+    assert vapid["subject"] == "mailto:alerts@avash.app"
 
 
-def test_fetch_model_from_hub_graceful_none_when_uncached_and_offline(tmp_path, monkeypatch, caplog):
-    dest = tmp_path / "non-existent-model.onnx"
+def test_platt_scaling_calibration_applied_when_enabled(df_rows, tiny_clf, monkeypatch):
+    """When CALIBRATION_ENABLED=True, probabilities are remapped via Platt scaling."""
+    monkeypatch.setattr(config, "CALIBRATION_ENABLED", True)
+    # Fake a high raw probability 0.90
+    models = {2: {"session": FakeSession(0.90), "booster": tiny_clf},
+              4: {"session": FakeSession(0.90), "booster": tiny_clf}}
+    rows = predict.build_rows(df_rows, models, FEATURES, "2026-11-09", "2.0.0", region_ids=None)
+    # Calibrated probability should differ from raw 0.90
+    assert len(rows) == 6
+    for r in rows:
+        assert r["risk_score"] != 0.90
+        assert 0.0 <= r["risk_score"] <= 1.0
 
-    def failing_download(**_kwargs):
-        raise ConnectionError("No network route to host")
 
-    fake_hf = SimpleNamespace(hf_hub_download=failing_download)
-    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hf)
+def test_fetch_live_features_from_supabase_builds_canonical_13(monkeypatch):
+    """Live query builds the 13 feature columns directly from Supabase tables with zero CSVs."""
+    class FakeTable:
+        def __init__(self, data):
+            self._data = data
 
-    with caplog.at_level(logging.INFO):
-        result = predict.fetch_model_from_hub(
-            repo_id="avash-health/avash-dengue-models",
-            tag="v1.0.0",
-            destination=dest,
-        )
+        def select(self, *a, **k):
+            return self
 
-    # Returns None safely without throwing
-    assert result is None
-    assert any("skipping inference pass gracefully without failing" in record.getMessage() for record in caplog.records)
+        def eq(self, *a, **k):
+            return self
+
+        def gte(self, *a, **k):
+            return self
+
+        def order(self, *a, **k):
+            return self
+
+        def execute(self):
+            class Res:
+                pass
+            r = Res()
+            r.data = self._data
+            return r
+
+    # 1 district mock
+    region_id = "r-dhaka"
+    regions_data = [{"id": region_id, "name": "Dhaka", "code": "DHA", "population": 1000000}]
+    
+    # 28 days of daily weather
+    weather_data = []
+    base_date = pd.Timestamp("2026-06-01")
+    for d in range(35):
+        weather_data.append({
+            "region_id": region_id,
+            "observed_at": (base_date + pd.Timedelta(days=d)).isoformat(),
+            "temp_mean_c": 28.5,
+            "temp_min_c": 24.0,
+            "humidity_pct": 82.0,
+            "precipitation_mm": 15.0,
+        })
+    
+    # 4 weeks of weekly dengue cases
+    cases_data = []
+    for w in range(5):
+        cases_data.append({
+            "region_id": region_id,
+            "reported_week": (base_date + pd.Timedelta(weeks=w)).strftime("%Y-%m-%d"),
+            "case_count": 20 + w * 5,
+        })
+
+    class FakeClient:
+        def table(self, name):
+            if name == "regions":
+                return FakeTable(regions_data)
+            elif name == "weather_observations":
+                return FakeTable(weather_data)
+            elif name == "dengue_cases":
+                return FakeTable(cases_data)
+            raise ValueError(name)
+
+    client = FakeClient()
+    df_feat = predict.fetch_live_features_from_supabase(client)
+    assert len(df_feat) == 1
+    assert df_feat.iloc[0]["District"] == "Dhaka"
+    for col in config.FEATURES_A:
+        assert col in df_feat.columns
+        assert not pd.isna(df_feat.iloc[0][col])
+

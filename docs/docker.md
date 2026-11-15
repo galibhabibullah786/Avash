@@ -179,7 +179,7 @@ minute.
 | API gateway (PostgREST + GoTrue + Realtime) | `http://127.0.0.1:54321` |
 | Postgres | `postgresql://postgres:postgres@127.0.0.1:54329/postgres` |
 | Studio | `http://127.0.0.1:54323` |
-| Inbucket (catches sign-up emails) | `http://127.0.0.1:54324` |
+| Inbucket (disabled by default; email confirmation skipped for dev velocity) | `http://127.0.0.1:54324` |
 
 Ports are deliberately clear of the `db` container's `54322`, so both
 local databases can run side by side.
@@ -318,15 +318,17 @@ starting or stopping anything:
 ```
 === Avash local stack ===
 
-  supabase RUNNING (healthy)  http://127.0.0.1:54321
-                              studio: http://127.0.0.1:54323
-  api      RUNNING (healthy)  http://127.0.0.1:8787/health
-  web      NOT RUNNING        start: pnpm docker:apps:build && pnpm docker:apps
+  db          RUNNING (healthy)  postgresql://postgres:postgres@127.0.0.1:54322/avash
+                                 shell: pnpm docker:db:psql
+  api         RUNNING (healthy)  http://localhost:8787/health
+  web         RUNNING            http://localhost:8080
+  inngest-dev RUNNING            http://localhost:8288
+                                 dashboard: /functions/v1/risk-alerts
 
-  ml       built (avash-ml:local)   run: pnpm docker:ml <command>, e.g.
-                                    pnpm docker:ml python ml/training/train.py
+  ml          built (avash-ml:local)   run: pnpm docker:ml <command>, e.g.
+                                       pnpm docker:ml python ml/training/train.py
 
-2 of 3 services up. 1 not running — run the "start:" command(s) above.
+All 4 services are up and healthy.
 ```
 
 The URL for each running service is read from `docker compose ps`'s actual

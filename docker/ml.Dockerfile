@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-#
 # Avash offline ML pipeline (ADR-002, ADR-011).
 #
 # Reproducible runtime for `ml/` — training, evaluation, ONNX export, and

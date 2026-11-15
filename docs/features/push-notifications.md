@@ -167,6 +167,39 @@ that writes `risk_predictions` (ADR-002, ADR-007).
   document's delivery path runs. An empty table is exactly the situation
   that early return exists to make safe.
 
+### CLI & Manual Triggering Runbook
+
+To test or manually trigger Web Push notifications on local dev or production without waiting for the nightly batch job:
+
+1. **TypeScript CLI (`pnpm push:trigger`)**:
+   Powered by `@avash/push` (`scripts/trigger-web-push.mts`).
+   ```bash
+   # Dry-run test across all regions (no notifications sent, prints matched subscriptions)
+   pnpm push:trigger --dry-run
+
+   # Targeted alert for a specific district
+   pnpm push:trigger --region Dhaka --risk severe --dry-run
+
+   # Live dispatch against local Supabase or production (requires VAPID & SUPABASE credentials)
+   pnpm push:trigger --region "Dhaka" --risk "high" --title "High Dengue Surge Alert" --body "Elevated vector activity detected in your area."
+   ```
+
+2. **Python Batch Predict CLI (`ml/serving/predict.py`)**:
+   Powered by `ml/serving/predict.py` and `ml/serving/push_delivery.py`.
+   ```bash
+   # Dry run test across districts
+   python ml/serving/predict.py --dry-run --district Dhaka
+
+   # Live upsert and push alert dispatch (supports --force-alert, --broadcast, --district, --risk-level)
+   python ml/serving/predict.py --commit --live --force-alert --district Dhaka --risk-level severe
+   ```
+
+3. **Supabase Edge Function (`/functions/v1/risk-alerts`)**:
+   Runs via Deno + `web-push-neo`. Locally, this is wired into the Inngest Dev Server container (`inngest-dev` on `http://127.0.0.1:8288`). In production, Inngest triggers the hosted Edge Function upon batch prediction crossing events.
+
+4. **In-Browser Client Test Notification**:
+   On the user dashboard (`apps/web/src/features/alerts/PushNotificationToggle.tsx`), clicking "Send Test Notification to This Device" invokes `reg.showNotification(...)` directly on the local browser `ServiceWorkerRegistration`. This exercises browser notification permissions, asset icons, and service worker display immediately on the device without contacting the backend, Inngest, or external push servers.
+
 **Critical Constants:**
 
 | Constant | Value | Defined in | Purpose |

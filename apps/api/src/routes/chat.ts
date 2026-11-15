@@ -7,6 +7,7 @@ import { GEMINI_MODEL_ID } from '../lib/geminiClient';
 import { createSupabaseAdmin } from '../lib/supabaseAdmin';
 import { createAuditSink } from '../lib/auditSink';
 import { jwtVerify } from '../lib/jwtVerify';
+import { dispatchInngestLogEvent } from '../lib/inngestDispatcher';
 import type { AppEnv, Bindings } from '../types';
 
 export interface CreateChatOptions {
@@ -82,9 +83,6 @@ export function createChat(options?: CreateChatOptions) {
         const supabase = options?.supabaseFactory ? options.supabaseFactory(c.env) : createSupabaseAdmin(c.env);
 
         if (!response.ok) {
-          const errorText = await response.text();
-          console.error('Gemini API Error:', errorText);
-
           try {
             const sink = createAuditSink(supabase);
             const entry = buildAuditEntry({
@@ -106,8 +104,6 @@ export function createChat(options?: CreateChatOptions) {
         }
 
         const data = (await response.json()) as unknown;
-
-        // Extract the text from Gemini response structure
         let replyText = 'Sorry, I could not generate a response.';
 
         if (
@@ -124,41 +120,28 @@ export function createChat(options?: CreateChatOptions) {
           }
         }
 
-        // Store chat turns in ai_chat_logs for audit, compliance, and quality analysis
-        try {
-          const lastUserMessage = [...parsed.messages].reverse().find((m) => m.sender === 'user');
-          const chatLogs: Array<{
-            session_id: string;
-            user_id: string | null;
-            message_role: 'user' | 'model';
-            content: string;
-            model: string;
-            request_id: string;
-          }> = [];
+        const lastUserMessage = [...parsed.messages].reverse().find((m) => m.sender === 'user');
+        const logPayload = {
+          session_id: sessionId,
+          user_id: userId,
+          messages: [
+            ...(lastUserMessage ? [{ role: 'user', content: lastUserMessage.text }] : []),
+            { role: 'model', content: replyText },
+          ],
+          model: GEMINI_MODEL_ID,
+          request_id: requestId,
+        };
 
-          if (lastUserMessage) {
-            chatLogs.push({
-              session_id: sessionId,
-              user_id: userId,
-              message_role: 'user',
-              content: lastUserMessage.text,
-              model: GEMINI_MODEL_ID,
-              request_id: requestId,
-            });
+        // Dispatches to Inngest; in Worker runtime, runs in background without blocking user
+        const backgroundTask = dispatchInngestLogEvent('ai/chat.logged', logPayload, c.env, supabase);
+        if (c.env.ENVIRONMENT === 'test') {
+          await backgroundTask;
+        } else {
+          try {
+            c.executionCtx.waitUntil(backgroundTask);
+          } catch {
+            void backgroundTask;
           }
-
-          chatLogs.push({
-            session_id: sessionId,
-            user_id: userId,
-            message_role: 'model',
-            content: replyText,
-            model: GEMINI_MODEL_ID,
-            request_id: requestId,
-          });
-
-          await supabase.from('ai_chat_logs').insert(chatLogs);
-        } catch (err) {
-          console.error('Failed to store AI chat logs:', err);
         }
 
         try {
@@ -173,14 +156,22 @@ export function createChat(options?: CreateChatOptions) {
             requestId,
             detail: { messageCount: parsed.messages.length, model: GEMINI_MODEL_ID },
           });
-          await writeAuditEntry(sink, entry);
+          const auditTask = writeAuditEntry(sink, entry);
+          if (c.env.ENVIRONMENT === 'test') {
+            await auditTask;
+          } else {
+            try {
+              c.executionCtx.waitUntil(auditTask);
+            } catch {
+              void auditTask;
+            }
+          }
         } catch {
           // Best-effort audit logging
         }
 
         return c.json({ text: replyText, sessionId });
-      } catch (error) {
-        console.error('Chat endpoint error:', error);
+      } catch {
         return c.json({ error: 'Invalid request or internal error' }, 400);
       }
     }

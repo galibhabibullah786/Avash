@@ -16,7 +16,12 @@ only once the constant is actually wired into the code location listed.
 | `PREDICTION_HORIZONS_WEEKS` | [2, 4] | `ml/training/config.py` | forecast horizons | documented |
 | `SURGE_TARGET_THRESHOLD` | +30% WoW case growth | `ml/training/config.py` | classification label definition | documented |
 | `RISK_LEVEL_BANDS` | low < .25, moderate < .50, high < .75, severe ≥ .75 | `packages/types/ml.ts`, SQL generated column | UI color coding, alerts | implemented |
-| `MIN_RECALL_TARGET` / `MIN_PRECISION_TARGET` | 0.85 / 0.60 | `ml/evaluation/backtest.py` | model promotion gate | documented |
+| `MIN_RECALL_TARGET` / `MIN_PRECISION_TARGET` | 0.85 / 0.60 | `ml/evaluation/backtest.py` | model promotion gate (aspirational) | documented |
+| `H4_MIN_RECALL` / `H4_MIN_PRECISION` | 0.70 / 0.60 | `ml/training/config.py` | provisional empirical promotion gate (H=4) | implemented |
+| `H2_PROMOTION_ENABLED` | false | `ml/training/config.py` | H=2 shadow mode (push alerts suppressed) | implemented |
+| `CALIBRATION_ENABLED` | true | `ml/training/config.py`, `packages/ml-inference` | Platt scaling remapping raw probabilities to empirical rates | implemented |
+| `EXPECTED_FEATURE_COUNT` | 13 | `packages/ml-inference/index.ts`, `ml/training/config.py` | canonical 13 features for dengue surge model | implemented |
+| `HF_MODEL_REPO_ID` | `avash-health/avash-dengue-models` | `ml/training/config.py` | Hugging Face Hub model repo | implemented |
 | `ONNX_MODEL_SIZE_BUDGET` | < 2 MB | `ml/training/export_onnx.py` | PWA offline cache feasibility | documented |
 | `MODEL_RETRAIN_CADENCE` | monthly, manual promotion | `docs/ml/model-card.md` | drift mitigation | documented |
 | `BATCH_PREDICT_CADENCE` | every 24h | `.github/workflows/cron-batch-predict.yml` | freshness of `risk_predictions` | documented |
@@ -70,14 +75,13 @@ only once the constant is actually wired into the code location listed.
 | `ROLE_CAPABILITIES` | see `docs/features/rbac.md` § grant table | `packages/security/roles.ts`, mirrored by `public.has_capability()` in migration `20260816000013` | the single authorization grant table — not a rank, since moderator and hospital_staff are disjoint | implemented |
 | `ROLE_ASSIGNMENT_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | role admin is a rare deliberate action; a burst is a mistake or a compromised admin session | implemented |
 | `ADMIN_USER_PAGE_SIZE` | 50 | `apps/api/src/routes/admin-users.ts` | default page size for the admin user list | implemented |
-| `SUPABASE_LOCAL_API_PORT` | 54321 (db 54329, studio 54323, inbucket 54324) | `packages/db/supabase/config.toml` | the containerized local Supabase stack (ADR-014); deliberately clear of the ADR-011 `db` container on 54322 so both can run | implemented |
+| `SUPABASE_LOCAL_API_PORT` | 54321 (db 54329, studio 54323; local email confirmation disabled) | `packages/db/supabase/config.toml` | the containerized local Supabase stack (ADR-014); deliberately clear of the ADR-011 `db` container on 54322 so both can run | implemented |
 | `AUDIT_DETAIL_MAX_KEYS` | 12 | `packages/types/audit.ts` | caps the audit `detail` map — a flat, key-capped scalar map makes it awkward to dump a whole request body into an append-only, admin-readable table | implemented |
 | `LIST_PAGE_SIZE_DEFAULT` | 25 | `packages/types/pagination.ts` | page size when `?pageSize=` is absent | implemented |
 | `LIST_PAGE_SIZE_MAX` | 100 | `packages/types/pagination.ts` | ceiling on any client-requested page size | implemented |
 | `LIST_SEARCH_MAX_CHARS` | 120 | `packages/types/pagination.ts` | bounds the `?q=` filter term | implemented |
-| `UPLOAD_MAX_BYTES` | 5242880 (5 MiB) | `packages/types/uploads.ts` | client-side pre-check + signed constraint | implemented |
-| `UPLOAD_SIGNATURE_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | bounds signature minting per account | implemented |
-| `UPLOAD_SIGNATURE_TTL_S` | 600 | `apps/api/src/lib/cloudinarySignature.ts` | how long a returned signature stays valid | documented — not yet read from this location; `signUpload()` has no expiry check today, only the `timestamp` param Cloudinary itself validates |
+| `REPORT_PHOTO_MAX_BYTES` | 5242880 (5 MiB) | `apps/api/src/routes/reports.ts` | client & server cap for Supabase Storage `breeding-report-photos` uploads (superseded Cloudinary direct upload) | implemented |
+| `HOSPITAL_ADMIN_PAGE_SIZE` | 10 | `apps/web/src/features/resources/useManageResources.ts` | client-side pagination size for hospital management dashboard | implemented |
 | `ANNOUNCEMENT_TITLE_MAX_CHARS` | 120 | `packages/types/alerts.ts` | §13.7 announcement title cap | implemented |
 | `ANNOUNCEMENT_BODY_MAX_CHARS` | 1000 | `packages/types/alerts.ts` | §13.7 announcement body cap | implemented |
 | `ANNOUNCEMENT_RADIUS_DEFAULT_M` | 5000 (bounds 500–50,000) | `packages/types/alerts.ts`, `announcements` check constraint | default/ceiling for announcement targeting radius | implemented |

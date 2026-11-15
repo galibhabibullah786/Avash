@@ -39,10 +39,13 @@ services:
       # Server-only values, read from the repo-root `.env` (§7.1). Empty
       # defaults keep the image usable for training/export, which need no
       # Supabase connection at all.
-      SUPABASE_URL: ${SUPABASE_URL:-}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzE5NDQwMH0.local-service-role-key-placeholder}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      AVASH_VAPID_SUBJECT: ${AVASH_VAPID_SUBJECT:-mailto:alerts@avash.app}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # Source is mounted, not baked, so an edit is picked up without a
       # rebuild. Rebuild only when requirements.txt changes.
@@ -69,9 +72,9 @@ services:
         # Compiled into the bundle AND into the served CSP. Must be the
         # origin a browser can actually reach the api container on.
         VITE_PUBLIC_API_BASE_URL: ${VITE_PUBLIC_API_BASE_URL:-http://localhost:8787}
-        VITE_PUBLIC_SUPABASE_URL: ${VITE_PUBLIC_SUPABASE_URL:-}
-        VITE_PUBLIC_SUPABASE_ANON_KEY: ${VITE_PUBLIC_SUPABASE_ANON_KEY:-}
-        VITE_PUBLIC_TURNSTILE_SITE_KEY: ${VITE_PUBLIC_TURNSTILE_SITE_KEY:-}
+        VITE_PUBLIC_SUPABASE_URL: ${VITE_PUBLIC_SUPABASE_URL:-http://localhost:54321}
+        VITE_PUBLIC_SUPABASE_ANON_KEY: ${VITE_PUBLIC_SUPABASE_ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODMxOTQ0MDB9.local-anon-key-placeholder}
+        VITE_PUBLIC_TURNSTILE_SITE_KEY: ${VITE_PUBLIC_TURNSTILE_SITE_KEY:-1x00000000000000000000AA}
         VITE_PUBLIC_VAPID_PUBLIC_KEY: ${VITE_PUBLIC_VAPID_PUBLIC_KEY:-}
     image: avash-web:local
     ports:
@@ -89,6 +92,8 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     image: avash-api:local
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:${API_PORT:-8787}:8787"
     environment:
@@ -99,20 +104,19 @@ services:
       CORS_PREVIEW_ORIGIN_SUFFIX: ${CORS_PREVIEW_ORIGIN_SUFFIX:-}
       # Server-only secrets: runtime-injected from the repo-root .env,
       # never build args, never baked into a layer (§7.1).
-      SUPABASE_URL: ${SUPABASE_URL:-}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
-      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzE5NDQwMH0.local-service-role-key-placeholder}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-super-secret-jwt-token-with-at-least-32-characters-long}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       UPSTASH_REDIS_REST_URL: ${UPSTASH_REDIS_REST_URL:-}
       UPSTASH_REDIS_REST_TOKEN: ${UPSTASH_REDIS_REST_TOKEN:-}
-      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
-      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
-      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
-      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-1x0000000000000000000000000000000AA}
+      INNGEST_BASE_URL: ${INNGEST_BASE_URL:-http://inngest-dev:8288}
+      INNGEST_DEV: "1"
     restart: unless-stopped
 
   # Inngest Dev Server — durable-execution engine for automated risk alerts.
-  # Auto-discovers the local Supabase Edge Function endpoint on startup.
+  # Auto-discovers apps/api endpoints on startup.
   inngest-dev:
     profiles: ["apps"]
     image: inngest/inngest:latest
@@ -120,7 +124,7 @@ services:
       - inngest
       - dev
       - -u
-      - http://host.docker.internal:54321/functions/v1/risk-alerts
+      - http://api:8787/api/inngest
       - --host
       - "0.0.0.0"
     extra_hosts:

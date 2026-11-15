@@ -104,7 +104,7 @@ flowchart LR
 │   ├── security/      # Rate limiter, Turnstile verifier, RBAC, audit log
 │   └── logger/        # Structured logger + PII redaction
 ├── supabase/          # Supabase CLI config, migrations & Edge Functions (risk-alerts)
-├── scripts/           # setup.sh, seed-db.ts, env-sync.mjs, jobs/
+├── scripts/           # seed-db.ts, env-sync.mjs, trigger-web-push.mts, jobs/
 ├── docker/            # Shared infra images (ADR-011): ML runtime + PostGIS init SQL
 ├── docs/              # Architecture, standards, schema, ML, security docs
 ├── compose.yaml       # Supabase CLI stack + ml (infra), web + api behind the `apps` profile

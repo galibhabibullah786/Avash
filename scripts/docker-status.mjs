@@ -41,6 +41,15 @@ const SERVICES = [
     urlFor: (host, port) => `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`,
     startCmd: 'pnpm docker:apps:build && pnpm docker:apps',
   },
+  {
+    service: 'inngest-dev',
+    label: 'Inngest Dev Server',
+    containerPort: 8288,
+    defaultHostPort: 8288,
+    urlFor: (host, port) => `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`,
+    extra: 'dashboard (sync: /api/inngest)',
+    startCmd: 'pnpm docker:apps',
+  },
 ];
 
 function run(args, { quiet = false } = {}) {

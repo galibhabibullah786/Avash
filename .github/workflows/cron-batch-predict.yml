@@ -15,6 +15,35 @@ on:
   schedule:
     - cron: "0 2 * * *"
   workflow_dispatch:
+    inputs:
+      commit:
+        description: "Commit upserts to Supabase risk_predictions table"
+        type: boolean
+        default: true
+      live:
+        description: "Fetch live features from Supabase tables instead of CSVs"
+        type: boolean
+        default: true
+      force_alert:
+        description: "Force alert dispatch for high/severe regions"
+        type: boolean
+        default: false
+      broadcast:
+        description: "Broadcast alerts across all active subscriptions without geofencing"
+        type: boolean
+        default: false
+      district:
+        description: "Target specific district (blank for all 64 districts)"
+        type: string
+        default: ""
+      risk_level:
+        description: "Risk level filter or override"
+        type: choice
+        options:
+          - auto
+          - high
+          - severe
+        default: auto
 
 permissions:
   contents: read
@@ -75,4 +104,17 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
-        run: python ml/serving/predict.py
+          AVASH_VAPID_SUBJECT: "mailto:alerts@avash.app"
+        run: |
+          ARGS=()
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            ARGS+=("--commit" "--live")
+          else
+            if [ "${{ inputs.commit }}" = "true" ]; then ARGS+=("--commit"); fi
+            if [ "${{ inputs.live }}" = "true" ]; then ARGS+=("--live"); fi
+            if [ "${{ inputs.force_alert }}" = "true" ]; then ARGS+=("--force-alert"); fi
+            if [ "${{ inputs.broadcast }}" = "true" ]; then ARGS+=("--broadcast"); fi
+            if [ -n "${{ inputs.district }}" ]; then ARGS+=("--district" "${{ inputs.district }}"); fi
+            if [ -n "${{ inputs.risk_level }}" ] && [ "${{ inputs.risk_level }}" != "auto" ]; then ARGS+=("--risk-level" "${{ inputs.risk_level }}"); fi
+          fi
+          python ml/serving/predict.py "${ARGS[@]}"
