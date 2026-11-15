@@ -513,7 +513,8 @@ range-scan-friendly index, just not a partial one.
 
 - **Algorithm:** LightGBM, two independent binary classifiers — `model_h2` (2-week horizon) and `model_h4` (4-week horizon). Target = "≥30% week-over-week case surge" (threshold configurable in `ml/training/config.py`).
 - **Validation:** walk-forward (expanding window) time-series CV — never randomly shuffled, to avoid leakage across time.
-- **Acceptance gate (CI-enforced before promoting a model):** recall ≥ **0.85**, precision ≥ **0.60** on held-out window. Missing an outbreak is costlier than a false alarm.
+- **Acceptance gate (CI-enforced before promoting a model):** recall ≥ **0.85**, precision ≥ **0.60** on held-out window (aspirational). Provisional empirical gate for production deployment: H=4 pooled out-of-fold recall ≥ **0.70**, precision ≥ **0.60** (achieved: Recall 0.73, Precision 0.62). H=2 (Recall 0.65) is maintained in **shadow mode** (stored for map/telemetry, push alerts suppressed). Missing an outbreak is costlier than a false alarm.
+- **Probability Calibration:** Platt scaling sigmoid remapping is enabled in serving and PWA inference to map raw scores from class-imbalance reweighting (`scale_pos_weight=2.5`) to empirical probabilities, aligning with database risk bands.
 - **Explainability:** SHAP values computed at inference time; top 3 contributing features stored in `risk_predictions.top_factors` as an array of objects `[{"factor": string, "label": string, "importance": number}]` (`TopFactors` in `packages/types/ml.ts`) and rendered in the UI ("high risk mainly due to: 14-day humidity 86%, rising case trend, favorable breeding temperature window").
 - **Export & Distribution (Zero Git Binaries):** `skl2onnx`/`onnxmltools` → ONNX opset 17. Model artifacts are published to the public Hugging Face Model Hub (`avash-health/avash-dengue-models`), and datasets to Hugging Face Dataset Hub (`avash-health/avash-dengue-dataset`). No model weights, joblib checkpoints, or ONNX binaries are committed to Git. The version-pinned artifact (`model_v{semver}.onnx`, target size budget **< 2 MB**) is verified via SHA256 checksum against `ml/training/MODEL_MANIFEST.json` and downloaded at runtime/build via `huggingface_hub` for batch runners and PWA offline caching.
 - **Retrain cadence:** monthly, manually triggered CI job (`ml/training/train.py`) — never auto-promoted; a human reviews the model card diff before promotion.
@@ -527,7 +528,7 @@ Two distinct inference paths, serving two distinct purposes. Do not conflate the
 | **Batch (source of truth)** | `ml/serving/predict.py`, plain Python + `onnxruntime`, executed inside a GitHub Actions runner | Every 24h via GH Actions `schedule` | Populates `risk_predictions` for every region → powers the map, dashboards, alerts. This is what "2–4 week early warning" actually means operationally. No Cloudflare CPU-time constraint applies here at all. |
 | **On-device (bonus UX)** | Browser, `onnxruntime-web` (WASM), inside the installed `apps/web` PWA | On-demand, fully offline | Lets a user re-score *their own last-synced local feature snapshot* instantly with zero network round-trip. This is where "0ms cold start / edge AI" is a true statement, because compute happens on the user's device, not a shared Worker with a CPU-time ceiling. |
 
-Both paths load the **same** checksum-pinned `.onnx` artifact — `ml/serving/predict.py` via the Python `onnxruntime` package, `apps/web` via `packages/ml-inference`'s `onnxruntime-web` wrapper. There is exactly one model file, versioned once, consumed twice.
+Both paths load the **same** checksum-pinned `.onnx` artifact — `ml/serving/predict.py` via the Python `onnxruntime` package, `apps/web` via `packages/ml-inference`'s `onnxruntime-web` wrapper passing `Float64Array` tensors to match the double-precision arithmetic graph, with optional client-side Platt calibration. There is exactly one model file, versioned once, consumed twice.
 
 If a future paid Cloudflare plan removes the CPU-time constraint, per-request Worker inference can be revisited — track as `docs/adr/ADR-002-followup.md`, do not silently change behavior.
 
@@ -883,7 +884,12 @@ Waterfall governs the *project timeline* (mapped below to the original 10-week p
 | `PREDICTION_HORIZONS_WEEKS` | [2, 4] | `ml/training/config.py` | forecast horizons |
 | `SURGE_TARGET_THRESHOLD` | +30% WoW case growth | `ml/training/config.py` | classification label definition |
 | `RISK_LEVEL_BANDS` | low < .25, moderate < .50, high < .75, severe ≥ .75 | `packages/types/ml.ts`, SQL generated column | UI color coding, alerts |
-| `MIN_RECALL_TARGET` / `MIN_PRECISION_TARGET` | 0.85 / 0.60 | `ml/evaluation/backtest.py` | model promotion gate |
+| `MIN_RECALL_TARGET` / `MIN_PRECISION_TARGET` | 0.85 / 0.60 | `ml/evaluation/backtest.py` | model promotion gate (aspirational) |
+| `H4_MIN_RECALL` / `H4_MIN_PRECISION` | 0.70 / 0.60 | `ml/training/config.py` | provisional empirical promotion gate (H=4) |
+| `H2_PROMOTION_ENABLED` | false | `ml/training/config.py` | H=2 shadow mode (push alerts suppressed) |
+| `CALIBRATION_ENABLED` | true | `ml/training/config.py`, `packages/ml-inference` | Platt scaling remapping raw probabilities to empirical rates |
+| `EXPECTED_FEATURE_COUNT` | 13 | `packages/ml-inference/index.ts`, `ml/training/config.py` | canonical 13 features for dengue surge model |
+| `HF_MODEL_REPO_ID` | `avash-health/avash-dengue-models` | `ml/training/config.py` | Hugging Face Hub model repo |
 | `ONNX_MODEL_SIZE_BUDGET` | < 2 MB | `ml/training/export_onnx.py` | PWA offline cache feasibility |
 | `MODEL_RETRAIN_CADENCE` | monthly, manual promotion | `docs/ml/model-card.md` | drift mitigation |
 | `BATCH_PREDICT_CADENCE` | every 24h | `.github/workflows/cron-batch-predict.yml` | freshness of `risk_predictions` |

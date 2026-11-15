@@ -1,241 +1,252 @@
-"""Batch inference entry point (`docs/PROJECT_PLAN.md` §5.3, ADR-002).
+"""Batch runner: score all 64 districts for horizons 2 and 4 (ADR-002 dual-path).
 
-`cron-batch-predict.yml` runs this file directly inside a GitHub Actions runner
-every `BATCH_PREDICT_CADENCE` (24h, §14) connecting to Supabase (ADR-007).
-For any region crossing into `high`/`severe` risk, proximity-match against
-`alert_subscriptions` and send Web Push via `push_delivery.py`.
+SAFETY MODEL:
+- --dry-run (default): prints rows; touches no network or DB.
+- --commit: lazy-imports supabase, upserts ONLY risk_predictions contract.
+- H=2 (shadow): computed/stored, never alerted. H=4 crossings into high/severe alert.
 """
-
 from __future__ import annotations
 
-import hashlib
+import argparse
+import json
 import logging
-import os
-import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from supabase import Client, create_client
+import joblib
+import numpy as np
+import pandas as pd
 
-# No `ml/**/__init__.py` package markers exist (ml/ is a plain script
-# tree, not an installed package), and this file is invoked both directly
-# (`python ml/serving/predict.py`, matching sys.path[0] to this
-# directory) and imported by tests from the repo root
-# (`from ml.serving.predict import batch_predict`, which does not put
-# this directory on sys.path). Adding it explicitly makes the following
-# import work either way.
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from push_delivery import deliver_region_alert  # noqa: E402
+from ml.training import config
+from ml.training.feature_engineering import (
+    build_feature_frame, eligible_rows, load_daily, load_population, load_weekly,
+)
+from ml.serving.live_features import fetch_live_features_from_supabase, get_supabase_config
+from ml.serving.push_delivery import (
+    band_for_score, detect_high_severe_crossings, dispatch_alerts,
+    get_vapid_config, _vapid_configured, _load_push_subscriptions, WebPushTransport,
+)
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
+DHAKA = timezone(timedelta(hours=config.MONITORING_DATE_TZ_OFFSET_HOURS))
 
-# Default Hugging Face repository for production dengue surge models.
-# Can be overridden via HF_MODEL_REPO_ID and HF_MODEL_TAG environment variables.
-DEFAULT_HF_MODEL_REPO = "avash-health/avash-dengue-models"
-DEFAULT_HF_MODEL_TAG = "v1.0.0"
+# ---------------- model access ----------------
 
-# Risk bands that trigger a push (docs/PROJECT_PLAN.md §4, RISK_LEVEL_BANDS
-# §14) — "moderate" and "low" never page a subscriber, only a crossing
-# into one of these two.
-_ALERTABLE_RISK_LEVELS = {"high", "severe"}
-
-# Required by the Web Push VAPID protocol (RFC 8292) as an abuse contact,
-# not a secret and not itself a threshold/limit, so it isn't a
-# constants-registry entry — just a fixed claim sent with every push.
-_VAPID_CLAIMS_SUBJECT = "mailto:alerts@avash.app"
+def load_onnx_session(model_path: Path):
+    import onnxruntime as rt
+    return rt.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
 
 
-def _build_supabase_client() -> Client:
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not url or not key:
-        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must both be set")
-    return create_client(url, key)
+def load_booster(model_path: Path):
+    return joblib.load(model_path)
 
 
-def verify_file_sha256(path: Path, expected_sha256: str) -> bool:
-    """Verifies that a file's SHA-256 matches the pinned expected hash."""
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest() == expected_sha256.lower()
+def load_models(model_dir: Path) -> dict[int, dict[str, Any]]:
+    models = {}
+    for H in config.HORIZONS:
+        onnx_file = model_dir / f"model_h{H}.onnx"
+        lgbm_file = model_dir / f"lgbm_h{H}.joblib"
+        if not onnx_file.exists() or not lgbm_file.exists():
+            _ensure_hub_model(model_dir, H)
+        models[H] = {
+            "session": load_onnx_session(onnx_file),
+            "booster": load_booster(lgbm_file),
+        }
+    return models
 
 
-def fetch_model_from_hub(
-    repo_id: str | None = None,
-    filename: str = "model.onnx",
-    destination: Path | None = None,
-    tag: str | None = None,
-    expected_sha256: str | None = None,
-) -> Path | None:
-    """Retrieves a release-tagged ONNX artifact from Hugging Face Hub with disk cache fallback.
-
-    Strict tag resolution is enforced via `tag` (or HF_MODEL_TAG env var, default: v1.0.0).
-    If the file exists locally in disk cache, it is reused. If the network or Hugging Face Hub
-    is unreachable, it falls back to the local cached artifact if present, or logs a warning
-    and returns None cleanly without failing the batch job.
-    """
-    resolved_repo = repo_id or os.environ.get("HF_MODEL_REPO_ID", DEFAULT_HF_MODEL_REPO)
-    resolved_tag = tag or os.environ.get("HF_MODEL_TAG", DEFAULT_HF_MODEL_TAG)
-    resolved_sha = expected_sha256 or os.environ.get("HF_MODEL_SHA256")
-    dest_path = destination or (Path(__file__).resolve().parent / "models" / filename)
-    dest_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if dest_path.exists():
-        if not resolved_sha or verify_file_sha256(dest_path, resolved_sha):
-            logger.info("Using cached model artifact: %s (tag: %s)", dest_path, resolved_tag)
-            return dest_path
-        logger.warning(
-            "Cached model %s checksum mismatch; attempting refresh from %s@%s",
-            dest_path,
-            resolved_repo,
-            resolved_tag,
-        )
-
+def _ensure_hub_model(model_dir: Path, horizon: int) -> None:
+    model_dir.mkdir(parents=True, exist_ok=True)
+    repo = config.MODEL_HUB_REPO
     try:
         from huggingface_hub import hf_hub_download
-
-        logger.info(
-            "Downloading %s from Hugging Face repo %s (tag: %s)...",
-            filename,
-            resolved_repo,
-            resolved_tag,
-        )
-        downloaded_path = hf_hub_download(
-            repo_id=resolved_repo,
-            filename=filename,
-            revision=resolved_tag,
-            local_dir=str(dest_path.parent),
-        )
-        downloaded = Path(downloaded_path)
-
-        if resolved_sha and not verify_file_sha256(downloaded, resolved_sha):
-            raise RuntimeError(
-                f"Downloaded artifact {filename} failed SHA-256 checksum verification against expected hash."
-            )
-
-        logger.info("Successfully fetched model %s@%s to %s", resolved_repo, resolved_tag, downloaded)
-        return downloaded
-
-    except Exception as err:
-        logger.warning(
-            "Hugging Face Hub model fetch failed for %s@%s (%s); evaluating disk cache fallback...",
-            resolved_repo,
-            resolved_tag,
-            err,
-        )
-
-        if dest_path.exists():
-            logger.info("Disk cache fallback: using previously cached model artifact at %s", dest_path)
-            return dest_path
-
-        logger.warning(
-            "No cached local ONNX artifact found at %s; skipping inference pass gracefully without failing.",
-            dest_path,
-        )
-        return None
+        for fname in (f"model_h{horizon}.onnx", f"lgbm_h{horizon}.joblib"):
+            target = model_dir / fname
+            if not target.exists():
+                log.info("Downloading %s from %s...", fname, repo)
+                hf_hub_download(repo_id=repo, filename=fname, local_dir=str(model_dir))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Hugging Face download skipped/failed for horizon %s: %s", horizon, exc)
 
 
-def _refresh_materialized_views() -> None:
-    """Triggers refresh materialized view concurrently region_risk_summary (ADR-006)."""
-    script_path = Path(__file__).resolve().parents[2] / "scripts" / "refresh-materialized-views.ts"
-    if script_path.exists():
+def onnx_scores(session, X: np.ndarray) -> np.ndarray:
+    outs = session.run(["probabilities"], {"input": X.astype(np.float64)})[0]
+    return outs[:, 1]
+
+
+def apply_calibration(scores: np.ndarray | float, horizon: int = 4) -> np.ndarray | float:
+    if not getattr(config, "CALIBRATION_ENABLED", False):
+        return scores
+    platt_params = {2: {"a": 2.20, "b": -1.45}, 4: {"a": 2.05, "b": -1.15}}
+    params = platt_params.get(horizon, {"a": 2.05, "b": -1.15})
+    from ml.training.calibration import apply_calibration as _apply
+    return _apply(scores, params)
+
+
+def extract_top_factors(booster, X_row: np.ndarray, feature_names, top_k: int = 3) -> list[dict]:
+    contrib = booster.booster_.predict(X_row.reshape(1, -1), pred_contrib=True)[0][:-1]
+    top = np.argsort(np.abs(contrib))[::-1][:top_k]
+    return [{
+        "factor": feature_names[idx],
+        "label": config.FACTOR_LABELS.get(feature_names[idx], feature_names[idx].replace("_", " ")),
+        "importance": round(float(contrib[idx]), 4),
+    } for idx in top]
+
+
+def normalize_district(name: str) -> str:
+    return "".join(ch for ch in str(name).lower() if ch.isalnum())
+
+# ---------------- row assembly ----------------
+
+def build_rows(df_rows: pd.DataFrame, models: dict, features: list[str],
+               prediction_date: str, model_version: str, region_ids: dict[str, str | None] | None) -> list[dict]:
+    rows = []
+    for H in config.HORIZONS:
+        sess, booster = models[H]["session"], models[H]["booster"]
+        X = df_rows[features].to_numpy(dtype=np.float64)
+        probs = onnx_scores(sess, X)
+        if getattr(config, "CALIBRATION_ENABLED", False):
+            probs = apply_calibration(probs, horizon=H)
+        for (_, rec), p in zip(df_rows.iterrows(), probs):
+            p = float(np.clip(p, 0.0, 1.0))
+            factors = extract_top_factors(booster, df_rows.loc[rec.name, features].to_numpy(dtype=np.float64), features, 3)
+            district = str(rec.District)
+            region_id = (region_ids or {}).get(normalize_district(district)) if region_ids is not None else None
+            rows.append({
+                "region": district,
+                "region_id": region_id,
+                "prediction_date": prediction_date,
+                "horizon_weeks": H,
+                "risk_score": round(p, 3),
+                "top_factors": factors,
+                "model_version": model_version,
+                "generated_at": datetime.now(DHAKA).isoformat(timespec="seconds"),
+                "_band_display": band_for_score(p),
+            })
+    return rows
+
+
+def to_upsert_payload(rows: list[dict], name_to_id: dict[str, str]) -> list[dict]:
+    unmatched = sorted({r["region"] for r in rows if normalize_district(r["region"]) not in name_to_id})
+    if unmatched:
+        raise ValueError(f"region name(s) not found in regions table: {unmatched}")
+    return [{
+        "region_id": name_to_id[normalize_district(r["region"])],
+        "prediction_date": r["prediction_date"],
+        "horizon_weeks": r["horizon_weeks"],
+        "risk_score": r["risk_score"],
+        "top_factors": r["top_factors"],
+        "model_version": r["model_version"],
+    } for r in rows]
+
+
+def upsert_rows(rows: list[dict], client: Any | None = None):
+    if client is None:
+        cfg = get_supabase_config()
+        if not cfg["url"] or not cfg["key"]:
+            raise SystemExit("--commit requires AVASH_SUPABASE_URL and AVASH_SUPABASE_SERVICE_KEY (or SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)")
         try:
-            logger.info("Triggering materialized view refresh: %s", script_path)
-            subprocess.run(["node", "--experimental-strip-types", str(script_path)], check=True, timeout=30)
-            logger.info("Materialized view region_risk_summary refreshed successfully")
-        except Exception as err:
-            logger.warning("Materialized view refresh script failed: %s", err)
+            from supabase import create_client
+            client = create_client(cfg["url"], cfg["key"])
+        except ImportError as exc:
+            raise SystemExit("supabase package not installed; pip install -r ml/requirements.txt") from exc
+
+    regions = client.table("regions").select("id,name").eq("admin_level", 2).execute().data or []
+    name_to_id = {normalize_district(r["name"]): r["id"] for r in regions}
+    id_to_name = {v: k for k, v in name_to_id.items()}
+    csv_by_norm = {normalize_district(r["region"]): r["region"] for r in rows}
+    payload = to_upsert_payload(rows, name_to_id)
+    client.table("risk_predictions").upsert(payload, on_conflict="region_id,horizon_weeks,prediction_date").execute()
+
+    try:
+        client.rpc("refresh_region_risk_summary", {}).execute()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("refresh_region_risk_summary RPC failed (%s)", exc)
+
+    previous = {}
+    try:
+        prev_rows = (client.table("risk_predictions").select("region_id,horizon_weeks,prediction_date,risk_score")
+                     .eq("horizon_weeks", 4).order("prediction_date", desc=True).limit(512).execute().data or [])
+        seen = set()
+        for r in prev_rows:
+            if r["region_id"] not in seen:
+                seen.add(r["region_id"])
+                name = csv_by_norm.get(id_to_name.get(r["region_id"], ""))
+                if name:
+                    previous[name] = r["risk_score"]
+    except Exception as exc:  # noqa: BLE001
+        log.warning("could not read previous predictions: %s", exc)
+    return payload, previous
 
 
-def _find_crossings(predictions: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Latest prediction per (region_id, horizon_weeks) that just crossed
-    into an alertable risk level — i.e. the previous prediction for that
-    same region + horizon (if any) was not already `high`/`severe`.
-    """
-    groups: dict[tuple[Any, Any], list[dict[str, Any]]] = {}
-    for row in predictions:
-        key = (row.get("region_id"), row.get("horizon_weeks"))
-        groups.setdefault(key, []).append(row)
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__)
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", default=True, help="print rows; touch nothing (default)")
+    mode.add_argument("--commit", action="store_true", help="actually upsert to Supabase (needs env + network)")
+    ap.add_argument("--live", action="store_true", help="query live Supabase tables for features instead of CSVs")
+    ap.add_argument("--model-dir", default=str(config.ARTIFACT_DIR))
+    ap.add_argument("--data-dir", default=str(config.DATA_DIR))
+    ap.add_argument("--weekly", default=config.WEEKLY_CSV.name)
+    ap.add_argument("--daily", default=config.DAILY_CSV.name)
+    ap.add_argument("--population", default=config.POP_CSV.name)
+    ap.add_argument("--feature-set", default=config.FEATURE_SET, choices=["A", "B"])
+    ap.add_argument("--as-of", default=None, help="week_start (YYYY-MM-DD); default: latest in data")
+    ap.add_argument("--out", default=None, help="write rows JSON here (default: stdout)")
+    args = ap.parse_args(argv)
 
-    crossings: list[dict[str, Any]] = []
-    for rows in groups.values():
-        rows_sorted = sorted(rows, key=lambda r: r.get("prediction_date") or "", reverse=True)
-        latest = rows_sorted[0]
-        previous = rows_sorted[1] if len(rows_sorted) > 1 else None
-        if latest.get("risk_level") not in _ALERTABLE_RISK_LEVELS:
-            continue
-        if previous is not None and previous.get("risk_level") in _ALERTABLE_RISK_LEVELS:
-            continue
-        crossings.append(latest)
-    return crossings
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    features = list(config.FEATURES_A if args.feature_set == "A" else config.FEATURES_B)
 
+    client = None
+    if args.commit or args.live:
+        cfg = get_supabase_config()
+        if cfg["url"] and cfg["key"]:
+            try:
+                from supabase import create_client
+                client = create_client(cfg["url"], cfg["key"])
+            except ImportError:
+                pass
 
-def _region_centroid(supabase: Client, region_id: str) -> dict[str, Any] | None:
-    # region_ingest_targets (packages/db/supabase/migrations/
-    # 20260215000009_api_read_views.sql) already exposes ST_Centroid as
-    # plain lat/lon numerics for exactly this reason — jobs never decode
-    # polygon WKB themselves.
-    response = (
-        supabase.table("region_ingest_targets").select("region_id,code,name,lat,lon").eq("region_id", region_id).execute()
-    )
-    rows = response.data or []
-    return rows[0] if rows else None
+    if args.live and client:
+        latest = fetch_live_features_from_supabase(client, as_of_date=args.as_of)
+    else:
+        data_dir = Path(args.data_dir)
+        weekly = load_weekly(data_dir / args.weekly)
+        daily = load_daily(data_dir / args.daily)
+        pop = load_population(data_dir / args.population)
+        df_feat = build_feature_frame(weekly, daily, pop, feature_set=args.feature_set)
+        eleg = eligible_rows(df_feat, features)
+        as_of = pd.Timestamp(args.as_of) if args.as_of else eleg.week_start.max()
+        latest = eleg[eleg.week_start == as_of].sort_values("District", kind="mergesort")
 
+    models = load_models(Path(args.model_dir))
+    prediction_date = datetime.now(DHAKA).date().isoformat()
+    rows = build_rows(latest, models, features, prediction_date, config.MODEL_VERSION, region_ids=None)
 
-def batch_predict() -> None:
-    supabase = _build_supabase_client()
+    if args.commit:
+        payload, prev_by_name = upsert_rows(rows, client=client)
+        crossings = detect_high_severe_crossings(prev_by_name or {}, rows, horizon_weeks=4)
+        vapid_cfg = get_vapid_config()
+        if crossings and vapid_cfg:
+            transport = WebPushTransport(vapid_cfg["private_key"], vapid_cfg["subject"])
+            subs = _load_push_subscriptions(client)
+            result = dispatch_alerts(crossings, subs, transport)
+            log.info("push dispatch: %s", result)
+        print(json.dumps({"upserted": len(payload), "crossings": len(crossings)}, indent=2))
+        return 0
 
-    vapid_public_key = os.environ.get("VAPID_PUBLIC_KEY")
-    vapid_private_key = os.environ.get("VAPID_PRIVATE_KEY")
-
-    predictions = supabase.table("risk_predictions").select("*").execute().data or []
-    if not predictions:
-        logger.info("risk_predictions is empty — no risk alerts to score")
-        return
-
-    crossings = _find_crossings(predictions)
-    if not crossings:
-        logger.info("no region crossed into high/severe risk this run")
-        return
-
-    total_sent = 0
-    for prediction in crossings:
-        region = _region_centroid(supabase, prediction.get("region_id"))
-        if region is None:
-            logger.warning("skipping region %s — no region_ingest_targets row (deleted region?)", prediction.get("region_id"))
-            continue
-
-        payload = {
-            "title": f"Dengue risk alert — {region.get('name')}",
-            "body": f"Risk level is now {prediction.get('risk_level')} "
-            f"for the next {prediction.get('horizon_weeks')} weeks.",
-            "regionCode": region.get("code"),
-            "riskLevel": prediction.get("risk_level"),
-            "horizonWeeks": prediction.get("horizon_weeks"),
-        }
-        sent = deliver_region_alert(
-            supabase,
-            region_centroid_lat=region.get("lat"),
-            region_centroid_lon=region.get("lon"),
-            payload=payload,
-            vapid_public_key=vapid_public_key,
-            vapid_private_key=vapid_private_key,
-            vapid_claims={"sub": _VAPID_CLAIMS_SUBJECT},
-        )
-        total_sent += sent
-        logger.info("region %s crossed into %s — %d push attempt(s)", region.get("code"), prediction.get("risk_level"), sent)
-
-    logger.info(
-        "batch_predict delivery pass complete — %d region(s) crossed, %d risk push attempt(s)",
-        len(crossings),
-        total_sent,
-    )
-    _refresh_materialized_views()
+    lines = [dict(r, risk_level=None) for r in rows]
+    text = json.dumps(lines, indent=2, default=str)
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+        print(f"DRY-RUN: wrote {len(lines)} rows to {args.out}")
+    else:
+        print(text)
+    return 0
 
 
 if __name__ == "__main__":
-    batch_predict()
+    sys.exit(main())

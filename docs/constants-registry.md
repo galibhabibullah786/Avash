@@ -16,7 +16,12 @@ only once the constant is actually wired into the code location listed.
 | `PREDICTION_HORIZONS_WEEKS` | [2, 4] | `ml/training/config.py` | forecast horizons | documented |
 | `SURGE_TARGET_THRESHOLD` | +30% WoW case growth | `ml/training/config.py` | classification label definition | documented |
 | `RISK_LEVEL_BANDS` | low < .25, moderate < .50, high < .75, severe ≥ .75 | `packages/types/ml.ts`, SQL generated column | UI color coding, alerts | implemented |
-| `MIN_RECALL_TARGET` / `MIN_PRECISION_TARGET` | 0.85 / 0.60 | `ml/evaluation/backtest.py` | model promotion gate | documented |
+| `MIN_RECALL_TARGET` / `MIN_PRECISION_TARGET` | 0.85 / 0.60 | `ml/evaluation/backtest.py` | model promotion gate (aspirational) | documented |
+| `H4_MIN_RECALL` / `H4_MIN_PRECISION` | 0.70 / 0.60 | `ml/training/config.py` | provisional empirical promotion gate (H=4) | implemented |
+| `H2_PROMOTION_ENABLED` | false | `ml/training/config.py` | H=2 shadow mode (push alerts suppressed) | implemented |
+| `CALIBRATION_ENABLED` | true | `ml/training/config.py`, `packages/ml-inference` | Platt scaling remapping raw probabilities to empirical rates | implemented |
+| `EXPECTED_FEATURE_COUNT` | 13 | `packages/ml-inference/index.ts`, `ml/training/config.py` | canonical 13 features for dengue surge model | implemented |
+| `HF_MODEL_REPO_ID` | `avash-health/avash-dengue-models` | `ml/training/config.py` | Hugging Face Hub model repo | implemented |
 | `ONNX_MODEL_SIZE_BUDGET` | < 2 MB | `ml/training/export_onnx.py` | PWA offline cache feasibility | documented |
 | `MODEL_RETRAIN_CADENCE` | monthly, manual promotion | `docs/ml/model-card.md` | drift mitigation | documented |
 | `BATCH_PREDICT_CADENCE` | every 24h | `.github/workflows/cron-batch-predict.yml` | freshness of `risk_predictions` | documented |

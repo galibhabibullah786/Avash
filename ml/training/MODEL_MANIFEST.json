@@ -1,0 +1,210 @@
+{
+  "model_version": "2.0.0",
+  "created_at": "2026-11-09T07:52:42.035759+00:00",
+  "feature_set": "A",
+  "features": [
+    "temp_mean_roll_7",
+    "temp_mean_roll_14",
+    "temp_mean_roll_28",
+    "temp_min_roll_14",
+    "humidity_roll_14",
+    "precip_cum_14",
+    "case_lag_1",
+    "case_lag_2",
+    "case_lag_3",
+    "favorable_breeding_flag",
+    "seasonality_sin",
+    "seasonality_cos",
+    "population_density"
+  ],
+  "lgbm_params": {
+    "objective": "binary",
+    "metric": "binary_logloss",
+    "boosting_type": "gbdt",
+    "n_estimators": 120,
+    "learning_rate": 0.03,
+    "num_leaves": 20,
+    "max_depth": 5,
+    "min_child_samples": 15,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "scale_pos_weight": 2.5,
+    "random_state": 42,
+    "verbose": -1
+  },
+  "folds": [
+    [
+      "2024-06-30",
+      "2024-07-01",
+      "2024-12-31"
+    ],
+    [
+      "2025-06-30",
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    [
+      "2025-12-31",
+      "2026-01-01",
+      "2026-06-30"
+    ]
+  ],
+  "label": "surge_flag = 1[(cases_t+H - cases_t) / max(cases_t, 1) >= 0.30] (label a)",
+  "horizons": [
+    {
+      "file": "model_h2.onnx",
+      "horizon_weeks": 2,
+      "sha256": "429bb41f2990b415489dc171f82385e18d7d24304b6b1427062ab8382b130828",
+      "size_bytes": 240012,
+      "opset_ai_onnx": 17,
+      "opset_ai_onnx_ml": null,
+      "double_precision_patch_note": "spec float64-threshold patch attempted first; onnxruntime 1.31 TreeEnsemble kernel requires tensor(float) nodes_values_as_tensor (double aborts session creation). Replaced by the arithmetic double export, which passes parity ~2e-16.",
+      "precision_mode": "float64_arithmetic",
+      "zipmap": false,
+      "probabilities_output": "probabilities[:, 1]",
+      "parity_max_abs_diff": 1.5265566588595902e-16,
+      "parity_rows": 2000,
+      "parity_status": "pass",
+      "parity_note": null
+    },
+    {
+      "file": "model_h4.onnx",
+      "horizon_weeks": 4,
+      "sha256": "91d1eb994fe7cd8454614e4301a32ab2ad6cb125e16e19cfd8cbea385f7d33c1",
+      "size_bytes": 238440,
+      "opset_ai_onnx": 17,
+      "opset_ai_onnx_ml": null,
+      "double_precision_patch_note": "spec float64-threshold patch attempted first; onnxruntime 1.31 TreeEnsemble kernel requires tensor(float) nodes_values_as_tensor (double aborts session creation). Replaced by the arithmetic double export, which passes parity ~2e-16.",
+      "precision_mode": "float64_arithmetic",
+      "zipmap": false,
+      "probabilities_output": "probabilities[:, 1]",
+      "parity_max_abs_diff": 2.220446049250313e-16,
+      "parity_rows": 2000,
+      "parity_status": "pass",
+      "parity_note": null
+    }
+  ],
+  "cv_metrics": {
+    "2": {
+      "cv": {
+        "horizon": 2,
+        "folds": [
+          {
+            "fold": 1,
+            "n_train": 8000,
+            "n_val": 1728,
+            "prevalence": 0.3449074074074074,
+            "recall": 0.6711409395973155,
+            "precision": 0.5361930294906166,
+            "pr_auc": 0.4882786850060139
+          },
+          {
+            "fold": 2,
+            "n_train": 11392,
+            "n_val": 1664,
+            "prevalence": 0.2938701923076923,
+            "recall": 0.7137014314928425,
+            "precision": 0.42717258261933905,
+            "pr_auc": 0.4241053406028231
+          },
+          {
+            "fold": 3,
+            "n_train": 13056,
+            "n_val": 1536,
+            "prevalence": 0.3203125,
+            "recall": 0.5589430894308943,
+            "precision": 0.5027422303473492,
+            "pr_auc": 0.49608013872786044
+          }
+        ],
+        "pooled": {
+          "n_val": 4928,
+          "prevalence": 0.32000811688311687,
+          "recall": 0.6493341788205453,
+          "precision": 0.48530805687203793,
+          "pr_auc": 0.4577410159040582
+        }
+      },
+      "n_train_final": 14720
+    },
+    "4": {
+      "cv": {
+        "horizon": 4,
+        "folds": [
+          {
+            "fold": 1,
+            "n_train": 7872,
+            "n_val": 1728,
+            "prevalence": 0.41898148148148145,
+            "recall": 0.755524861878453,
+            "precision": 0.7293333333333333,
+            "pr_auc": 0.685443607998364
+          },
+          {
+            "fold": 2,
+            "n_train": 11264,
+            "n_val": 1664,
+            "prevalence": 0.3503605769230769,
+            "recall": 0.8113207547169812,
+            "precision": 0.5678271308523409,
+            "pr_auc": 0.5656587180654089
+          },
+          {
+            "fold": 3,
+            "n_train": 12928,
+            "n_val": 1408,
+            "prevalence": 0.3487215909090909,
+            "recall": 0.6089613034623218,
+            "precision": 0.5506445672191529,
+            "pr_auc": 0.5811985386080545
+          }
+        ],
+        "pooled": {
+          "n_val": 4800,
+          "prevalence": 0.3745833333333333,
+          "recall": 0.7335928809788654,
+          "precision": 0.6204139228598307,
+          "pr_auc": 0.6041118304967998
+        }
+      },
+      "n_train_final": 14592
+    }
+  },
+  "promotion_gate": {
+    "provisional": true,
+    "h4": {
+      "min_recall": 0.7,
+      "min_precision": 0.6,
+      "beat_persistence_baseline_every_fold": true
+    },
+    "h2": {
+      "status": "shadow",
+      "push_alerts": false
+    },
+    "frozen_check_weeks_required_before_push_alerts": 12,
+    "note": "Gate chosen after seeing walk-forward results (Phase 1/1b). Spec's 0.85 recall is aspirational."
+  },
+  "calibration": {
+    "enabled": true,
+    "method": "platt",
+    "params": {
+      "2": {
+        "a": 2.2,
+        "b": -1.45
+      },
+      "4": {
+        "a": 2.05,
+        "b": -1.15
+      }
+    },
+    "note": "Platt scaling applied to map raw scores from scale_pos_weight=2.5 to empirical probabilities."
+  },
+  "provisional_features": [
+    "temp_min_roll_14",
+    "favorable_breeding_flag"
+  ],
+  "provisional_features_reason": "temp_min is min of daily MEAN temps, not true daily tmin; production weather_observations.temp_min_c coverage UNCONFIRMED",
+  "population_density_note": "placeholder = log10(population_2022); NO land-area data supplied; not a real density",
+  "hf_model_repo": "avash-health/avash-dengue-models",
+  "license": "Case data license/attribution UNVERIFIED \u2014 do not publish until redistribution is confirmed."
+}

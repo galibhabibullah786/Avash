@@ -1,21 +1,19 @@
-# Offline ML pipeline dependencies (docs/PROJECT_PLAN.md §5).
+# Offline ML pipeline dependencies (rebuilt Tree A).
 #
 # This is the single dependency inventory for `ml/` — the Docker image
 # (`docker/ml.Dockerfile`) and the scheduled Actions jobs
 # (`cron-batch-predict.yml`) both install from this file, so a local run
 # and a scheduled run resolve the same tree. Python 3.11.
 #
-# Exact `==` pins, never a range: a batch job that silently picks up a new
-# LightGBM minor version between two scheduled runs would change
-# predictions with no code change to point at. Dependabot proposes bumps
-# on a schedule (`.github/dependabot.yml`, `pip` ecosystem) so upgrades
-# arrive as reviewable PRs instead of drift.
+# Exact `==` pins, never a range. Dependabot proposes bumps on a schedule;
+# upgrades arrive as reviewable PRs.
 #
-# These are the pins the pipeline starts from. The ML slice
-# (docs/PROJECT_PLAN.md §13, slice 3) is what first exercises them
-# end-to-end — expect this file to be corrected in that slice as the real
-# training code lands, and treat a build failure here as "the pin was
-# wrong," not "the container approach was wrong."
+# NOTE (rebuild): `shap` is retained for CI but the sandbox intentionally runs
+# WITHOUT it; TreeSHAP factors are computed with LightGBM's native
+# `booster.predict(X, pred_contrib=True)`. The optional shap cross-check test
+# uses pytest.importorskip("shap") and skips cleanly when absent.
+# `supabase` and `huggingface-hub` are lazily imported with clear errors and
+# are never exercised by unit tests (no network, no credentials).
 
 # Data handling
 # numpy 2.5.x requires Python >=3.12; the image is pinned to 3.11 (see header).
@@ -46,7 +44,6 @@ huggingface-hub==0.28.1
 # Web Push delivery from ml/serving/predict.py (VAPID keypair, §7.1)
 pywebpush==2.3.0
 
-# Test runner for ml/**/test_*.py (docs/standards/testing.md — pure
-# function / no-server logic, the same split Vitest owns on the Node
-# side). Not installed by the cron workflow; local/dev only.
+# Test runner for ml/**/test_*.py. Not installed by the cron workflow;
+# local/dev only.
 pytest==8.3.4
