@@ -1,8 +1,8 @@
 // Supabase Edge Function: risk-alerts
 // Automated Web Push dispatch for dengue surge alerts orchestrated via Inngest or direct database webhook.
 
-import { Inngest } from "npm:inngest@3.31.2";
-import { serve } from "npm:inngest@3.31.2/deno";
+import { Inngest } from "npm:inngest@4.26.2";
+import { serve } from "npm:inngest@4.26.2/deno";
 import { createClient } from "npm:@supabase/supabase-js@2.49.1";
 import { sendNotification } from "npm:web-push-neo@0.1.2";
 
@@ -25,8 +25,11 @@ interface RiskAlertEvent {
 }
 
 export const riskAlertFunction = inngest.createFunction(
-  { id: "send-dengue-risk-alert", name: "Send Dengue Surge Risk Alert" },
-  { event: "dengue/risk-alert.triggered" },
+  {
+    id: "send-dengue-risk-alert",
+    name: "Send Dengue Surge Risk Alert",
+    triggers: [{ event: "dengue/risk-alert.triggered" }],
+  },
   async ({ event, step }: { event: RiskAlertEvent; step: any }) => {
     const { regionId, regionCode, regionName, riskLevel, horizonWeeks } = event.data;
 

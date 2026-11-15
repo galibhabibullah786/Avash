@@ -8,8 +8,7 @@ a shared paginated-list contract usable from both `apps/api` and direct
 PostgREST reads; a generic, append-only audit log for every write path
 that exists today; a small set of form building blocks (`SubmitButton`,
 `PasswordInput`, a disabled-fieldset convention, `Spinner`); and a
-signed-direct-to-Cloudinary upload flow where the Worker mints a
-signature but never touches a file's bytes. None of the four add new
+direct photo upload to Supabase Storage bucket `breeding-report-photos`. None of the four add new
 user-facing screens on their own — they are the contract the next slices
 build against.
 
@@ -199,52 +198,18 @@ region announcing the change — with the manual-entry fallback always
 re-enabled the moment the request settles, granted or denied, so a
 denied permission never leaves the form unusable.
 
-### Signed direct-to-Cloudinary uploads (ADR-015)
+### Report Photo Uploads via Supabase Storage (`breeding-report-photos`)
 
 The sequence, end to end:
 
-1. The browser calls `POST /api/uploads/signature` with
-   `{ purpose: 'avatar' | 'report-photo' }` (`uploadSignatureRequestSchema`,
-   `packages/types/uploads.ts`) and its access token. Chain: `auth()`
-   (any signed-in role — every role may upload; the control here is the
-   rate limit, not a capability), then `rateLimit({ guard:
-   'upload-signature', keyStrategy: 'user', limit:
-   UPLOAD_SIGNATURE_RATE_LIMIT.perMinute })` (10/min per user, §14).
-2. **The server derives the folder from `purpose`, never from client
-   input (decision H).** `avash/avatars/<userId>` or `avash/reports`,
-   plus a server-generated `public_id`. A client-supplied folder string
-   is a write-anywhere primitive against the project's own asset store —
-   the purpose enum is the only client input that ever reaches folder
-   selection.
-3. `apps/api/src/lib/cloudinarySignature.ts`'s `signUpload()` builds the
-   signature over exactly the parameter set ADR-015 records as verified
-   against Cloudinary's own documentation (`allowed_formats`, `folder`,
-   `public_id`, `timestamp` — alphabetical, `crypto.subtle.digest('SHA-1', …)`,
-   Web Crypto so the same code signs identically in workerd and Node 20),
-   valid for `UPLOAD_SIGNATURE_TTL_S` (600s, §14).
-4. The response (`uploadSignatureResponseSchema`) carries everything the
-   browser needs to talk to Cloudinary directly: `uploadUrl`, `cloudName`,
-   `apiKey`, `timestamp`, `signature`, `folder`, `publicId`,
-   `allowedFormats`, `maxBytes`. **This is the only place `apps/web`
-   learns the Cloudinary cloud name** — never from a `VITE_PUBLIC_*` env
-   var (R2; `docs/security/secrets-matrix.md`).
-5. `apps/web/src/features/uploads/useSignedUpload.ts` pre-checks the file
-   against `UPLOAD_MAX_BYTES` (5 MiB) and `UPLOAD_ALLOWED_FORMATS`
-   client-side (so the common rejection doesn't cost a round trip), then
-   `POST`s a `FormData` straight to Cloudinary's `uploadUrl` — the file's
-   bytes never pass through `apps/api`.
-6. **What the server does not see:** the file content. It cannot inspect,
-   scan, or resize what it never receives. What it *can* still enforce
-   through the signature it controls: which folder the upload can land
-   in, which formats are accepted, and how long the signature is valid —
-   plus the per-user rate limit bounding how many signatures one account
-   can mint. ADR-015 has the full trade-off and the rejected
-   Worker-proxy alternative.
+1. The citizen or user selects a photo for a breeding report in the report form.
+2. `apps/web/src/features/reports/useUploadReportPhoto.ts` checks the file size against the 5 MiB limit client-side (`REPORT_PHOTO_MAX_BYTES = 5242880`), rejecting oversized files instantly.
+3. The client uploads the image to `POST /api/reports/photo` with `multipart/form-data` and user auth token.
+4. `apps/api/src/routes/reports.ts` validates the file size and content type, generating a sanitized unique object key (`report-photos/<timestamp>-<filename>`).
+5. The API streams/uploads the buffer directly into the Supabase Storage bucket `breeding-report-photos` using service-role credentials and returns the public/canonical object URL (`{ photo_url: string }`).
+6. The public URL is attached to the breeding report payload when submitting `POST /api/reports`.
 
-This hook and this route both ship with **no caller** in this slice —
-intended; the avatar-upload and report-photo-upload slices are the
-consumers, and both halves of the contract exist so those slices add a
-call site, not a primitive.
+This replaced the legacy external Cloudinary upload flow, simplifying deployment credentials down to the single native Supabase Storage platform.
 
 ## Critical Constants
 
@@ -255,18 +220,14 @@ call site, not a primitive.
 | `LIST_SEARCH_MAX_CHARS` | 120 | `packages/types/pagination.ts` | bounds the `?q=` filter term |
 | `ADMIN_USER_PAGE_SIZE` | 50 | `apps/api/src/routes/admin-users.ts` | default page size for the admin user list (decision F) |
 | `AUDIT_DETAIL_MAX_KEYS` | 12 | `packages/types/audit.ts` | caps the audit `detail` map (decision C) |
-| `UPLOAD_MAX_BYTES` | 5242880 (5 MiB) | `packages/types/uploads.ts` | client-side pre-check + signed constraint |
-| `UPLOAD_SIGNATURE_TTL_S` | 600 | `apps/api/src/lib/cloudinarySignature.ts` | how long a returned signature stays valid |
-| `UPLOAD_SIGNATURE_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | bounds signature minting per account |
+| `REPORT_PHOTO_MAX_BYTES` | 5242880 (5 MiB) | `apps/api/src/routes/reports.ts` | client-side pre-check and server upload cap |
 
 ## Security Considerations
 
 STRIDE, mirrored into `docs/security/threat-model.md`:
 
-- *Spoofing:* a client claiming a Cloudinary folder or public ID that
-  isn't theirs. Both are server-derived from the authenticated caller's
-  `purpose` and user id, never accepted from the request body (decision
-  H).
+- *Spoofing:* a client attempting to write arbitrary storage keys.
+  Paths are server-derived using timestamps and sanitized IDs.
 - *Tampering:* a forged `sort` value reaching a database `ORDER BY`.
   Closed per-route enum at the zod boundary (decision B) — an unknown
   sort key is a generic `400`, and the handler never sees it.
@@ -274,19 +235,12 @@ STRIDE, mirrored into `docs/security/threat-model.md`:
   write path in this slice now emits an `audit_log` entry carrying the
   actor, the outcome, and the request id that correlates to the server
   logs for the same call.
-- *Information disclosure:* the audit trail itself becoming a PII sink,
-  or the Cloudinary signature over-authorizing an upload. Mitigated by
+- *Information disclosure:* the audit trail itself becoming a PII sink. Mitigated by
   the scalar-only, 12-key-capped `detail` schema (decision C) plus the
-  admin-only `select` RLS policy on one side, and by the signature
-  covering only server-controlled `folder`/`allowed_formats`/`public_id`
-  values on the other — a signed request cannot be replayed against a
-  different folder or format set than the one it was minted for.
-- *Denial of service:* signature-minting abuse (an authenticated user
-  filling the project's Cloudinary quota by minting signatures it never
-  uses) and audit-log write volume. The former is bounded by
-  `UPLOAD_SIGNATURE_RATE_LIMIT`; the latter is bounded by the same
-  per-route rate limits already gating every write path that now also
-  audits (`docs/security/rate-limiting.md`).
+  admin-only `select` RLS policy.
+- *Denial of service:* audit-log write volume and photo upload payload abuse.
+  Bounded by `REPORT_PHOTO_MAX_BYTES` (5 MiB) and per-route rate limits
+  already gating every write path (`docs/security/rate-limiting.md`).
 - *Elevation of privilege:* not new here — every write this slice audits
   or paginates already enforces its own capability/role check
   independently of the pagination or audit-log addition; see each

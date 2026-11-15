@@ -19,6 +19,16 @@ on:
           and variables from (docs/security/github-environments.md).
         type: string
         required: true
+      function_name:
+        description: Edge function name to deploy
+        type: string
+        default: "risk-alerts"
+        required: false
+      no_verify_jwt:
+        description: Deploy with --no-verify-jwt
+        type: boolean
+        default: true
+        required: false
     secrets:
       SUPABASE_ACCESS_TOKEN:
         required: false
@@ -33,6 +43,16 @@ on:
         type: choice
         options: [preview, production]
         required: true
+      function_name:
+        description: Edge function name to deploy
+        type: string
+        default: "risk-alerts"
+        required: false
+      no_verify_jwt:
+        description: Deploy with --no-verify-jwt
+        type: boolean
+        default: true
+        required: false
 
 permissions:
   contents: read
@@ -61,12 +81,14 @@ jobs:
             echo "::notice::SUPABASE_ACCESS_TOKEN secret not set — skipping Edge Function deploy. See docs/ci-cd.md."
           fi
 
-      - name: Deploy risk-alerts Edge Function
+      - name: Deploy Edge Function
         if: steps.sb-check.outputs.configured == 'true'
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          FUNC_NAME: ${{ inputs.function_name || 'risk-alerts' }}
+          NO_VERIFY: ${{ inputs.no_verify_jwt != false && '--no-verify-jwt' || '' }}
         run: |
-          pnpm --filter @avash/db exec supabase functions deploy risk-alerts \
+          pnpm --filter @avash/db exec supabase functions deploy "$FUNC_NAME" \
             --project-ref "${SUPABASE_PROJECT_REF:-kdklmbqkczkaakgswlix}" \
-            --no-verify-jwt
+            $NO_VERIFY

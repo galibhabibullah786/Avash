@@ -66,8 +66,10 @@ function printEnvGuidance(statusOutput) {
     pnpm db:seed              regions, hospitals, historical cases
     pnpm role:grant -- --email you@example.com --role admin
 
-  Studio:   http://127.0.0.1:54323
-  Inbucket: http://127.0.0.1:54324   (sign-up emails land here)
+  Verified Local Endpoints:
+    Studio:   http://127.0.0.1:54323
+    API URL:  ${apiUrl}
+    Database: postgresql://postgres:postgres@127.0.0.1:54329/postgres
 `);
 }
 

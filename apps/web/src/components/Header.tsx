@@ -143,7 +143,7 @@ export const Header = () => {
         <div
           role="presentation"
           aria-hidden="true"
-          className="fixed inset-0 bg-black/50 z-50 lg:hidden cursor-pointer"
+          className="fixed inset-0 bg-black/50 z-[1100] lg:hidden cursor-pointer"
           onClick={() => setIsDrawerOpen(false)}
         />
       )}
@@ -154,7 +154,7 @@ export const Header = () => {
         aria-modal="true"
         aria-hidden={!isDrawerOpen}
         aria-label="মোবাইল নেভিগেশন মেনু"
-        className={`fixed top-0 left-0 w-72 max-w-[85vw] h-full bg-[var(--color-surface)] border-r border-[var(--color-border)] z-50 transform transition-transform duration-200 lg:hidden flex flex-col ${
+        className={`fixed top-0 left-0 w-72 max-w-[85vw] h-full bg-[var(--color-surface)] border-r border-[var(--color-border)] z-[1150] transform transition-transform duration-200 lg:hidden flex flex-col ${
           isDrawerOpen ? 'translate-x-0' : '-translate-x-full pointer-events-none invisible'
         }`}
       >

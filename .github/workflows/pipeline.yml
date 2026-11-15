@@ -27,6 +27,11 @@ on:
     branches: [main, dev]
   workflow_dispatch:
     inputs:
+      deploy_target:
+        description: Target stack to deploy (all, web, api, or functions)
+        type: choice
+        options: [all, web, api, functions]
+        default: all
       bypass_gates:
         description: >-
           Break-glass only. Skip waiting on ci/codeql before deploying —
@@ -104,11 +109,31 @@ jobs:
             functions_changed=true
           fi
 
-          # Manual workflow_dispatch deploys all stacks unless selectively gated
+          # Manual workflow_dispatch selectively targets stacks
           if [ "$EVENT" = "workflow_dispatch" ]; then
-            web_changed=true
-            api_changed=true
-            functions_changed=true
+            TARGET="${{ inputs.deploy_target || 'all' }}"
+            case "$TARGET" in
+              web)
+                web_changed=true
+                api_changed=false
+                functions_changed=false
+                ;;
+              api)
+                web_changed=false
+                api_changed=true
+                functions_changed=false
+                ;;
+              functions)
+                web_changed=false
+                api_changed=false
+                functions_changed=true
+                ;;
+              all|*)
+                web_changed=true
+                api_changed=true
+                functions_changed=true
+                ;;
+            esac
           fi
 
           channel=preview

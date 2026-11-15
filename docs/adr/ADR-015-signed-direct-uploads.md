@@ -1,7 +1,13 @@
 # ADR-015: Signed direct-to-Cloudinary uploads; the Worker never sees the bytes
 
 **Date:** 2026-08-17
-**Status:** Accepted.
+**Status:** Superseded by native Supabase Storage bucket uploads (2026-11-15).
+
+> **Superseded Note (2026-11-15):** The direct-to-Cloudinary upload mechanism and signature minting
+> (`POST /api/uploads/signature`) were retired and replaced by direct photo uploads to native Supabase
+> Storage bucket `breeding-report-photos` via `POST /api/reports/photo`. This eliminated third-party
+> Cloudinary dependencies and API secrets, consolidating media storage into the existing Supabase
+> platform stack. This ADR is retained for architectural history.
 
 ## Context
 

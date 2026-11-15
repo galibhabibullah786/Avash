@@ -179,7 +179,7 @@ minute.
 | API gateway (PostgREST + GoTrue + Realtime) | `http://127.0.0.1:54321` |
 | Postgres | `postgresql://postgres:postgres@127.0.0.1:54329/postgres` |
 | Studio | `http://127.0.0.1:54323` |
-| Inbucket (catches sign-up emails) | `http://127.0.0.1:54324` |
+| Inbucket (disabled by default; email confirmation skipped for dev velocity) | `http://127.0.0.1:54324` |
 
 Ports are deliberately clear of the `db` container's `54322`, so both
 local databases can run side by side.

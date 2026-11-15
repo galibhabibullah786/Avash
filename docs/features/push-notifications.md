@@ -184,18 +184,21 @@ To test or manually trigger Web Push notifications on local dev or production wi
    pnpm push:trigger --region "Dhaka" --risk "high" --title "High Dengue Surge Alert" --body "Elevated vector activity detected in your area."
    ```
 
-2. **Python Serving CLI (`scripts/trigger_web_push.py`)**:
-   Powered by `ml/serving/push_delivery.py`.
+2. **Python Batch Predict CLI (`ml/serving/predict.py`)**:
+   Powered by `ml/serving/predict.py` and `ml/serving/push_delivery.py`.
    ```bash
-   # Dry run test
-   python scripts/trigger_web_push.py --dry-run --region Dhaka --risk severe
+   # Dry run test across districts
+   python ml/serving/predict.py --dry-run --district Dhaka
 
-   # Live dispatch
-   python scripts/trigger_web_push.py --region Chattogram --risk high
+   # Live upsert and push alert dispatch (supports --force-alert, --broadcast, --district, --risk-level)
+   python ml/serving/predict.py --commit --live --force-alert --district Dhaka --risk-level severe
    ```
 
 3. **Supabase Edge Function (`/functions/v1/risk-alerts`)**:
    Runs via Deno + `web-push-neo`. Locally, this is wired into the Inngest Dev Server container (`inngest-dev` on `http://127.0.0.1:8288`). In production, Inngest triggers the hosted Edge Function upon batch prediction crossing events.
+
+4. **In-Browser Client Test Notification**:
+   On the user dashboard (`apps/web/src/features/alerts/PushNotificationToggle.tsx`), clicking "Send Test Notification to This Device" invokes `reg.showNotification(...)` directly on the local browser `ServiceWorkerRegistration`. This exercises browser notification permissions, asset icons, and service worker display immediately on the device without contacting the backend, Inngest, or external push servers.
 
 **Critical Constants:**
 

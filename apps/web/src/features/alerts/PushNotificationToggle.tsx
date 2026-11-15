@@ -22,7 +22,6 @@ export function PushNotificationToggle() {
   const push = usePushSubscription(accessToken ?? null);
   const status = push?.status ?? 'checking';
   const [testSent, setTestSent] = useState(false);
-  const [tokenCopied, setTokenCopied] = useState(false);
 
   const handleSendTestNotification = async () => {
     try {
@@ -39,22 +38,6 @@ export function PushNotificationToggle() {
       }
     } catch (err) {
       console.error('Failed to trigger test notification:', err);
-    }
-  };
-
-  const handleCopyToken = async () => {
-    try {
-      const reg = await ensureServiceWorkerRegistration();
-      const sub = await reg?.pushManager?.getSubscription?.();
-      if (sub) {
-        const subJson = sub.toJSON();
-        const cliArgs = `--direct-endpoint "${sub.endpoint}" --p256dh "${subJson.keys?.p256dh || ''}" --auth "${subJson.keys?.auth || ''}"`;
-        await navigator.clipboard.writeText(cliArgs);
-        setTokenCopied(true);
-        setTimeout(() => setTokenCopied(false), 3000);
-      }
-    } catch (err) {
-      console.error('Failed to copy subscription token:', err);
     }
   };
 
@@ -97,14 +80,6 @@ export function PushNotificationToggle() {
               data-testid="push-toggle-test"
             >
               {testSent ? 'Notification Triggered!' : 'Send Test Notification to This Device'}
-            </button>
-            <button
-              type="button"
-              className="button button--secondary"
-              onClick={handleCopyToken}
-              data-testid="push-toggle-copy-token"
-            >
-              {tokenCopied ? 'Token Copied to Clipboard!' : 'Copy Device Token for CLI Test'}
             </button>
           </div>
         </div>

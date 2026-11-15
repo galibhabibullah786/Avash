@@ -93,11 +93,8 @@ Full technical detail: `supabase/functions/risk-alerts` and `packages/push`.
 
 | Threat | Vector | Mitigation | Enforcement point |
 |---|---|---|---|
-| Denial of Service / Cost Abuse | An authenticated user mints signatures in a loop to fill the project's Cloudinary storage/bandwidth quota, without ever completing an upload | Per-user rate limit (`UPLOAD_SIGNATURE_RATE_LIMIT`, 10/min, §14), fail-closed the same way every other Upstash-backed limiter in this project does; the signature itself expires after `UPLOAD_SIGNATURE_TTL_S` (600s) even if minted | `apps/api/src/middleware/rate-limit.ts`, `apps/api/src/routes/uploads.ts` |
-| Tampering | A client supplying its own `folder`, hoping to write into another user's asset path or an arbitrary location in the Cloudinary account | `folder` is derived server-side from the authenticated caller's id and the closed `purpose` enum (decision H) — never read from the request body; a client-supplied folder field is silently ignored, not merged | `apps/api/src/routes/uploads.ts`, `packages/types/uploads.ts` |
-| Tampering | An upload outside the allowed formats or over the size limit | `allowed_formats` is one of the signed parameters, so a request altering it invalidates the signature and Cloudinary rejects the upload; `UPLOAD_MAX_BYTES` is enforced both as a client-side pre-check and (implicitly, via Cloudinary account limits) at the upload destination | `apps/api/src/lib/cloudinarySignature.ts`, `apps/web/src/features/uploads/useSignedUpload.ts` |
-| Information Disclosure | `CLOUDINARY_API_SECRET` leaking via a log line or an error response | Never logged, never included in any response body — only used in-process to compute the signature hash; `buildGenericErrorBody()` on every error branch (R10) | `apps/api/src/lib/cloudinarySignature.ts` |
-| Elevation of Privilege | None new — every signed-in role may mint a signature by design (ADR-015); the abuse control is the rate limit, not a capability gate | Stated explicitly rather than left unconsidered | n/a |
+| Denial of Service / Cost Abuse | An authenticated user uploads excessively large images or floods photo uploads | Enforce 5 MiB file size ceiling (`REPORT_PHOTO_MAX_BYTES = 5242880`) both client-side and server-side in `/api/reports/photo`, plus per-user/per-IP rate limiting | `apps/api/src/routes/reports.ts`, `apps/web/src/features/reports/useUploadReportPhoto.ts` |
+| Tampering | An upload with invalid MIME type or executable payload | Server validates content-type header (`image/jpeg`, `image/png`, `image/webp`) and restricts uploaded objects to the isolated `breeding-report-photos` Supabase Storage bucket | `apps/api/src/routes/reports.ts` |
 
 ## Audit Log (`audit_log`, generic write-path trail)
 

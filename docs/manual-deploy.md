@@ -467,7 +467,7 @@ python ml/serving/predict.py --live --commit
 # 3. Manual Web Push Trigger
 pnpm push:trigger --dry-run                        # Dry-run simulation across all regions
 pnpm push:trigger --region Dhaka --risk high --dry-run # Targeted dry-run
-python scripts/trigger_web_push.py --dry-run       # Python equivalent
+pnpm push:trigger --region Dhaka --risk severe     # Live dispatch via @avash/push
 ```
 
 ### Run against preview

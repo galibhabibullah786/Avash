@@ -1,8 +1,12 @@
 import { useManageResources } from '../../features/resources/useManageResources';
+import { Spinner } from '@avash/ui';
+import { BloodInventoryModal } from './BloodInventoryModal';
+import { HospitalFormModal } from './HospitalFormModal';
 
 export default function ManageResources() {
   const {
     hospitals,
+    paginatedHospitals,
     loading,
     error,
     formState,
@@ -13,11 +17,29 @@ export default function ManageResources() {
     handleSave,
     handleDelete,
     loadBloodInventory,
-    handleUpdateBlood,
-    loadHospitals
+    handleUpdateAllBlood,
+    loadHospitals,
+    isSaving,
+    deletingId,
+    updatingBlood,
+    loadingBlood,
+    currentPage,
+    totalPages,
+    pageSize,
+    setPageSize,
+    totalCount,
+    setCurrentPage,
   } = useManageResources();
 
-  if (loading && hospitals.length === 0) return <div className="p-4">Loading...</div>;
+  if (loading && hospitals.length === 0) {
+    return (
+      <div className="p-8 flex justify-center items-center gap-3">
+        <Spinner label="Loading hospitals…" />
+        <span>Loading hospitals…</span>
+      </div>
+    );
+  }
+
   if (error && hospitals.length === 0) {
     return (
       <div className="p-4 text-red-600 flex flex-col items-start gap-3">
@@ -58,117 +80,24 @@ export default function ManageResources() {
       </div>
 
       {formState && (
-        <form onSubmit={handleSave} className="bg-[var(--color-surface)] p-6 rounded-lg shadow-md space-y-4 border border-[var(--color-border)]">
-          <h2 className="text-xl font-semibold text-[var(--color-text)]">{formState.id ? 'Edit' : 'Add'} Hospital</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-text-muted)] mb-1">Name</label>
-              <input
-                type="text"
-                required
-                value={formState.name || ''}
-                onChange={e => setFormState({ ...formState, name: e.target.value })}
-                className="w-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] rounded p-2 focus:ring focus:ring-[var(--color-primary)]/20 outline-none transition"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-text-muted)] mb-1">Address</label>
-              <input
-                type="text"
-                value={formState.address || ''}
-                onChange={e => setFormState({ ...formState, address: e.target.value })}
-                className="w-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] rounded p-2 focus:ring focus:ring-[var(--color-primary)]/20 outline-none transition"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-text-muted)] mb-1">Latitude</label>
-              <input
-                type="number"
-                step="any"
-                required
-                value={formState.lat ?? ''}
-                onChange={e => setFormState({ ...formState, lat: e.target.value as unknown as number })}
-                className="w-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] rounded p-2 focus:ring focus:ring-[var(--color-primary)]/20 outline-none transition"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-text-muted)] mb-1">Longitude</label>
-              <input
-                type="number"
-                step="any"
-                required
-                value={formState.lng ?? ''}
-                onChange={e => setFormState({ ...formState, lng: e.target.value as unknown as number })}
-                className="w-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] rounded p-2 focus:ring focus:ring-[var(--color-primary)]/20 outline-none transition"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-text-muted)] mb-1">Phone</label>
-              <input
-                type="text"
-                value={formState.phone || ''}
-                onChange={e => setFormState({ ...formState, phone: e.target.value })}
-                className="w-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] rounded p-2 focus:ring focus:ring-[var(--color-primary)]/20 outline-none transition"
-              />
-            </div>
-            <div className="flex items-center pt-6">
-              <input
-                type="checkbox"
-                checked={formState.verified ?? true}
-                onChange={e => setFormState({ ...formState, verified: e.target.checked })}
-                className="h-5 w-5 rounded border-[var(--color-border)] text-[var(--color-primary)] focus:ring-[var(--color-primary)]"
-                id="verified"
-              />
-              <label htmlFor="verified" className="ml-2 block text-sm font-medium text-[var(--color-text)]">Verified</label>
-            </div>
-          </div>
-          <div className="flex justify-end space-x-3 pt-4">
-            <button type="button" onClick={() => setFormState(null)} className="px-4 py-2 border border-[var(--color-border)] rounded text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] transition">Cancel</button>
-            <button type="submit" className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded shadow transition font-semibold">Save Hospital</button>
-          </div>
-        </form>
+        <HospitalFormModal
+          formState={formState}
+          isSaving={isSaving}
+          onSave={handleSave}
+          onCancel={() => setFormState(null)}
+          onChange={setFormState}
+        />
       )}
 
       {selectedHospitalForBlood && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="blood-modal-title"
-          className="bg-[var(--color-surface)] p-6 rounded-lg shadow-lg border border-[var(--color-border)] relative my-4"
-        >
-          <button
-            onClick={() => setSelectedHospitalForBlood(null)}
-            className="absolute top-4 right-4 p-2 text-[var(--color-text-muted)] hover:text-[var(--color-text)] rounded text-sm font-semibold"
-            aria-label="Close blood inventory modal"
-          >
-            ✕ Close
-          </button>
-          <h2 id="blood-modal-title" className="text-xl font-semibold mb-4 text-[var(--color-text)]">
-            Inventory for {selectedHospitalForBlood.name}
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {bloodInventory.map(row => (
-              <form key={row.id} onSubmit={(e) => handleUpdateBlood(e, row)} className="border border-[var(--color-border)] rounded p-4 bg-[var(--color-surface-subtle)] shadow-sm">
-                <h3 className={`font-bold text-lg mb-2 ${row.units_available === 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-heading)]'}`}>
-                  {row.blood_group}
-                </h3>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-[var(--color-text-muted)]">Blood</span>
-                    <input name="units" type="number" defaultValue={row.units_available} min="0" className="w-20 p-1 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] rounded text-right tabular-nums" />
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-[var(--color-text-muted)]">Platelets</span>
-                    <input name="platelets" type="number" defaultValue={row.platelet_units} min="0" className="w-20 p-1 border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] rounded text-right tabular-nums" />
-                  </div>
-                </div>
-                <button type="submit" className="mt-3 w-full bg-[var(--color-primary-light)] text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-white border border-[var(--color-primary)] py-1.5 rounded transition text-sm font-semibold min-h-[44px]">
-                  Update
-                </button>
-              </form>
-            ))}
-          </div>
-        </div>
+        <BloodInventoryModal
+          hospital={selectedHospitalForBlood}
+          bloodInventory={bloodInventory}
+          loadingBlood={loadingBlood}
+          updatingBlood={updatingBlood}
+          onClose={() => setSelectedHospitalForBlood(null)}
+          onUpdateAllBlood={handleUpdateAllBlood}
+        />
       )}
 
       <div className="bg-[var(--color-surface)] shadow rounded-lg border border-[var(--color-border)] overflow-x-auto">
@@ -181,7 +110,7 @@ export default function ManageResources() {
             </tr>
           </thead>
           <tbody className="bg-[var(--color-surface)] divide-y divide-[var(--color-border)]">
-            {hospitals.map(h => (
+            {paginatedHospitals.map(h => (
               <tr key={h.id} className="hover:bg-[var(--color-surface-subtle)] transition">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="font-medium text-[var(--color-text)]">{h.name}</div>
@@ -194,15 +123,69 @@ export default function ManageResources() {
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
                   <button onClick={() => loadBloodInventory(h)} className="text-[var(--color-danger)] hover:underline font-semibold px-2 py-1 rounded">Blood Inventory</button>
                   <button onClick={() => setFormState(h)} className="text-[var(--color-primary)] hover:underline font-semibold px-2 py-1 rounded">Edit</button>
-                  <button onClick={() => handleDelete(h.id)} className="text-[var(--color-text-muted)] hover:text-[var(--color-danger)] font-semibold px-2 py-1 rounded">Delete</button>
+                  <button
+                    onClick={() => handleDelete(h.id)}
+                    disabled={deletingId === h.id}
+                    className="text-[var(--color-text-muted)] hover:text-[var(--color-danger)] font-semibold px-2 py-1 rounded inline-flex items-center gap-1 disabled:opacity-50"
+                  >
+                    {deletingId === h.id && <Spinner label="Deleting…" className="spinner--button" />}
+                    Delete
+                  </button>
                 </td>
               </tr>
             ))}
-            {hospitals.length === 0 && (
+            {paginatedHospitals.length === 0 && (
               <tr><td colSpan={3} className="px-6 py-8 text-center text-[var(--color-text-muted)]">No hospitals found. Add one to get started.</td></tr>
             )}
           </tbody>
         </table>
+        {totalCount > 0 && (
+          <div className="p-4 border-t border-[var(--color-border)] flex items-center justify-between flex-wrap gap-4">
+            <span className="text-sm text-[var(--color-text-muted)]">
+              Showing {(currentPage - 1) * pageSize + 1} to {Math.min(currentPage * pageSize, totalCount)} of {totalCount} hospitals
+            </span>
+            <div className="flex items-center space-x-3">
+              <label className="text-xs text-[var(--color-text-muted)] flex items-center gap-1.5">
+                <span>Per page:</span>
+                <select
+                  aria-label="Hospitals per page"
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-2 py-1 text-sm text-[var(--color-text)]"
+                >
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                </select>
+              </label>
+              <div className="flex items-center space-x-1">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage <= 1}
+                  className="px-3 py-1 border border-[var(--color-border)] rounded text-sm disabled:opacity-40 hover:bg-[var(--color-surface-subtle)] transition"
+                >
+                  Previous
+                </button>
+                <span className="text-sm px-2 text-[var(--color-text)]">
+                  {currentPage} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages}
+                  className="px-3 py-1 border border-[var(--color-border)] rounded text-sm disabled:opacity-40 hover:bg-[var(--color-surface-subtle)] transition"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

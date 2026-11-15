@@ -80,8 +80,8 @@
 │   ├── security/                    # rate-limiter (Upstash), turnstile verifier, prompt-injection guard, zod schemas
 │   └── logger/                      # pino structured logger + PII redaction
 ├── scripts/
-│   ├── setup.sh
 │   ├── seed-db.ts
+│   ├── trigger-web-push.mts
 │   ├── refresh-materialized-views.ts
 │   └── jobs/
 │       ├── weather-ingest.ts        # Node/TS — called by cron-weather-ingest.yml
@@ -584,7 +584,7 @@ All routes mounted in `apps/api/src/index.ts`. Every request passes through `mid
 | `POST /api/alerts/push-subscription` | authenticated | cors, headers, auth (JWT) | 5/min/user | Registers browser Push subscription (`push_subscriptions`) |
 | `GET /api/admin/users?page=&pageSize=` | admin (`roles:manage`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user | Paged user list via the Supabase Admin API, `ADMIN_USER_PAGE_SIZE` default; malformed rows dropped |
 | `PATCH /api/admin/users/:id/role` | admin (`roles:manage`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user | Writes `app_metadata.role` + an append-only `role_assignments` audit row; 409 on self-demotion |
-| `POST /api/uploads/signature` | authenticated (any role) | cors, headers, auth (JWT), rate-limit | 10/min/user | Signs a direct-to-Cloudinary upload (ADR-015); the Worker never receives the file bytes |
+| `POST /api/reports/photo` | authenticated (any role) | cors, headers, auth (JWT), rate-limit | 10/min/user | Uploads breeding report photo to native Supabase Storage bucket `breeding-report-photos` |
 | `POST /api/announcements` | moderator/admin (`reports:moderate`) | cors, headers, auth (JWT + capability), rate-limit | 10/min/user | Creates an `announcements` row; 409 at `ANNOUNCEMENT_MAX_ACTIVE_PER_AUTHOR` |
 | `GET /api/announcements` | authenticated (decision H — not public) | cors, headers, auth (JWT), rate-limit | 10/min/user (reuses `ANNOUNCEMENT_CREATE_RATE_LIMIT`) | Live rows only: `expires_at > now()`, role-targeted, `ST_DWithin` against the caller's point; paginated |
 | `DELETE /api/announcements/:id` | author or admin | cors, headers, auth (JWT), rate-limit | 10/min/user (reuses `ANNOUNCEMENT_CREATE_RATE_LIMIT`) | Deletes an `announcements` row; audited per decision E |
@@ -608,10 +608,10 @@ from the `latest` payload, which already carries `regionCode` and
 `regionName`, so a separate regions endpoint would be a second source of
 truth for the same list.
 
-**§6 amendment — signed uploads and the shared list-query contract.**
-`POST /api/uploads/signature` is the one genuinely new endpoint of the
-platform-foundation slice; see ADR-015 for why the client never uploads
-through the Worker. `GET /api/admin/users` now accepts the shared
+**§6 amendment — report photo uploads and the shared list-query contract.**
+`POST /api/reports/photo` manages authenticated photo uploads into the
+`breeding-report-photos` Supabase Storage bucket, replacing external Cloudinary
+signing. `GET /api/admin/users` now accepts the shared
 `page`/`pageSize`/`dir`/`q` query parameters (`packages/types/pagination.ts`,
 `listQueryFor([])`) but still cannot filter, sort, or count — the Supabase
 Admin API's `listUsers` takes only `page`/`perPage` and returns no total,
@@ -681,7 +681,6 @@ slice 9) to revisit with real numbers rather than rediscovering it.
 | `OPENWEATHERMAP_API_KEY` | server-only | `scripts/jobs/weather-ingest.ts` |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | server-only | `apps/api` rate limiter |
 | `TURNSTILE_SECRET_KEY` | server-only | `apps/api` (server-side verification call) |
-| `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | server-only | `apps/api/src/lib/cloudinarySignature.ts` — signs direct-to-Cloudinary uploads (ADR-015); `apps/web` learns the cloud name from the signature response, never from a `VITE_PUBLIC_*` var |
 | `VITE_PUBLIC_TURNSTILE_SITE_KEY` | client | widget render only |
 | `VITE_PUBLIC_VAPID_PUBLIC_KEY` | client (`apps/web`) | Push subscription registration |
 | `VAPID_PUBLIC_KEY` | server-only | `ml/serving/predict.py` (Web Push signing needs both halves of the keypair); same value as `VITE_PUBLIC_VAPID_PUBLIC_KEY` |
@@ -695,11 +694,9 @@ Rule: any variable without the `VITE_PUBLIC_` prefix must never be imported into
 
 **No map credential appears above, deliberately.** The risk map renders with Leaflet over OpenStreetMap raster tiles, which require no account or token (ADR-013). The tile URL, attribution, and max zoom are §14 registry constants, not environment variables — they are neither secret nor environment-specific. `VITE_PUBLIC_MAPBOX_TOKEN` was removed from this table, and from every consumer of it, by ADR-013.
 
-**§7.1 amendment — the three `CLOUDINARY_*` rows.** Added by the
-platform-foundation slice, all server-only, all consumed exclusively by
-`apps/api/src/lib/cloudinarySignature.ts`. See ADR-015 for why signing
-happens server-side while the upload itself goes straight from the
-browser to Cloudinary, and for the exact signed-parameter set.
+**§7.1 amendment — Supabase Storage for report photos.** Report photo uploads
+use the native Supabase Storage bucket `breeding-report-photos` via `/api/reports/photo`,
+avoiding third-party Cloudinary dependencies and secrets.
 
 **Local development files.** Each of the three runtime contexts loads its own gitignored file, with a committed `*.example` template as the tracked inventory:
 
@@ -945,7 +942,7 @@ Waterfall governs the *project timeline* (mapped below to the original 10-week p
 | `LIST_SEARCH_MAX_CHARS` | 120 | `packages/types/pagination.ts` | bounds the `?q=` filter term |
 | `UPLOAD_MAX_BYTES` | 5242880 (5 MiB) | `packages/types/uploads.ts` | client-side pre-check + signed constraint |
 | `UPLOAD_SIGNATURE_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | bounds signature minting per account |
-| `UPLOAD_SIGNATURE_TTL_S` | 600 | `apps/api/src/lib/cloudinarySignature.ts` | how long a returned signature stays valid |
+| `REPORT_PHOTO_MAX_BYTES` | 5242880 (5 MiB) | `apps/api/src/routes/reports.ts` | size limit for Supabase Storage photo uploads |
 | `ANNOUNCEMENT_TITLE_MAX_CHARS` | 120 | `packages/types/alerts.ts` | §13.7 announcement title cap |
 | `ANNOUNCEMENT_BODY_MAX_CHARS` | 1000 | `packages/types/alerts.ts` | §13.7 announcement body cap |
 | `ANNOUNCEMENT_RADIUS_DEFAULT_M` | 5000 (bounds 500–50,000) | `packages/types/alerts.ts`, `announcements` check constraint | default/ceiling for announcement targeting radius |
@@ -957,7 +954,7 @@ Waterfall governs the *project timeline* (mapped below to the original 10-week p
 | `DEFAULT_APP_ROLE` | `citizen` | `packages/types/api.ts`, `public.app_role()` | what a verified token with no role claim resolves to |
 | `ROLE_CAPABILITIES` | see `docs/features/rbac.md` § grant table | `packages/security/roles.ts`, mirrored by `public.has_capability()` | authorization grant table across roles |
 | `ROLE_ASSIGNMENT_RATE_LIMIT` | 10/min per user | `packages/security/rateLimit.ts` | role admin rate limit ceiling |
-| `SUPABASE_LOCAL_API_PORT` | 54321 (db 54329, studio 54323, inbucket 54324) | `packages/db/supabase/config.toml` | containerized local Supabase stack (ADR-014) |
+| `SUPABASE_LOCAL_API_PORT` | 54321 (db 54329, studio 54323; local email confirmation disabled) | `packages/db/supabase/config.toml` | containerized local Supabase stack (ADR-014) |
 | `ANNOUNCEMENT_PUSH_LEASE_SECONDS` | 300 | `packages/types/alerts.ts` | how long one delivery claim is held before the sweep may reclaim it |
 | `ANNOUNCEMENT_PUSH_SWEEP_CADENCE` | every 5 min | `supabase/functions/risk-alerts` Inngest cron | safety-net scan for undelivered announcements |
 | `ANNOUNCEMENT_PUSH_CONCURRENCY` | 10 | `packages/push` | simultaneous in-flight sends per delivery run |

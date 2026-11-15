@@ -560,7 +560,7 @@ textarea {
 .navbar {
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 1050;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   backdrop-filter: blur(14px);
@@ -1555,6 +1555,9 @@ textarea {
 .chart-panel.map-panel {
   padding: 0;
   overflow: hidden;
+  position: relative;
+  isolation: isolate;
+  z-index: 1;
 }
 
 .chart-panel.map-panel .panel-heading {
@@ -1565,6 +1568,8 @@ textarea {
 .map-frame {
   position: relative;
   height: 420px;
+  isolation: isolate;
+  z-index: 1;
 }
 
 .map-frame .leaflet-container {
@@ -2043,17 +2048,27 @@ textarea {
 }
 
 .condition-list {
-  display: grid;
-  gap: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .condition {
-  display: grid;
-  grid-template-columns: 28px 1fr auto;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 0;
-  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.condition:first-child {
+  border-top: none;
+}
+
+.condition > div {
+  flex: 1;
+  min-width: 0;
 }
 
 .condition-icon {
@@ -2064,6 +2079,7 @@ textarea {
   color: var(--teal);
   background: #e4f6ee;
   border-radius: 7px;
+  flex-shrink: 0;
 }
 
 .condition b,
@@ -2072,17 +2088,40 @@ textarea {
 }
 
 .condition b {
-  font-size: .69rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-heading);
+  line-height: 1.4;
 }
 
 .condition small {
-  margin-top: 3px;
-  color: #94a3b8;
-  font-size: .57rem;
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  word-break: break-word;
 }
 
 .condition strong {
-  font-size: .76rem;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .condition {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .condition strong {
+    text-align: left;
+    margin-top: 2px;
+  }
 }
 
 .why-panel {
@@ -3847,7 +3886,6 @@ textarea {
   font-size: 1.08rem;
 }
 
-.condition b,
 .prediction-card span,
 .prediction-card b,
 .reason b,
@@ -3858,7 +3896,6 @@ textarea {
   font-size: .78rem;
 }
 
-.condition small,
 .reason p,
 .weather-now small,
 .weather-now>div>span,
@@ -4273,8 +4310,6 @@ body {
 }
 
 /* Tiny repeated UI text */
-.condition b,
-.condition small,
 .reason b,
 .reason p,
 .ai-step b,

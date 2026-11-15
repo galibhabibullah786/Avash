@@ -12,6 +12,8 @@ export interface BloodInventoryRow {
   platelet_units: number;
 }
 
+const PAGE_SIZE = 10;
+
 export function useManageResources() {
   const { accessToken } = useSession();
   const [hospitals, setHospitals] = useState<HospitalDto[]>([]);
@@ -19,17 +21,33 @@ export function useManageResources() {
   const [error, setError] = useState<string | null>(null);
 
   const [formState, setFormState] = useState<Partial<HospitalDto> | null>(null);
-  
   const [bloodInventory, setBloodInventory] = useState<BloodInventoryRow[]>([]);
   const [selectedHospitalForBlood, setSelectedHospitalForBlood] = useState<HospitalDto | null>(null);
 
+  // CRUD operation loading state trackers
+  const [isSaving, setIsSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [updatingBlood, setUpdatingBlood] = useState(false);
+  const [loadingBlood, setLoadingBlood] = useState(false);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+
   const loadHospitals = useCallback(async () => {
     setLoading(true);
-    const res = await fetchApi(
-      `/api/resources/hospitals?bbox=88,20,93,27&_t=${Date.now()}`,
+    let res = await fetchApi(
+      `/api/resources/hospitals?all=true&_t=${Date.now()}`,
       hospitalsResponseSchema,
       { accessToken: accessToken || undefined }
     );
+    if (!res.ok) {
+      res = await fetchApi(
+        `/api/resources/hospitals?bbox=88,20,93,27&_t=${Date.now()}`,
+        hospitalsResponseSchema,
+        { accessToken: accessToken || undefined }
+      );
+    }
     if (!res.ok) {
       setError(res.error);
     } else {
@@ -60,7 +78,8 @@ export function useManageResources() {
       return;
     }
 
-    const isEdit = !!formState.id;
+    setIsSaving(true);
+    const isEdit = Boolean(formState.id);
     const method = isEdit ? 'PATCH' : 'POST';
     const path = isEdit ? `/api/resources/hospitals/${formState.id}` : '/api/resources/hospitals';
     
@@ -79,6 +98,7 @@ export function useManageResources() {
       accessToken: accessToken || undefined,
     });
 
+    setIsSaving(false);
     if (!res.ok) {
       alert(res.error);
       return;
@@ -96,37 +116,46 @@ export function useManageResources() {
 
     setError(null);
     setFormState(null);
-    loadHospitals();
   }
 
   async function handleDelete(id: string) {
     if (!confirm('Are you sure you want to delete this hospital?')) return;
     
+    setDeletingId(id);
     const res = await fetchApi(`/api/resources/hospitals/${id}`, z.any(), { 
       method: 'DELETE',
       accessToken: accessToken || undefined,
     });
+    setDeletingId(null);
     
     if (!res.ok) {
       alert(res.error);
       return;
     }
-    setHospitals((prev) => prev.filter((h) => h.id !== id));
+    setHospitals((prev) => {
+      const next = prev.filter((h) => h.id !== id);
+      const nextTotalPages = Math.max(1, Math.ceil(next.length / pageSize));
+      if (currentPage > nextTotalPages) {
+        setCurrentPage(nextTotalPages);
+      }
+      return next;
+    });
     if (selectedHospitalForBlood?.id === id) {
       setSelectedHospitalForBlood(null);
     }
     setError(null);
-    loadHospitals();
   }
 
   async function loadBloodInventory(hospital: HospitalDto) {
     setSelectedHospitalForBlood(hospital);
+    setLoadingBlood(true);
     
     const res = await fetchApi(
       `/api/resources/hospitals/${hospital.id}/blood`, 
       z.object({ inventory: z.any() }),
       { accessToken: accessToken || undefined }
     );
+    setLoadingBlood(false);
     
     if (!res.ok) {
       alert(res.error);
@@ -134,42 +163,46 @@ export function useManageResources() {
       return;
     }
     
-    setBloodInventory((res.data.inventory || []).sort((a: BloodInventoryRow, b: BloodInventoryRow) => a.blood_group.localeCompare(b.blood_group)));
+    const rows = (res.data.inventory || []) as BloodInventoryRow[];
+    setBloodInventory(rows.sort((a, b) => a.blood_group.localeCompare(b.blood_group)));
   }
 
-  async function handleUpdateBlood(e: React.FormEvent, row: BloodInventoryRow) {
-    e.preventDefault();
-    const formData = new FormData(e.target as HTMLFormElement);
-    const rawUnits = formData.get('units') as string;
-    const rawPlatelets = formData.get('platelets') as string;
-    const units = parseInt(rawUnits, 10);
-    const platelets = parseInt(rawPlatelets, 10);
+  async function handleUpdateAllBlood(
+    items: Array<{ bloodGroup: string; unitsAvailable: number; plateletUnits: number }>
+  ) {
+    if (!selectedHospitalForBlood) return;
+    setUpdatingBlood(true);
 
-    if (Number.isNaN(units) || units < 0 || units > 500) {
-      alert('Please enter valid blood units (0 to 500)');
-      return;
-    }
-    if (Number.isNaN(platelets) || platelets < 0 || platelets > 500) {
-      alert('Please enter valid platelet units (0 to 500)');
-      return;
-    }
-    
-    const res = await fetchApi(`/api/resources/blood/${row.id}`, z.any(), {
-      method: 'PATCH',
-      body: { unitsAvailable: units, plateletUnits: platelets },
-      accessToken: accessToken || undefined,
-    });
-    
+    const res = await fetchApi(
+      `/api/resources/hospitals/${selectedHospitalForBlood.id}/blood`,
+      z.object({ inventory: z.any() }),
+      {
+        method: 'PUT',
+        body: { items },
+        accessToken: accessToken || undefined,
+      }
+    );
+    setUpdatingBlood(false);
+
     if (!res.ok) {
       alert(res.error);
       return;
     }
-    
-    setBloodInventory(prev => prev.map(item => item.id === row.id ? { ...item, units_available: units, platelet_units: platelets } : item));
+
+    const rows = (res.data.inventory || []) as BloodInventoryRow[];
+    setBloodInventory(rows.sort((a, b) => a.blood_group.localeCompare(b.blood_group)));
   }
+
+  // Pagination calculation
+  const totalPages = Math.max(1, Math.ceil(hospitals.length / pageSize));
+  const paginatedHospitals = hospitals.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
 
   return {
     hospitals,
+    paginatedHospitals,
     loading,
     error,
     formState,
@@ -180,7 +213,19 @@ export function useManageResources() {
     handleSave,
     handleDelete,
     loadBloodInventory,
-    handleUpdateBlood,
-    loadHospitals
+    handleUpdateAllBlood,
+    loadHospitals,
+    // Pagination & Loading controls
+    isSaving,
+    deletingId,
+    updatingBlood,
+    updatingBloodId: null,
+    loadingBlood,
+    currentPage,
+    totalPages,
+    pageSize,
+    setPageSize,
+    totalCount: hospitals.length,
+    setCurrentPage,
   };
 }

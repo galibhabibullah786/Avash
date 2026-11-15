@@ -69,8 +69,18 @@ const REGIONS: RegionSeed[] = [
 const HOSPITALS: Array<{ regionCode: string; name: string; lon: number; lat: number }> = [
   { regionCode: 'BD-DHK', name: 'Dhaka Medical College Hospital', lon: 90.3958, lat: 23.7259 },
   { regionCode: 'BD-DHK', name: 'Bangabandhu Sheikh Mujib Medical University', lon: 90.3971, lat: 23.7381 },
+  { regionCode: 'BD-DHK', name: 'Kurmitola General Hospital', lon: 90.4125, lat: 23.8223 },
+  { regionCode: 'BD-DHK', name: 'Shaheed Suhrawardy Medical College Hospital', lon: 90.3705, lat: 23.7699 },
+  { regionCode: 'BD-DHK', name: 'Sir Salimullah Medical College Hospital', lon: 90.4021, lat: 23.7104 },
+  { regionCode: 'BD-DHK', name: 'Mugda Medical College Hospital', lon: 90.4312, lat: 23.7289 },
   { regionCode: 'BD-CTG', name: 'Chattogram Medical College Hospital', lon: 91.8235, lat: 22.3599 },
+  { regionCode: 'BD-CTG', name: 'Chattogram General Hospital', lon: 91.8398, lat: 22.3375 },
   { regionCode: 'BD-SYL', name: 'Sylhet MAG Osmani Medical College Hospital', lon: 91.8687, lat: 24.8999 },
+  { regionCode: 'BD-RAJ', name: 'Rajshahi Medical College Hospital', lon: 88.5834, lat: 24.3697 },
+  { regionCode: 'BD-KHU', name: 'Khulna Medical College Hospital', lon: 89.5398, lat: 22.8251 },
+  { regionCode: 'BD-BAR', name: 'Sher-e-Bangla Medical College Hospital', lon: 90.3621, lat: 22.6892 },
+  { regionCode: 'BD-RAN', name: 'Rangpur Medical College Hospital', lon: 89.2312, lat: 25.7599 },
+  { regionCode: 'BD-MYM', name: 'Mymensingh Medical College Hospital', lon: 90.4075, lat: 24.7431 },
 ];
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
@@ -241,7 +251,7 @@ async function main() {
 
     let inventoryInserted = 0;
     for (const [, hospitalId] of hospitalIds) {
-      for (const bloodGroup of BLOOD_GROUPS.slice(0, 4)) {
+      for (const bloodGroup of BLOOD_GROUPS) {
         const { rowCount } = await client.query(
           `insert into blood_inventory (hospital_id, blood_group, units_available, platelet_units)
            values ($1, $2, $3, $4)

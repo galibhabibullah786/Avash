@@ -160,10 +160,14 @@ export function AlertSubscribeForm() {
               type="button"
               className="button button--secondary"
               onClick={() => geolocation?.request?.()}
-              disabled={isPending || isRemoving || geolocation?.status === 'requesting'}
+              disabled={isPending || isRemoving || geolocation?.status === 'requesting' || geolocation?.status === 'granted'}
               data-testid="alert-subscribe-locate"
             >
-              {geolocation?.status === 'requesting' ? 'Locating…' : 'Use my location'}
+              {
+                geolocation?.status === 'granted'
+                  ? "Location set!"
+                  : (geolocation?.status === 'requesting' ? 'Locating…' : 'Use my location')
+              }
             </button>
 
             {locationFailed ? (

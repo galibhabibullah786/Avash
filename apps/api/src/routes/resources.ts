@@ -1,9 +1,11 @@
 import { Hono } from 'hono';
+import { z } from 'zod';
 import {
   hospitalCreateRequestSchema,
   hospitalUpdateRequestSchema,
   bloodSearchQuerySchema,
   bloodUpdateRequestSchema,
+  bloodGroupSchema,
   hospitalsResponseSchema,
   bloodSearchResponseSchema,
   bloodAvailabilityDtoSchema,
@@ -36,21 +38,37 @@ export function createResources() {
   return new Hono<AppEnv>()
     .get('/hospitals', async (c) => {
       const requestId = c.get('requestId');
-      const bbox = parseBbox(c.req.query('bbox'));
-      if (!bbox.ok) {
+      const bboxParam = c.req.query('bbox');
+      const allParam = c.req.query('all');
+
+      let queryBbox: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null = null;
+      if (bboxParam) {
+        const bbox = parseBbox(bboxParam);
+        if (!bbox.ok) {
+          return c.json(buildGenericErrorBody(requestId), 400);
+        }
+        queryBbox = bbox.bbox;
+      } else if (allParam !== 'true') {
         return c.json(buildGenericErrorBody(requestId), 400);
       }
 
       try {
         const supabase = createSupabaseAdmin(c.env);
-        const { data, error } = await supabase
+        let query = supabase
           .from('hospital_locations')
           .select('*')
-          .gte('lon', bbox.bbox.minLon)
-          .lte('lon', bbox.bbox.maxLon)
-          .gte('lat', bbox.bbox.minLat)
-          .lte('lat', bbox.bbox.maxLat)
+          .order('name', { ascending: true })
           .limit(HOSPITAL_RESULT_LIMIT);
+
+        if (queryBbox) {
+          query = query
+            .gte('lon', queryBbox.minLon)
+            .lte('lon', queryBbox.maxLon)
+            .gte('lat', queryBbox.minLat)
+            .lte('lat', queryBbox.maxLat);
+        }
+
+        const { data, error } = await query;
 
         if (error) {
           logger.error('resources/hospitals: Supabase read failed', { requestId });
@@ -268,22 +286,85 @@ export function createResources() {
         if (error) return c.json(buildGenericErrorBody(requestId), 503);
         
         let data = initialData ?? [];
-        // If hospital has no inventory rows yet, initialize 8 blood groups
-        if (data.length === 0) {
-          const bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
-          const inventoryRows = bloodGroups.map((bg) => ({
+        const ALL_BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+        const existingGroups = new Set(data.map((r: { blood_group: string }) => r.blood_group));
+        const missingGroups = ALL_BLOOD_GROUPS.filter((bg) => !existingGroups.has(bg));
+
+        if (missingGroups.length > 0) {
+          const missingRows = missingGroups.map((bg) => ({
             hospital_id: id,
             blood_group: bg,
             units_available: 0,
             platelet_units: 0,
             updated_by: null,
           }));
-          await supabase.from('blood_inventory').insert(inventoryRows);
+          await supabase.from('blood_inventory').insert(missingRows);
           const refetch = await supabase
             .from('blood_inventory')
             .select('*')
             .eq('hospital_id', id);
           data = refetch.data ?? [];
+        }
+
+        return c.json({ inventory: data ?? [] }, 200);
+      } catch {
+        return c.json(buildGenericErrorBody(requestId), 503);
+      }
+    })
+
+    .put('/hospitals/:id/blood', auth({ capability: 'hospitals:manage' }), async (c) => {
+      const requestId = c.get('requestId');
+      const id = c.req.param('id');
+      if (!UUID_PATTERN.test(id)) return c.json(buildGenericErrorBody(requestId), 400);
+
+      const body = await c.req.json().catch(() => undefined);
+      const itemsSchema = z.object({
+        items: z.array(
+          z.object({
+            bloodGroup: bloodGroupSchema,
+            unitsAvailable: z.number().int().min(0).max(500),
+            plateletUnits: z.number().int().min(0).max(500),
+          })
+        ),
+      });
+      const parsed = itemsSchema.safeParse(body);
+      if (!parsed.success) return c.json(buildGenericErrorBody(requestId), 400);
+
+      try {
+        const supabase = createSupabaseAdmin(c.env);
+        const user = c.get('user');
+        const updatedBy = user && UUID_PATTERN.test(user.id) ? user.id : null;
+        const nowIso = new Date().toISOString();
+
+        const upsertPayload = parsed.data.items.map((item) => ({
+          hospital_id: id,
+          blood_group: item.bloodGroup,
+          units_available: item.unitsAvailable,
+          platelet_units: item.plateletUnits,
+          updated_by: updatedBy,
+          updated_at: nowIso,
+        }));
+
+        let { data, error } = await supabase
+          .from('blood_inventory')
+          .upsert(upsertPayload, { onConflict: 'hospital_id,blood_group' })
+          .select('*');
+
+        if (error && updatedBy !== null) {
+          const retry = await supabase
+            .from('blood_inventory')
+            .upsert(
+              upsertPayload.map((p) => ({ ...p, updated_by: null })),
+              { onConflict: 'hospital_id,blood_group' }
+            )
+            .select('*');
+          data = retry.data;
+          error = retry.error;
+        }
+
+        if (error) {
+          logger.error('resources/blood PUT: upsert failed', { requestId });
+          return c.json(buildGenericErrorBody(requestId), 503);
         }
 
         return c.json({ inventory: data ?? [] }, 200);

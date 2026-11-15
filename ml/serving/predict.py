@@ -168,6 +168,9 @@ def main(argv=None):
     mode.add_argument("--commit", action="store_true", help="actually upsert to Supabase (needs env + network)")
     ap.add_argument("--live", action="store_true", help="query live Supabase tables for features instead of CSVs")
     ap.add_argument("--force-alert", action="store_true", help="force push alerts for all high/severe regions")
+    ap.add_argument("--broadcast", action="store_true", help="broadcast alerts across all subscriptions without geofencing")
+    ap.add_argument("--district", default=None, help="filter prediction and alerts to a specific district")
+    ap.add_argument("--risk-level", default="auto", choices=["auto", "high", "severe"], help="override or filter risk level (default: auto)")
     ap.add_argument("--model-dir", default=str(config.ARTIFACT_DIR))
     ap.add_argument("--data-dir", default=str(config.DATA_DIR))
     ap.add_argument("--weekly", default=config.WEEKLY_CSV.name)
@@ -208,22 +211,30 @@ def main(argv=None):
     else:
         log.warning("No local CSVs found and no Supabase connection; using dry-run placeholder features")
         latest = pd.DataFrame()
+    if args.district and not latest.empty:
+        norm_dist = normalize_district(args.district)
+        latest = latest[latest["District"].astype(str).apply(normalize_district) == norm_dist]
     models = load_models(Path(args.model_dir))
     prediction_date = datetime.now(DHAKA).date().isoformat()
     rows = build_rows(latest, models, features, prediction_date, config.MODEL_VERSION, region_ids=None)
     if args.commit:
         payload, prev_by_name = upsert_rows(rows, client=client)
         if args.force_alert:
-            crossings = [{**r, "band": band_for_score(r["risk_score"]), "previous_band": "low"}
-                         for r in rows if r["horizon_weeks"] == 4 and band_for_score(r["risk_score"]) in ("high", "severe")]
+            target_bands = (args.risk_level,) if args.risk_level != "auto" else ("high", "severe")
+            crossings = [{**r, "band": args.risk_level if args.risk_level != "auto" else band_for_score(r["risk_score"]), "previous_band": "low"}
+                         for r in rows if r["horizon_weeks"] == 4 and (args.risk_level != "auto" or band_for_score(r["risk_score"]) in target_bands)]
         else:
             crossings = detect_high_severe_crossings(prev_by_name or {}, rows, horizon_weeks=4)
+            if args.risk_level != "auto":
+                crossings = [c for c in crossings if c.get("band") == args.risk_level]
+        if args.district:
+            crossings = [c for c in crossings if normalize_district(c["region"]) == normalize_district(args.district)]
         vapid_cfg = get_vapid_config()
         if crossings and vapid_cfg:
             transport = WebPushTransport(vapid_cfg["private_key"], vapid_cfg["subject"])
             total_sent = 0
             for crossing in crossings:
-                subs = load_push_subscriptions(client, region_name=crossing["region"])
+                subs = load_push_subscriptions(client, region_name=None if args.broadcast else crossing["region"])
                 res = dispatch_alerts([crossing], subs, transport)
                 total_sent += res["sent"]
             log.info("push dispatch: %d alerts sent for %d crossings", total_sent, len(crossings))

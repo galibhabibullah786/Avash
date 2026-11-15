@@ -96,7 +96,17 @@ build that already passed CI once:
 ```bash
 gh workflow run deploy-web.yml --ref dev -f environment=preview -f pages_branch=dev
 gh workflow run deploy-api.yml --ref dev -f environment=preview -f wrangler_env=preview -f smoke_test_origin_var=PREVIEW_API_ORIGIN
-gh workflow run deploy-functions.yml --ref dev -f environment=preview
+gh workflow run deploy-functions.yml --ref dev -f environment=preview -f function_name=risk-alerts -f no_verify_jwt=true
+```
+
+Or trigger a targeted stack deploy via `pipeline.yml`:
+```bash
+gh workflow run pipeline.yml --ref dev -f deploy_target=functions
+```
+
+Or manually trigger batch predictions with targeted alert parameters via `cron-batch-predict.yml`:
+```bash
+gh workflow run cron-batch-predict.yml --ref dev -f commit=true -f live=true -f force_alert=true -f broadcast=false -f district="Dhaka" -f risk_level=severe
 ```
 
 All three workflows declare `environment: ${{ inputs.environment }}` on their
