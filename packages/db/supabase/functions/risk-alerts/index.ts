@@ -4,6 +4,7 @@
 import { Inngest } from "npm:inngest@3.31.2";
 import { serve } from "npm:inngest@3.31.2/deno";
 import { createClient } from "npm:@supabase/supabase-js@2.49.1";
+import { sendNotification } from "npm:web-push-neo@0.1.2";
 
 const inngest = new Inngest({
   id: "avash-risk-alerts",
@@ -37,13 +38,13 @@ export const riskAlertFunction = inngest.createFunction(
       }
       const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+      // Query registered browser push tokens from push_subscriptions
       const { data, error } = await supabase
-        .from("alert_subscriptions")
-        .select("id, endpoint, p256dh, auth_key, user_id")
-        .eq("region_id", regionId);
+        .from("push_subscriptions")
+        .select("id, endpoint, p256dh, auth_key, user_id");
 
       if (error) {
-        throw new Error(`Failed to query subscriptions: ${error.message}`);
+        throw new Error(`Failed to query push_subscriptions: ${error.message}`);
       }
       return data || [];
     });
@@ -66,6 +67,7 @@ export const riskAlertFunction = inngest.createFunction(
     const deliveryResult = await step.run("deliver-push-notifications", async () => {
       const vapidPublicKey = Deno.env.get("VAPID_PUBLIC_KEY");
       const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY");
+      const vapidSubject = Deno.env.get("VAPID_SUBJECT") || "mailto:alerts@avash.app";
 
       if (!vapidPublicKey || !vapidPrivateKey) {
         return {
@@ -79,12 +81,26 @@ export const riskAlertFunction = inngest.createFunction(
       let failCount = 0;
 
       for (const sub of subscribers) {
-        if (!sub.endpoint) {
+        if (!sub.endpoint || !sub.p256dh || !sub.auth_key) {
           failCount++;
           continue;
         }
         try {
-          // Native Web Push delivery with WebCrypto
+          await sendNotification(
+            {
+              endpoint: sub.endpoint,
+              keys: { p256dh: sub.p256dh, auth: sub.auth_key },
+            },
+            payload,
+            {
+              TTL: 86400,
+              vapidDetails: {
+                subject: vapidSubject,
+                publicKey: vapidPublicKey,
+                privateKey: vapidPrivateKey,
+              },
+            }
+          );
           sentCount++;
         } catch {
           failCount++;
@@ -104,4 +120,10 @@ export const riskAlertFunction = inngest.createFunction(
 );
 
 // Serve Inngest handler for Supabase Edge Runtime
-Deno.serve(serve({ client: inngest, functions: [riskAlertFunction] }));
+Deno.serve(
+  serve({
+    client: inngest,
+    functions: [riskAlertFunction],
+    servePath: "/functions/v1/risk-alerts",
+  })
+);

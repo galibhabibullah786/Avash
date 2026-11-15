@@ -17,6 +17,7 @@ import { alerts } from './routes/alerts';
 
 import { auditLog } from './routes/audit-log';
 import { chat } from './routes/chat';
+import { inngestRoute } from './routes/inngest';
 
 const app = new Hono<AppEnv>();
 
@@ -49,6 +50,7 @@ app.route('/api/alerts', alerts); // auth+rate-limit; CRUD only, push send lives
 
 app.route('/api/admin/audit-log', auditLog); // auth(roles:manage)+rate-limit
 app.route('/api/chat', chat);
+app.route('/api/inngest', inngestRoute);
 
 app.notFound((c) => {
   const origin = c.req.header('Origin');

@@ -33,6 +33,12 @@ sanity-check the model against what actually happened.
     itself shows.
   - Both endpoints set `Cache-Control` to `WEATHER_CACHE_TTL_S`
     (`s-maxage=900, stale-while-revalidate=1800`).
+- Running the Ingest Job:
+  `scripts/jobs/weather-ingest.ts` (alias `pnpm job:weather`) supports flexible execution:
+  - `pnpm job:weather --mock --dry-run`: Runs full transformation on synthetic data without calling OpenWeatherMap or Supabase.
+  - `pnpm job:weather --mock`: Ingests synthetic weather readings directly into local Supabase.
+  - `pnpm job:weather --live`: Calls OpenWeatherMap API and persists observations to Supabase.
+  - `pnpm job:weather --live --dry-run`: Queries OpenWeatherMap API and displays observations without writing to Supabase.
 - `apps/web`'s `/weather` page (React Router, `apps/web/src/pages/Weather.tsx`)
   fetches `latest` on load to populate a region selector (options come
   from the `regionCode`/`regionName` pairs already present in the

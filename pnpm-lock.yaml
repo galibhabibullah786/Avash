@@ -230,6 +230,12 @@ importers:
 
   packages/logger: {}
 
+  packages/ml-inference:
+    dependencies:
+      '@avash/types':
+        specifier: workspace:*
+        version: link:../types
+
   packages/push:
     dependencies:
       '@avash/types':

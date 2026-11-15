@@ -75,4 +75,5 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
-        run: python ml/serving/predict.py
+          AVASH_VAPID_SUBJECT: "mailto:alerts@avash.app"
+        run: python ml/serving/predict.py --commit --live

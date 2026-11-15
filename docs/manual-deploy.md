@@ -446,21 +446,48 @@ These run as scheduled GitHub Actions talking directly to Supabase — they
 are never HTTP endpoints on `apps/api` (ADR-007), so there is nothing to
 "deploy." Running one by hand means running its script.
 
+### Run locally (Local Dev)
+
+For local development against the local Supabase container or mock datasets:
+
+```bash
+# 1. Weather Ingest
+pnpm job:weather --mock --dry-run  # Dry-run with synthetic observations
+pnpm job:weather --mock            # Persist synthetic observations to local Supabase
+pnpm job:weather --live            # Pull live observations from OpenWeatherMap to local DB
+
+# 2. ML Batch Predict
+# Dry-run with bundled ONNX model & local CSVs / mock features:
+python ml/serving/predict.py --dry-run
+# Or inside the Docker ML container:
+pnpm docker:ml python ml/serving/predict.py --dry-run
+# Live batch predict against local Supabase:
+python ml/serving/predict.py --live --commit
+
+# 3. Manual Web Push Trigger
+pnpm push:trigger --dry-run                        # Dry-run simulation across all regions
+pnpm push:trigger --region Dhaka --risk high --dry-run # Targeted dry-run
+python scripts/trigger_web_push.py --dry-run       # Python equivalent
+```
+
 ### Run against preview
 
 ```bash
 set -a; source .env.preview; set +a
 
-pnpm tsx scripts/jobs/weather-ingest.ts
+pnpm tsx scripts/jobs/weather-ingest.ts --live
 pnpm tsx scripts/jobs/news-scan.ts
-python ml/serving/predict.py          # or: pnpm docker:ml python ml/serving/predict.py
+python ml/serving/predict.py --live --commit  # or: pnpm docker:ml python ml/serving/predict.py --live --commit
+pnpm push:trigger --region Dhaka --risk high --dry-run
 ```
 
 ### Run against production
 
 ```bash
 set -a; source .env.production; set +a
-pnpm tsx scripts/jobs/weather-ingest.ts
+pnpm tsx scripts/jobs/weather-ingest.ts --live
+python ml/serving/predict.py --live --commit
+pnpm push:trigger --region Dhaka --risk high  # sends live web push
 ```
 
 **Every one of these holds the service-role key and bypasses RLS

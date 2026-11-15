@@ -32,6 +32,10 @@ import { fetchWeatherWithRetry } from './lib/fetchWithRetry.ts';
 import { hourBucketEnd, hourBucketStart } from './lib/hourBucket.ts';
 import { mapObservation } from './lib/mapObservation.ts';
 
+if (!globalThis.WebSocket) {
+  (globalThis as any).WebSocket = class DummyWebSocket {};
+}
+
 const repoRoot = path.resolve(fileURLToPath(import.meta.url), '..', '..', '..');
 const rootEnvFile = path.join(repoRoot, '.env');
 if (existsSync(rootEnvFile)) {
@@ -41,6 +45,13 @@ if (existsSync(rootEnvFile)) {
 // docs/constants-registry.md — both registered against this file.
 const WEATHER_INGEST_REQUEST_SPACING_MS = 1100;
 const WEATHER_INGEST_MAX_RETRIES = 3;
+
+const MOCK_TARGETS: RegionIngestTargetRow[] = [
+  { region_id: 'reg-dhaka', code: 'DHK', name: 'Dhaka', lat: 23.8103, lon: 90.4125 },
+  { region_id: 'reg-ctg', code: 'CTG', name: 'Chattogram', lat: 22.3569, lon: 91.7832 },
+  { region_id: 'reg-khulna', code: 'KHU', name: 'Khulna', lat: 22.8456, lon: 89.5403 },
+  { region_id: 'reg-rajshahi', code: 'RAJ', name: 'Rajshahi', lat: 24.3636, lon: 88.6241 },
+];
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -56,14 +67,21 @@ function buildWeatherUrl(lat: number, lon: number, apiKey: string): string {
 }
 
 async function main() {
-  const supabaseUrl = process.env.SUPABASE_URL?.trim();
-  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  const isMock = process.argv.includes('--mock');
+  const isDryRun = process.argv.includes('--dry-run');
+
+  const supabaseUrl = process.env.SUPABASE_URL?.trim() || (isMock ? 'http://127.0.0.1:54321' : undefined);
+  const supabaseServiceRoleKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
+    (isMock
+      ? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzE5NDQwMH0.local-service-role-key-placeholder'
+      : undefined);
   const openWeatherMapApiKey = process.env.OPENWEATHERMAP_API_KEY?.trim();
 
   const missing: string[] = [];
   if (!supabaseUrl) missing.push('SUPABASE_URL');
   if (!supabaseServiceRoleKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
-  if (!openWeatherMapApiKey) missing.push('OPENWEATHERMAP_API_KEY');
+  if (!openWeatherMapApiKey && !isMock) missing.push('OPENWEATHERMAP_API_KEY');
   if (missing.length > 0) {
     console.error(`weather-ingest: missing required environment variable(s): ${missing.join(', ')}. Set them in the root .env (see .env.example) or as job secrets before running.`);
     process.exitCode = 1;
@@ -72,17 +90,24 @@ async function main() {
 
   const supabase = createClient(supabaseUrl as string, supabaseServiceRoleKey as string, {
     auth: { persistSession: false, autoRefreshToken: false },
+    realtime: { createClient: () => undefined as any },
   });
 
-  const { data: targets, error: targetsError } = await supabase.from('region_ingest_targets').select('region_id, code, name, lat, lon');
-
-  if (targetsError) {
-    console.error('weather-ingest: failed to read region_ingest_targets (see Supabase project logs for detail).');
-    process.exitCode = 1;
-    return;
+  let regions: RegionIngestTargetRow[] = [];
+  try {
+    const { data: targets, error: targetsError } = await supabase.from('region_ingest_targets').select('region_id, code, name, lat, lon');
+    if (targetsError) throw targetsError;
+    regions = (targets ?? []) as RegionIngestTargetRow[];
+  } catch (err) {
+    if (isMock && isDryRun) {
+      console.log('weather-ingest: Supabase offline, using synthetic mock region targets for dry-run.');
+      regions = MOCK_TARGETS;
+    } else {
+      console.error('weather-ingest: failed to read region_ingest_targets (see Supabase project logs for detail).', err);
+      process.exitCode = 1;
+      return;
+    }
   }
-
-  const regions = (targets ?? []) as RegionIngestTargetRow[];
   if (regions.length === 0) {
     console.log('weather-ingest: 0 regions in region_ingest_targets — nothing to do.');
     process.exitCode = 0;
@@ -109,29 +134,48 @@ async function main() {
       continue;
     }
 
-    if (i > 0) {
-      await sleep(WEATHER_INGEST_REQUEST_SPACING_MS);
+    let payload: any;
+    if (isMock) {
+      payload = {
+        dt: Math.floor(Date.now() / 1000),
+        main: { temp: 28.5, temp_min: 24.0, temp_max: 31.0, humidity: 82 },
+        rain: { '1h': 15.0 },
+      };
+    } else {
+      if (i > 0) {
+        await sleep(WEATHER_INGEST_REQUEST_SPACING_MS);
+      }
+
+      const url = buildWeatherUrl(region.lat, region.lon, openWeatherMapApiKey as string);
+      const outcome = await fetchWeatherWithRetry(fetch, url, {
+        maxAttempts: WEATHER_INGEST_MAX_RETRIES,
+        delayFn: backoffDelayMs,
+        sleep,
+      });
+
+      if (outcome.status === 'skipped') {
+        console.log(`weather-ingest: [${region.code}] skipped (${outcome.reason}).`);
+        skipped++;
+        continue;
+      }
+      if (outcome.status === 'failed') {
+        console.error(`weather-ingest: [${region.code}] failed after retries (${outcome.reason}).`);
+        failed++;
+        continue;
+      }
+      payload = outcome.payload;
     }
 
-    const url = buildWeatherUrl(region.lat, region.lon, openWeatherMapApiKey as string);
-    const outcome = await fetchWeatherWithRetry(fetch, url, {
-      maxAttempts: WEATHER_INGEST_MAX_RETRIES,
-      delayFn: backoffDelayMs,
-      sleep,
-    });
+    const row = mapObservation(region.region_id, payload);
+    if (isMock) {
+      row.source = 'mock';
+    }
 
-    if (outcome.status === 'skipped') {
-      console.log(`weather-ingest: [${region.code}] skipped (${outcome.reason}).`);
-      skipped++;
+    if (isDryRun) {
+      console.log(`weather-ingest: [${region.code}] DRY-RUN observation: temp=${row.temp_mean_c}C hum=${row.humidity_pct}%`);
+      succeeded++;
       continue;
     }
-    if (outcome.status === 'failed') {
-      console.error(`weather-ingest: [${region.code}] failed after retries (${outcome.reason}).`);
-      failed++;
-      continue;
-    }
-
-    const row = mapObservation(region.region_id, outcome.payload);
     const bucketStart = hourBucketStart(row.observed_at);
     const bucketEnd = hourBucketEnd(bucketStart);
 

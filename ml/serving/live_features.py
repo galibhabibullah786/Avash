@@ -26,6 +26,12 @@ def get_supabase_config() -> dict[str, str | None]:
     key = (os.environ.get("AVASH_SUPABASE_SERVICE_KEY") or
            os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or
            os.environ.get("SUPABASE_SERVICE_KEY"))
+
+    # When running inside a Docker container against local Supabase
+    if url and ("127.0.0.1" in url or "localhost" in url):
+        if os.path.exists("/.dockerenv") or os.environ.get("DOCKER_CONTAINER"):
+            url = url.replace("127.0.0.1", "host.docker.internal").replace("localhost", "host.docker.internal")
+
     return {"url": url, "key": key}
 
 

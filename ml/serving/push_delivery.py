@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 from ml.training import config
 
@@ -62,6 +62,7 @@ def build_alert_payload(crossing: dict) -> dict:
             "risk_score": round(float(crossing["risk_score"]), 3),
             "band": band,
             "model_version": crossing.get("model_version"),
+            "url": "/risk-map",
         },
     }
 
@@ -91,9 +92,20 @@ class WebPushTransport:  # pragma: no cover - requires VAPID keys + network
 
     def send(self, subscription: dict, payload: dict) -> None:
         import json as _json
-        self._webpush(subscription_info=subscription, data=_json.dumps(payload),
-                      vapid_private_key=self.vapid_private_key,
-                      vapid_claims={"sub": self.vapid_claims_email})
+        sub_info = {
+            "endpoint": subscription["endpoint"],
+            "keys": subscription.get("keys") or {
+                "p256dh": subscription.get("p256dh"),
+                "auth": subscription.get("auth_key"),
+            },
+        }
+        self._webpush(
+            subscription_info=sub_info,
+            data=_json.dumps(payload),
+            vapid_private_key=self.vapid_private_key,
+            vapid_claims={"sub": self.vapid_claims_email},
+            ttl=86400,  # PUSH_TTL_SECONDS (24h)
+        )
 
 
 def dispatch_alerts(crossings: list[dict], subscriptions: list[dict], transport: Transport) -> dict:
@@ -107,7 +119,7 @@ def dispatch_alerts(crossings: list[dict], subscriptions: list[dict], transport:
                 sent += 1
             except Exception as exc:  # noqa: BLE001 - deliberate best-effort
                 failed += 1
-                log.error("push failed for region=%s sub=%s: %s", crossing["region"], sub.get("id"), exc)
+                log.error("push failed for region=%s sub=%s: %s", crossing.get("region"), sub.get("id"), exc)
     return {"alerts": len(crossings), "subscriptions": len(subscriptions), "sent": sent, "failed": failed}
 
 
@@ -128,11 +140,72 @@ def _vapid_configured() -> bool:
     return bool(cfg and cfg.get("private_key") and cfg.get("subject"))
 
 
-def _load_push_subscriptions(client: Any | None = None) -> list[dict]:
+def load_push_subscriptions(client: Any | None = None, region_name: str | None = None) -> list[dict]:
+    """Load active push subscriptions matching region proximity (or all active if region_name is None)."""
     if client is None:
         from ml.serving.live_features import get_supabase_config
         cfg = get_supabase_config()
         from supabase import create_client
         client = create_client(cfg["url"], cfg["key"])
-    return client.table("alert_subscriptions").select("id,subscription").eq("enabled", True).execute().data or []
 
+    # 1. Fetch from push_subscriptions
+    push_res = client.table("push_subscriptions").select("id,user_id,endpoint,p256dh,auth_key").execute()
+    push_rows = getattr(push_res, "data", None) or []
+    if not push_rows:
+        return []
+
+    valid_subs = []
+    for r in push_rows:
+        endpoint = r.get("endpoint")
+        p256dh = r.get("p256dh")
+        auth_key = r.get("auth_key")
+        if endpoint and p256dh and auth_key:
+            valid_subs.append({
+                "id": r["id"],
+                "user_id": r.get("user_id"),
+                "endpoint": endpoint,
+                "keys": {"p256dh": p256dh, "auth": auth_key},
+            })
+
+    if not region_name:
+        return valid_subs
+
+    # 2. Check region coordinates if proximity filtering is requested
+    try:
+        targets_res = client.table("region_ingest_targets").select("region_id,name,lat,lon").execute()
+        targets = getattr(targets_res, "data", None) or []
+        region_target = next((t for t in targets if str(t.get("name", "")).lower() == region_name.lower()), None)
+        if not region_target or region_target.get("lat") is None or region_target.get("lon") is None:
+            return valid_subs
+
+        reg_lat, reg_lon = float(region_target["lat"]), float(region_target["lon"])
+
+        # Fetch active alert subscriptions with geofence
+        alerts_res = client.table("alert_subscriptions").select("id,user_id,geom,radius_m,active").eq("active", True).execute()
+        alerts = getattr(alerts_res, "data", None) or []
+
+        from ml.training.feature_engineering import haversine_km
+
+        matched_user_ids = set()
+        for a in alerts:
+            uid = a.get("user_id")
+            geom = a.get("geom")
+            if isinstance(geom, dict) and geom.get("type") == "Point":
+                coords = geom.get("coordinates")
+                if coords and len(coords) >= 2:
+                    sub_lon, sub_lat = float(coords[0]), float(coords[1])
+                    dist_km = haversine_km(sub_lat, sub_lon, reg_lat, reg_lon)
+                    radius_km = min(float(a.get("radius_m", 2000)), 20000.0) / 1000.0
+                    if dist_km <= radius_km:
+                        matched_user_ids.add(uid)
+
+        if matched_user_ids:
+            filtered = [sub for sub in valid_subs if sub.get("user_id") in matched_user_ids]
+            return filtered if filtered else valid_subs
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Proximity filtering failed (%s); falling back to all active subscribers", exc)
+
+    return valid_subs
+
+
+_load_push_subscriptions = load_push_subscriptions

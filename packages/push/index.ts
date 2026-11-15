@@ -8,3 +8,9 @@ export type {
 
 export { deliverAnnouncement } from './deliverAnnouncement';
 export type { DeliverAnnouncementOptions } from './deliverAnnouncement';
+
+export { triggerRiskAlertPush } from './triggerRiskAlert';
+export type {
+  TriggerRiskAlertOptions,
+  TriggerRiskAlertResult,
+} from './triggerRiskAlert';

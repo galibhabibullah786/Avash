@@ -1,16 +1,9 @@
 """Batch runner: score all 64 districts for horizons 2 and 4 (ADR-002 dual-path).
-
-SAFETY MODEL:
-- --dry-run (default): prints rows; touches no network or DB.
-- --commit: lazy-imports supabase, upserts ONLY risk_predictions contract.
-- H=2 (shadow): computed/stored, never alerted. H=4 crossings into high/severe alert.
+--dry-run (default): prints rows; --commit: upserts risk_predictions; H=4 alerts.
 """
 from __future__ import annotations
 
-import argparse
-import json
-import logging
-import sys
+import argparse, json, logging, sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -26,7 +19,7 @@ from ml.training.feature_engineering import (
 from ml.serving.live_features import fetch_live_features_from_supabase, get_supabase_config
 from ml.serving.push_delivery import (
     band_for_score, detect_high_severe_crossings, dispatch_alerts,
-    get_vapid_config, _vapid_configured, _load_push_subscriptions, WebPushTransport,
+    get_vapid_config, _vapid_configured, load_push_subscriptions, WebPushTransport,
 )
 
 log = logging.getLogger(__name__)
@@ -38,10 +31,8 @@ def load_onnx_session(model_path: Path):
     import onnxruntime as rt
     return rt.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
 
-
 def load_booster(model_path: Path):
     return joblib.load(model_path)
-
 
 def load_models(model_dir: Path) -> dict[int, dict[str, Any]]:
     models = {}
@@ -56,7 +47,6 @@ def load_models(model_dir: Path) -> dict[int, dict[str, Any]]:
         }
     return models
 
-
 def _ensure_hub_model(model_dir: Path, horizon: int) -> None:
     model_dir.mkdir(parents=True, exist_ok=True)
     repo = config.MODEL_HUB_REPO
@@ -70,11 +60,9 @@ def _ensure_hub_model(model_dir: Path, horizon: int) -> None:
     except Exception as exc:  # noqa: BLE001
         log.warning("Hugging Face download skipped/failed for horizon %s: %s", horizon, exc)
 
-
 def onnx_scores(session, X: np.ndarray) -> np.ndarray:
     outs = session.run(["probabilities"], {"input": X.astype(np.float64)})[0]
     return outs[:, 1]
-
 
 def apply_calibration(scores: np.ndarray | float, horizon: int = 4) -> np.ndarray | float:
     if not getattr(config, "CALIBRATION_ENABLED", False):
@@ -84,16 +72,14 @@ def apply_calibration(scores: np.ndarray | float, horizon: int = 4) -> np.ndarra
     from ml.training.calibration import apply_calibration as _apply
     return _apply(scores, params)
 
-
 def extract_top_factors(booster, X_row: np.ndarray, feature_names, top_k: int = 3) -> list[dict]:
     contrib = booster.booster_.predict(X_row.reshape(1, -1), pred_contrib=True)[0][:-1]
     top = np.argsort(np.abs(contrib))[::-1][:top_k]
     return [{
-        "factor": feature_names[idx],
-        "label": config.FACTOR_LABELS.get(feature_names[idx], feature_names[idx].replace("_", " ")),
-        "importance": round(float(contrib[idx]), 4),
-    } for idx in top]
-
+        "factor": feature_names[i],
+        "label": config.FACTOR_LABELS.get(feature_names[i], feature_names[i].replace("_", " ")),
+        "importance": round(float(contrib[i]), 4),
+    } for i in top]
 
 def normalize_district(name: str) -> str:
     return "".join(ch for ch in str(name).lower() if ch.isalnum())
@@ -127,7 +113,6 @@ def build_rows(df_rows: pd.DataFrame, models: dict, features: list[str],
             })
     return rows
 
-
 def to_upsert_payload(rows: list[dict], name_to_id: dict[str, str]) -> list[dict]:
     unmatched = sorted({r["region"] for r in rows if normalize_district(r["region"]) not in name_to_id})
     if unmatched:
@@ -140,7 +125,6 @@ def to_upsert_payload(rows: list[dict], name_to_id: dict[str, str]) -> list[dict
         "top_factors": r["top_factors"],
         "model_version": r["model_version"],
     } for r in rows]
-
 
 def upsert_rows(rows: list[dict], client: Any | None = None):
     if client is None:
@@ -169,17 +153,13 @@ def upsert_rows(rows: list[dict], client: Any | None = None):
     try:
         prev_rows = (client.table("risk_predictions").select("region_id,horizon_weeks,prediction_date,risk_score")
                      .eq("horizon_weeks", 4).order("prediction_date", desc=True).limit(512).execute().data or [])
-        seen = set()
         for r in prev_rows:
-            if r["region_id"] not in seen:
-                seen.add(r["region_id"])
-                name = csv_by_norm.get(id_to_name.get(r["region_id"], ""))
-                if name:
-                    previous[name] = r["risk_score"]
+            name = csv_by_norm.get(id_to_name.get(r["region_id"], ""))
+            if name and name not in previous:
+                previous[name] = r["risk_score"]
     except Exception as exc:  # noqa: BLE001
         log.warning("could not read previous predictions: %s", exc)
     return payload, previous
-
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
@@ -187,6 +167,7 @@ def main(argv=None):
     mode.add_argument("--dry-run", action="store_true", default=True, help="print rows; touch nothing (default)")
     mode.add_argument("--commit", action="store_true", help="actually upsert to Supabase (needs env + network)")
     ap.add_argument("--live", action="store_true", help="query live Supabase tables for features instead of CSVs")
+    ap.add_argument("--force-alert", action="store_true", help="force push alerts for all high/severe regions")
     ap.add_argument("--model-dir", default=str(config.ARTIFACT_DIR))
     ap.add_argument("--data-dir", default=str(config.DATA_DIR))
     ap.add_argument("--weekly", default=config.WEEKLY_CSV.name)
@@ -196,7 +177,6 @@ def main(argv=None):
     ap.add_argument("--as-of", default=None, help="week_start (YYYY-MM-DD); default: latest in data")
     ap.add_argument("--out", default=None, help="write rows JSON here (default: stdout)")
     args = ap.parse_args(argv)
-
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     features = list(config.FEATURES_A if args.feature_set == "A" else config.FEATURES_B)
 
@@ -210,31 +190,47 @@ def main(argv=None):
             except ImportError:
                 pass
 
-    if args.live and client:
+    data_dir = Path(args.data_dir)
+    weekly_csv = data_dir / args.weekly
+    has_csvs = weekly_csv.exists()
+
+    if (args.live or not has_csvs) and client:
+        log.info("Fetching live features from Supabase...")
         latest = fetch_live_features_from_supabase(client, as_of_date=args.as_of)
-    else:
-        data_dir = Path(args.data_dir)
-        weekly = load_weekly(data_dir / args.weekly)
+    elif has_csvs:
+        weekly = load_weekly(weekly_csv)
         daily = load_daily(data_dir / args.daily)
         pop = load_population(data_dir / args.population)
         df_feat = build_feature_frame(weekly, daily, pop, feature_set=args.feature_set)
         eleg = eligible_rows(df_feat, features)
         as_of = pd.Timestamp(args.as_of) if args.as_of else eleg.week_start.max()
         latest = eleg[eleg.week_start == as_of].sort_values("District", kind="mergesort")
-
+    else:
+        log.warning("No local CSVs found and no Supabase connection; using dry-run placeholder features")
+        latest = pd.DataFrame()
     models = load_models(Path(args.model_dir))
     prediction_date = datetime.now(DHAKA).date().isoformat()
     rows = build_rows(latest, models, features, prediction_date, config.MODEL_VERSION, region_ids=None)
-
     if args.commit:
         payload, prev_by_name = upsert_rows(rows, client=client)
-        crossings = detect_high_severe_crossings(prev_by_name or {}, rows, horizon_weeks=4)
+        if args.force_alert:
+            crossings = [{**r, "band": band_for_score(r["risk_score"]), "previous_band": "low"}
+                         for r in rows if r["horizon_weeks"] == 4 and band_for_score(r["risk_score"]) in ("high", "severe")]
+        else:
+            crossings = detect_high_severe_crossings(prev_by_name or {}, rows, horizon_weeks=4)
         vapid_cfg = get_vapid_config()
         if crossings and vapid_cfg:
             transport = WebPushTransport(vapid_cfg["private_key"], vapid_cfg["subject"])
-            subs = _load_push_subscriptions(client)
-            result = dispatch_alerts(crossings, subs, transport)
-            log.info("push dispatch: %s", result)
+            total_sent = 0
+            for crossing in crossings:
+                subs = load_push_subscriptions(client, region_name=crossing["region"])
+                res = dispatch_alerts([crossing], subs, transport)
+                total_sent += res["sent"]
+            log.info("push dispatch: %d alerts sent for %d crossings", total_sent, len(crossings))
+        elif not crossings:
+            log.info("push dispatch: 0 new high/severe crossings; no push alerts required")
+        elif not vapid_cfg:
+            log.warning("push dispatch: VAPID keys not configured; skipped dispatch")
         print(json.dumps({"upserted": len(payload), "crossings": len(crossings)}, indent=2))
         return 0
 
@@ -247,6 +243,6 @@ def main(argv=None):
         print(text)
     return 0
 
-
+_load_push_subscriptions = load_push_subscriptions
 if __name__ == "__main__":
     sys.exit(main())

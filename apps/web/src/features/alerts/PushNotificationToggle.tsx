@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { useSession } from '../auth/SessionProvider';
 import { usePushSubscription } from '../../hooks/usePushSubscription';
+import { ensureServiceWorkerRegistration } from '../../lib/serviceWorker';
 
 /**
  * Registers this browser to receive Web Push alerts, and reports whether
@@ -19,6 +21,42 @@ export function PushNotificationToggle() {
   const { accessToken } = useSession();
   const push = usePushSubscription(accessToken ?? null);
   const status = push?.status ?? 'checking';
+  const [testSent, setTestSent] = useState(false);
+  const [tokenCopied, setTokenCopied] = useState(false);
+
+  const handleSendTestNotification = async () => {
+    try {
+      const reg = await ensureServiceWorkerRegistration();
+      if (reg?.showNotification) {
+        await reg.showNotification('Notification Test', {
+          body: 'Notification is working.',
+          tag: 'test-dengue-risk',
+          icon: '/icons/icon-192.png',
+          data: { url: '/risk-map' },
+        });
+        setTestSent(true);
+        setTimeout(() => setTestSent(false), 3000);
+      }
+    } catch (err) {
+      console.error('Failed to trigger test notification:', err);
+    }
+  };
+
+  const handleCopyToken = async () => {
+    try {
+      const reg = await ensureServiceWorkerRegistration();
+      const sub = await reg?.pushManager?.getSubscription?.();
+      if (sub) {
+        const subJson = sub.toJSON();
+        const cliArgs = `--direct-endpoint "${sub.endpoint}" --p256dh "${subJson.keys?.p256dh || ''}" --auth "${subJson.keys?.auth || ''}"`;
+        await navigator.clipboard.writeText(cliArgs);
+        setTokenCopied(true);
+        setTimeout(() => setTokenCopied(false), 3000);
+      }
+    } catch (err) {
+      console.error('Failed to copy subscription token:', err);
+    }
+  };
 
   // Resolving the real state needs a round trip to the service worker
   // registration, so render nothing rather than flashing "Enable" at a
@@ -47,9 +85,29 @@ export function PushNotificationToggle() {
   return (
     <div className="field" data-testid="push-toggle">
       {status === 'subscribed' ? (
-        <p className="status-panel__item" data-testid="push-toggle-subscribed">
-          Push notifications are on for this browser — alerts reach you even when Avash is closed.
-        </p>
+        <div>
+          <p className="status-panel__item" data-testid="push-toggle-subscribed">
+            Push notifications are active on this device.
+          </p>
+          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="button button--secondary"
+              onClick={handleSendTestNotification}
+              data-testid="push-toggle-test"
+            >
+              {testSent ? 'Notification Triggered!' : 'Send Test Notification to This Device'}
+            </button>
+            <button
+              type="button"
+              className="button button--secondary"
+              onClick={handleCopyToken}
+              data-testid="push-toggle-copy-token"
+            >
+              {tokenCopied ? 'Token Copied to Clipboard!' : 'Copy Device Token for CLI Test'}
+            </button>
+          </div>
+        </div>
       ) : (
         <>
           <p className="page__description">

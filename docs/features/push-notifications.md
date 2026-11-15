@@ -167,6 +167,36 @@ that writes `risk_predictions` (ADR-002, ADR-007).
   document's delivery path runs. An empty table is exactly the situation
   that early return exists to make safe.
 
+### CLI & Manual Triggering Runbook
+
+To test or manually trigger Web Push notifications on local dev or production without waiting for the nightly batch job:
+
+1. **TypeScript CLI (`pnpm push:trigger`)**:
+   Powered by `@avash/push` (`scripts/trigger-web-push.mts`).
+   ```bash
+   # Dry-run test across all regions (no notifications sent, prints matched subscriptions)
+   pnpm push:trigger --dry-run
+
+   # Targeted alert for a specific district
+   pnpm push:trigger --region Dhaka --risk severe --dry-run
+
+   # Live dispatch against local Supabase or production (requires VAPID & SUPABASE credentials)
+   pnpm push:trigger --region "Dhaka" --risk "high" --title "High Dengue Surge Alert" --body "Elevated vector activity detected in your area."
+   ```
+
+2. **Python Serving CLI (`scripts/trigger_web_push.py`)**:
+   Powered by `ml/serving/push_delivery.py`.
+   ```bash
+   # Dry run test
+   python scripts/trigger_web_push.py --dry-run --region Dhaka --risk severe
+
+   # Live dispatch
+   python scripts/trigger_web_push.py --region Chattogram --risk high
+   ```
+
+3. **Supabase Edge Function (`/functions/v1/risk-alerts`)**:
+   Runs via Deno + `web-push-neo`. Locally, this is wired into the Inngest Dev Server container (`inngest-dev` on `http://127.0.0.1:8288`). In production, Inngest triggers the hosted Edge Function upon batch prediction crossing events.
+
 **Critical Constants:**
 
 | Constant | Value | Defined in | Purpose |

@@ -1,5 +1,21 @@
 """Unit tests for push payloads, crossing detection, best-effort dispatch."""
-import pytest
+try:
+    import pytest
+except ImportError:
+    class _MockPytest:
+        class mark:
+            @staticmethod
+            def parametrize(argnames, argvalues):
+                def decorator(fn):
+                    def wrapper(*args, **kwargs):
+                        for val in argvalues:
+                            if isinstance(val, tuple):
+                                fn(*val)
+                            else:
+                                fn(val)
+                    return wrapper
+                return decorator
+    pytest = _MockPytest()
 
 from ml.serving import push_delivery as pd
 
@@ -67,3 +83,64 @@ def test_dispatch_best_effort():
     result = pd.dispatch_alerts(crossings, subs, transport)
     assert result == {"alerts": 1, "subscriptions": 3, "sent": 2, "failed": 1}
     assert len(transport.sent) == 2
+
+
+def test_load_push_subscriptions_queries_push_subscriptions_table():
+    """Verify push subscriptions are loaded from push_subscriptions table with proper keys."""
+    class FakeTable:
+        def __init__(self, data):
+            self._data = data
+
+        def select(self, *a, **k):
+            return self
+
+        def eq(self, *a, **k):
+            return self
+
+        def execute(self):
+            class Res:
+                pass
+            r = Res()
+            r.data = self._data
+            return r
+
+    push_data = [
+        {
+            "id": "sub-1",
+            "user_id": "user-1",
+            "endpoint": "https://push.example.com/sub-1",
+            "p256dh": "key-p256dh-1",
+            "auth_key": "auth-1",
+        }
+    ]
+
+    class FakeClient:
+        def table(self, name):
+            if name == "push_subscriptions":
+                return FakeTable(push_data)
+            elif name == "region_ingest_targets":
+                return FakeTable([])
+            elif name == "alert_subscriptions":
+                return FakeTable([])
+            raise ValueError(name)
+
+    client = FakeClient()
+    subs = pd.load_push_subscriptions(client)
+    assert len(subs) == 1
+    assert subs[0]["endpoint"] == "https://push.example.com/sub-1"
+    assert subs[0]["keys"]["p256dh"] == "key-p256dh-1"
+    assert subs[0]["keys"]["auth"] == "auth-1"
+
+
+if __name__ == "__main__":
+    test_band_for_score(0.5, "high")
+    test_crossing_into_high()
+    test_no_alert_when_already_high()
+    test_high_to_severe_escalates()
+    test_below_high_never_alerts()
+    test_h2_rows_never_alert()
+    test_payload_contract()
+    test_dispatch_best_effort()
+    test_load_push_subscriptions_queries_push_subscriptions_table()
+    print("All push delivery tests passed successfully.")
+

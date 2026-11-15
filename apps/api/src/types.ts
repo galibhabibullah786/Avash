@@ -18,6 +18,8 @@ export interface Bindings {
   CLOUDINARY_CLOUD_NAME: string;
   CLOUDINARY_API_KEY: string;
   CLOUDINARY_API_SECRET: string;
+  INNGEST_BASE_URL?: string;
+  INNGEST_DEV?: string;
 }
 
 export interface AuthenticatedUser {
